@@ -40,13 +40,27 @@ async def verify(request: Request):
     params = request.query_params
 
     mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
+    token = (params.get("hub.verify_token") or "").strip()
     challenge = params.get("hub.challenge")
 
-    if mode == "subscribe" and token == VERIFY_TOKEN:
-        return PlainTextResponse(challenge)
+    expected = (
+        os.getenv("META_VERIFY_TOKEN")
+        or os.getenv("IG_WEBHOOK_VERIFY_TOKEN")
+        or VERIFY_TOKEN
+        or ""
+    ).strip()
 
-    return {"error": "invalid token"}
+    print("[META VERIFY]", {
+        "mode": mode,
+        "token_len": len(token),
+        "expected_len": len(expected),
+        "challenge": challenge,
+    }, flush=True)
+
+    if mode == "subscribe" and token == expected:
+        return PlainTextResponse(str(challenge))
+
+    return {"error": "invalid token", "token_len": len(token), "expected_len": len(expected)}
 
 
 
