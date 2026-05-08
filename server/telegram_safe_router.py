@@ -671,3 +671,22 @@ def send_client_target(payload: dict = Body(default={})):
 # ============================================================================
 # /STRICT CLIENT TARGET SEND FINAL
 # ============================================================================
+
+# TELEGRAM_SAFE_DB_DEBUG_V1
+@router.get("/debug/db")
+def telegram_safe_debug_db():
+    import os
+    con = db()
+    rows = [dict(r) for r in con.execute("""
+        SELECT chat_id, title, enabled, role, thread_id, parent_chat_id
+        FROM telegram_chats
+        ORDER BY role, title, chat_id
+    """).fetchall()]
+    con.close()
+    return {
+        "ok": True,
+        "db_path": DB_PATH,
+        "cwd": os.getcwd(),
+        "count": len(rows),
+        "rows": rows,
+    }
