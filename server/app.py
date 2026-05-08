@@ -6119,6 +6119,38 @@ def instagram_reaction_webhook_ingest(payload: dict):
 
 
 
+
+@app.get("/api/debug/fb-conversations")
+def debug_fb_conversations():
+    token = (
+        os.getenv("FB_PAGE_TOKEN_V2", "").strip()
+        or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+    )
+    page_id = os.getenv("FB_PAGE_ID", "").strip()
+    url = f"https://graph.facebook.com/v19.0/{page_id}/conversations"
+    params = {
+        "platform": "instagram",
+        "fields": "id,updated_time",
+        "limit": 1,
+        "access_token": token,
+    }
+    r = requests.get(url, params=params, timeout=40)
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text}
+
+    return {
+        "page_id": page_id,
+        "token_len": len(token),
+        "token_prefix": token[:18],
+        "token_suffix": token[-12:],
+        "token_sha16": hashlib.sha256(token.encode()).hexdigest()[:16],
+        "http_status": r.status_code,
+        "response": data,
+    }
+
+
 @app.get("/api/debug/env")
 def debug_env():
     return {
