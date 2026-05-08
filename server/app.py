@@ -7794,3 +7794,191 @@ async def deletedata():
     </body></html>
     """
 
+
+
+
+
+# === TELEGRAM FUNNEL START RUNTIME V1 ===
+from fastapi import Body as _TgFunnelBody
+import json as _tg_funnel_json
+
+def tg_funnel_db_path():
+    return os.getenv(
+        "CONTENT_AI_DB_PATH",
+        os.getenv("CONTENT_AI_DB", os.path.join(os.getcwd(), "data", "content.db"))
+    )
+
+def tg_funnel_now():
+    return datetime.now().isoformat(timespec="seconds")
+
+def tg_funnel_send_message(chat_id, text, button_text="", button_url=""):
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN missing"}
+
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": False,
+    }
+
+    if button_text and button_url:
+        payload["reply_markup"] = {
+            "inline_keyboard": [[
+                {"text": button_text, "url": button_url}
+            ]]
+        }
+
+    r = requests.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        json=payload,
+        timeout=20,
+    )
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text}
+
+    return {
+        "ok": bool(data.get("ok")),
+        "status_code": r.status_code,
+        "telegram": data,
+    }
+
+def tg_funnel_handle_start_payload(start_payload: str, chat_id: str, username: str = ""):
+    dbp = tg_funnel_db_path()
+    con = sqlite3.connect(dbp)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    session = cur.execute("""
+        SELECT *
+        FROM funnel_sessions_dynamic
+        WHERE telegram_start_payload=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (start_payload,)).fetchone()
+
+    if not session:
+        con.close()
+        return {"ok": False, "error": "session not found", "start_payload": start_payload}
+
+    session = dict(session)
+    funnel_key = session.get("funnel_key") or ""
+
+    step = cur.execute("""
+        SELECT *
+        FROM funnel_steps_dynamic
+        WHERE funnel_key=?
+          AND active=1
+          AND trigger_stage IN ('tg_started', 'created', '')
+        ORDER BY
+          CASE WHEN trigger_stage='tg_started' THEN 0 ELSE 1 END,
+          step_order ASC,
+          id ASC
+        LIMIT 1
+    """, (funnel_key,)).fetchone()
+
+    if not step:
+        cur.execute("""
+            UPDATE funnel_sessions_dynamic
+            SET telegram_chat_id=?,
+                telegram_username=?,
+                status='telegram_started',
+                stage='tg_started',
+                updated_at=?
+            WHERE id=?
+        """, (str(chat_id), username, tg_funnel_now(), session["id"]))
+        con.commit()
+        con.close()
+        return {"ok": False, "error": "no active first step", "funnel_key": funnel_key}
+
+    step = dict(step)
+
+    text = step.get("message_text") or "🌿 Вітаю! Починаємо."
+    button_text = step.get("button_text") or ""
+    button_url = step.get("button_url") or ""
+    next_stage = step.get("next_stage") or "intro_sent"
+
+    send_res = tg_funnel_send_message(chat_id, text, button_text, button_url)
+
+    new_status = "telegram_started" if send_res.get("ok") else "telegram_send_error"
+    cur.execute("""
+        UPDATE funnel_sessions_dynamic
+        SET telegram_chat_id=?,
+            telegram_username=?,
+            status=?,
+            stage=?,
+            updated_at=?,
+            error=CASE WHEN ? THEN error ELSE ? END
+        WHERE id=?
+    """, (
+        str(chat_id),
+        username,
+        new_status,
+        next_stage,
+        tg_funnel_now(),
+        1 if send_res.get("ok") else 0,
+        _tg_funnel_json.dumps(send_res, ensure_ascii=False),
+        session["id"],
+    ))
+
+    con.commit()
+    con.close()
+
+    return {
+        "ok": bool(send_res.get("ok")),
+        "session_id": session["id"],
+        "funnel_key": funnel_key,
+        "sent_step": step.get("step_key"),
+        "next_stage": next_stage,
+        "send_result": send_res,
+    }
+
+@app.post("/api/telegram/funnel/webhook")
+async def telegram_funnel_webhook(update: dict = _TgFunnelBody(default={})):
+    msg = update.get("message") or update.get("edited_message") or {}
+    chat = msg.get("chat") or {}
+    text = str(msg.get("text") or "").strip()
+    chat_id = chat.get("id")
+    username = (
+        chat.get("username")
+        or msg.get("from", {}).get("username")
+        or ""
+    )
+
+    if not chat_id:
+        return {"ok": False, "error": "chat_id missing"}
+
+    if text.startswith("/start funnel_"):
+        start_payload = text.split(maxsplit=1)[1].strip()
+        return tg_funnel_handle_start_payload(start_payload, str(chat_id), str(username or ""))
+
+    if text == "/start":
+        return tg_funnel_send_message(chat_id, "👋 Вітаю! Бот підключено. Надішли спеціальне посилання з воронки.")
+
+    return {"ok": True, "ignored": True, "text": text}
+
+@app.post("/api/telegram/funnel/test-start")
+def telegram_funnel_test_start(payload: dict = _TgFunnelBody(default={})):
+    start_payload = str(payload.get("start_payload") or payload.get("telegram_start_payload") or "").strip()
+    chat_id = str(payload.get("chat_id") or "").strip()
+    username = str(payload.get("username") or "test").strip()
+
+    if not start_payload or not chat_id:
+        return {"ok": False, "error": "start_payload and chat_id required"}
+
+    return tg_funnel_handle_start_payload(start_payload, chat_id, username)
+
+@app.get("/api/telegram/funnel/status")
+def telegram_funnel_status():
+    return {
+        "ok": True,
+        "bot_token_exists": bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip()),
+        "db_path": tg_funnel_db_path(),
+        "webhook_endpoint": "/api/telegram/funnel/webhook",
+    }
+
+# === /TELEGRAM FUNNEL START RUNTIME V1 ===
