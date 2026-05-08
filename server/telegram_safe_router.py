@@ -31,9 +31,51 @@ PURPOSE_ROLE_MAP = {
 
 
 def db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
     return con
+
+
+def init_safe_telegram_db():
+    con = db()
+    cur = con.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_chats (
+        chat_id TEXT PRIMARY KEY,
+        type TEXT,
+        title TEXT,
+        username TEXT,
+        first_name TEXT,
+        last_name TEXT,
+        enabled INTEGER DEFAULT 1,
+        role TEXT DEFAULT 'subscriber',
+        thread_id TEXT,
+        parent_chat_id TEXT,
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_scheduled_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id TEXT,
+        target_chat_id TEXT,
+        thread_id TEXT,
+        text TEXT,
+        title TEXT,
+        status TEXT DEFAULT 'pending',
+        scheduled_at TEXT,
+        published_at TEXT,
+        error TEXT,
+        confirmed INTEGER DEFAULT 0,
+        payload_json TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT
+    )
+    """)
+    con.commit()
+    con.close()
 
 
 def get_chat_ids_for_purpose(purpose: str):
