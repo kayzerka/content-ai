@@ -320,7 +320,7 @@ def run_llm(prompt: str) -> str:
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "regresolog-content-ai"}
+    return FileResponse("static/index.html")
 
 
 @app.get("/llm/status")
