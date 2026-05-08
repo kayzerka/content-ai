@@ -1,0 +1,10 @@
+[
+  {"chat_id":"-1003977054867","type":"supergroup","title":"Легке Тіло БВ","enabled":1,"role":"client_group","is_topic":0},
+  {"chat_id":"-1003570931644","type":"supergroup","title":"БВ 🔬 Лабораторія Чистої Карми🕊️","enabled":1,"role":"client_group","is_topic":0},
+  {"chat_id":"-1003340506793","type":"channel","title":"𝒦𝓋𝒶𝓃𝓉𝑜𝓋𝒶_𝓎𝒶 ✨","enabled":1,"role":"client_channel","is_topic":0},
+  {"chat_id":"-1003978692875","type":"channel","title":"Новий клієнтський канал","enabled":1,"role":"client_channel","is_topic":0},
+  {"chat_id":"330800472","type":"private","username":"Alex_Poberezhniy","first_name":"Олексій","enabled":1,"role":"internal_planner","is_topic":0},
+  {"chat_id":"697587340","type":"private","username":"Poberezhna_Dasha","first_name":"Даша","enabled":1,"role":"internal_planner","is_topic":0},
+  {"chat_id":"-1003570931644:6","type":"supergroup","title":"БВ 🔬 Лабораторія / Балакалка","enabled":1,"role":"topic","thread_id":"6","parent_chat_id":"-1003570931644","is_topic":1},
+  {"chat_id":"-1003457886364","type":"supergroup","title":"𝒦𝓋𝒶𝓃𝓉𝑜𝓋𝒶_𝓎𝒶 ✨ / Коментарі","enabled":1,"role":"topic","thread_id":null,"parent_chat_id":"-1003340506793","is_topic":1}
+]
