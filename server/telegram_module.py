@@ -548,6 +548,7 @@ def telegram_poll_updates():
 
 
 def run_scheduler():
+    init_telegram_db()
     from datetime import datetime
     now = datetime.utcnow().isoformat()
 
