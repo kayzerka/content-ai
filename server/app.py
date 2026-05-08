@@ -6938,7 +6938,12 @@ def ig_meta_user_id():
 
 
 def ig_meta_api_get(path: str, params: dict | None = None):
-    token = ig_meta_access_token()
+    # /{FB_PAGE_ID}/conversations?platform=instagram requires PAGE token.
+    if "conversations" in str(path):
+        token = os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+    else:
+        token = ig_meta_access_token()
+
     if not token:
         return {"status": "error", "error": "IG_ACCESS_TOKEN / FB_PAGE_ACCESS_TOKEN missing"}
 
