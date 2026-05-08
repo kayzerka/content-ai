@@ -72,6 +72,25 @@ def init_telegram_db():
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS telegram_scheduled_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chat_id TEXT,
+        target_chat_id TEXT,
+        thread_id TEXT,
+        text TEXT,
+        title TEXT,
+        status TEXT DEFAULT 'pending',
+        scheduled_at TEXT,
+        published_at TEXT,
+        error TEXT,
+        confirmed INTEGER DEFAULT 0,
+        payload_json TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT
+    )
+    """)
+
     con.commit()
     con.close()
 
