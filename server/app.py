@@ -141,18 +141,34 @@ async def webhook(req: Request):
         saved = ig_webhook_save_payload(payload)
         print(f"IG_WEBHOOK_SAVE_V1 saved={saved}")
 
-        # WEBHOOK_PLANNER_NOTIFY_V1
+        # WEBHOOK_HUMAN_NOTIFY_V2
         try:
             from telegram_safe_router import send_safe
-            pretty = json.dumps(payload, ensure_ascii=False)[:3000]
+
+            entry = (payload.get("entry") or [{}])[0]
+            messaging = (entry.get("messaging") or [{}])[0]
+            msg = messaging.get("message") or {}
+
+            sender_id = ((messaging.get("sender") or {}).get("id") or "unknown")
+            recipient_id = ((messaging.get("recipient") or {}).get("id") or "unknown")
+            text_msg = msg.get("text") or ""
+            mid = msg.get("mid") or ""
+
+            pretty_text = (
+                "📩 Instagram Direct webhook\n\n"
+                f"💬 Повідомлення: {text_msg or '-'}\n"
+                f"👤 Sender ID: {sender_id}\n"
+                f"📥 Recipient ID: {recipient_id}\n"
+                f"🆔 Message ID: {mid[:80]}{'…' if len(mid) > 80 else ''}\n"
+                f"💾 Saved: {saved}"
+            )
+
             send_safe({
                 "purpose": "planner_internal",
-                "text": "📩 META WEBHOOK прилетів\n"
-                        f"saved={saved}\n\n"
-                        f"{pretty}"
+                "text": pretty_text
             })
         except Exception as notify_err:
-            print("[WEBHOOK_PLANNER_NOTIFY_ERROR]", repr(notify_err))
+            print("[WEBHOOK_HUMAN_NOTIFY_ERROR]", repr(notify_err))
 
         try:
             if "instagram_reaction_webhook_ingest" in globals():
