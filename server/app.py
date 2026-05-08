@@ -141,6 +141,19 @@ async def webhook(req: Request):
         saved = ig_webhook_save_payload(payload)
         print(f"IG_WEBHOOK_SAVE_V1 saved={saved}")
 
+        # WEBHOOK_PLANNER_NOTIFY_V1
+        try:
+            from telegram_safe_router import send_safe
+            pretty = json.dumps(payload, ensure_ascii=False)[:3000]
+            send_safe({
+                "purpose": "planner_internal",
+                "text": "📩 META WEBHOOK прилетів\n"
+                        f"saved={saved}\n\n"
+                        f"{pretty}"
+            })
+        except Exception as notify_err:
+            print("[WEBHOOK_PLANNER_NOTIFY_ERROR]", repr(notify_err))
+
         try:
             if "instagram_reaction_webhook_ingest" in globals():
                 instagram_reaction_webhook_ingest(payload)
