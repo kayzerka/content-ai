@@ -9,7 +9,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram-safe"])
 
-DB_PATH = os.getenv("TELEGRAM_DB_PATH", "db/telegram.sqlite")
+DB_PATH = os.getenv("TELEGRAM_DB_PATH", os.path.join(os.getcwd(), "data", "telegram.sqlite"))
 INTERNAL_BOT_TOKEN = (
     os.getenv("TELEGRAM_BOT_TOKEN")
     or os.getenv("BOT_TOKEN")

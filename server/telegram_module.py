@@ -6,7 +6,7 @@ from fastapi import APIRouter, Body
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
-DB_PATH = os.getenv("TELEGRAM_DB_PATH", "db/telegram.sqlite")
+DB_PATH = os.getenv("TELEGRAM_DB_PATH", os.path.join(os.getcwd(), "data", "telegram.sqlite"))
 
 
 def db():
