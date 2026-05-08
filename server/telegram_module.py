@@ -1216,3 +1216,23 @@ def telegram_chat_manual_upsert_v2(payload: dict = {}):
             "detail": repr(e),
             "trace": traceback.format_exc()[-1200:],
         }
+
+# TELEGRAM_MODULE_DB_DEBUG_V1
+@router.get("/debug/module_db")
+def telegram_module_debug_db():
+    import os
+    con = db()
+    rows = [dict(r) for r in con.execute("""
+        SELECT chat_id, title, enabled, role
+        FROM telegram_chats
+        ORDER BY role, title, chat_id
+    """).fetchall()]
+    con.close()
+
+    return {
+        "ok": True,
+        "db_path": DB_PATH,
+        "cwd": os.getcwd(),
+        "count": len(rows),
+        "rows": rows,
+    }
