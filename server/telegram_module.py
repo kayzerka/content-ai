@@ -1124,7 +1124,7 @@ def telegram_chat_manual_upsert(payload: dict = {}):
     is_topic = int(payload.get("is_topic", 0))
 
     import sqlite3
-    con = sqlite3.connect(TELEGRAM_DB)
+    con = sqlite3.connect(DB_PATH)
     cur = con.cursor()
 
     cur.execute("""
@@ -1169,7 +1169,7 @@ def telegram_chat_manual_upsert_v2(payload: dict = {}):
     import sqlite3, traceback
     try:
         init_telegram_db()
-        con = sqlite3.connect(TELEGRAM_DB)
+        con = sqlite3.connect(DB_PATH)
         cur = con.cursor()
 
         for ddl in [
