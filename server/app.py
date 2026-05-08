@@ -26,7 +26,7 @@ app.include_router(funnels_router)
 app.include_router(telegram_safe_router)
 
 MODEL_PATH = "/Volumes/B/Regresolog/content_ai/models/model.gguf"
-DB_PATH = "/Volumes/B/Regresolog/content_ai/data/content.db"
+DB_PATH = os.getenv("CONTENT_AI_DB_PATH", os.path.join(os.getcwd(), "data", "content.db"))
 
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip()
