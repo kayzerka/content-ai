@@ -3020,10 +3020,10 @@ def platform_status():
             "mode": "public_stats" if youtube_api_key and youtube_channel_id else "not_connected",
         },
         "facebook": {
-            "connected": bool(os.getenv("FB_PAGE_ID", "").strip() and os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
-            "mode": "graph_api" if os.getenv("FB_PAGE_ID", "").strip() and os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip() else "not_connected",
+            "connected": bool(os.getenv("FB_PAGE_ID", "").strip() and (os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip())),
+            "mode": "graph_api" if os.getenv("FB_PAGE_ID", "").strip() and (os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()) else "not_connected",
             "page_id_exists": bool(os.getenv("FB_PAGE_ID", "").strip()),
-            "page_token_exists": bool(os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
+            "page_token_exists": bool((os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip())),
         },
     }
     
@@ -3063,7 +3063,7 @@ def meta_graph_get(path: str, token: str, params: dict | None = None):
 def get_fb_page_env():
     return {
         "page_id": os.getenv("FB_PAGE_ID", "").strip(),
-        "page_token": os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip(),
+        "page_token": (os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
         "user_token": (
             os.getenv("META_USER_ACCESS_TOKEN", "").strip()
             or os.getenv("IG_ACCESS_TOKEN", "").strip()
@@ -6124,8 +6124,8 @@ def debug_env():
     return {
         "FB_PAGE_ID_exists": bool(os.getenv("FB_PAGE_ID", "").strip()),
         "FB_PAGE_ID_len": len(os.getenv("FB_PAGE_ID", "").strip()),
-        "FB_PAGE_ACCESS_TOKEN_exists": bool(os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
-        "FB_PAGE_ACCESS_TOKEN_len": len(os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
+        "FB_PAGE_ACCESS_TOKEN_exists": bool((os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip())),
+        "FB_PAGE_ACCESS_TOKEN_len": len((os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip())),
         "IG_ACCESS_TOKEN_exists": bool(os.getenv("IG_ACCESS_TOKEN", "").strip()),
         "IG_USER_ID_exists": bool(os.getenv("IG_USER_ID", "").strip()),
         "CONTENT_AI_DB_PATH": os.getenv("CONTENT_AI_DB_PATH", ""),
@@ -6928,7 +6928,7 @@ def instagram_reaction_match_plan(payload: dict = Body(default={})):
 def ig_meta_access_token():
     return (
         os.getenv("IG_ACCESS_TOKEN", "").strip()
-        or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+        or (os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip())
         or os.getenv("META_ACCESS_TOKEN", "").strip()
     )
 
@@ -6940,7 +6940,7 @@ def ig_meta_user_id():
 def ig_meta_api_get(path: str, params: dict | None = None):
     # /{FB_PAGE_ID}/conversations?platform=instagram requires PAGE token.
     if "conversations" in str(path):
-        token = os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+        token = (os.getenv("FB_PAGE_TOKEN_V2", "").strip() or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip())
     else:
         token = ig_meta_access_token()
 
