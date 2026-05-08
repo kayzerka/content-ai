@@ -1,0 +1,3384 @@
+import traceback
+from urllib.parse import parse_qs
+import tempfile
+from fastapi import FastAPI, Request, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse, PlainTextResponse
+import sqlite3
+import subprocess
+import shutil
+import os
+import requests
+import hashlib
+from datetime import datetime
+from dotenv import load_dotenv
+
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
+app = FastAPI()
+
+MODEL_PATH = "/Volumes/B/Regresolog/content_ai/models/model.gguf"
+DB_PATH = "/Volumes/B/Regresolog/content_ai/data/content.db"
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip()
+DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com").strip()
+
+VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "change_me")
+
+
+@app.get("/webhook")
+async def verify(request: Request):
+    params = request.query_params
+
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token")
+    challenge = params.get("hub.challenge")
+
+    if mode == "subscribe" and token == VERIFY_TOKEN:
+        return PlainTextResponse(challenge)
+
+    return {"error": "invalid token"}
+
+
+@app.post("/webhook")
+async def receive(request: Request):
+    data = await request.json()
+
+    # 🔍 лог для дебагу — побачиш всі вхідні події
+    print("WEBHOOK EVENT:", data)
+
+    return {"status": "ok"}
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        platform TEXT,
+        url TEXT DEFAULT '',
+        text TEXT,
+        views INTEGER DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        comments INTEGER DEFAULT 0,
+        saves INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        analysis TEXT DEFAULT '',
+        score REAL DEFAULT 0
+    )
+    """)
+
+    # safe migrations
+    cols = [r[1] for r in cur.execute("PRAGMA table_info(posts)").fetchall()]
+    if "url" not in cols:
+        cur.execute("ALTER TABLE posts ADD COLUMN url TEXT DEFAULT ''")
+    if "analysis" not in cols:
+        cur.execute("ALTER TABLE posts ADD COLUMN analysis TEXT DEFAULT ''")
+
+    con.commit()
+    con.close()
+
+
+init_db()
+
+
+def calc_score(views, likes, comments, saves, shares):
+    if views <= 0:
+        return 0
+    return round(((likes + comments * 3 + saves * 4 + shares * 5) / views) * 1000, 2)
+
+
+def find_llama_cli():
+    candidates = [
+        shutil.which("llama-cli"),
+        shutil.which("main"),
+        "/Volumes/B/Regresolog/content_ai/llama.cpp/build/bin/llama-cli",
+        "/Volumes/B/Regresolog/llama.cpp/build/bin/llama-cli",
+        "/usr/local/bin/llama-cli",
+        "/opt/homebrew/bin/llama-cli",
+    ]
+
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+
+    return None
+
+
+def run_deepseek(prompt: str) -> str:
+    if not DEEPSEEK_API_KEY:
+        return "DEEPSEEK_ERROR: DEEPSEEK_API_KEY не встановлений у .env"
+
+    url = DEEPSEEK_API_BASE.rstrip("/") + "/chat/completions"
+
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Ти AI-контент директор для Instagram/Facebook/YouTube "
+                    "експерта-регресолога/кармолога. Відповідай українською, "
+                    "структуровано, практично, з фокусом на продажі, прогрів, "
+                    "бренд і контент-стратегію."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.75,
+        "max_tokens": 1400,
+        "stream": False
+    }
+
+    try:
+        r = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=90,
+        )
+
+        if r.status_code != 200:
+            return f"DEEPSEEK_ERROR {r.status_code}:\n{r.text}"
+
+        data = r.json()
+        return data["choices"][0]["message"]["content"].strip()
+
+    except Exception as e:
+        return f"DEEPSEEK_EXCEPTION: {e}"
+
+
+def run_local_llm(prompt: str) -> str:
+    url = os.getenv("LOCAL_LLM_URL", "http://127.0.0.1:8081/completion")
+
+    payload = {
+        "prompt": prompt,
+        "n_predict": 700,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "stream": False
+    }
+
+    try:
+        r = requests.post(url, json=payload, timeout=600)
+        if r.status_code != 200:
+            return f"LOCAL_LLM_ERROR {r.status_code}:\n{r.text}"
+
+        data = r.json()
+        return data.get("content", "").strip()
+
+    except Exception as e:
+        return f"LOCAL_LLM_EXCEPTION: {e}"
+
+def run_llm(prompt: str) -> str:
+    cloud = run_deepseek(prompt)
+
+    if not (
+        cloud.startswith("DEEPSEEK_ERROR")
+        or cloud.startswith("DEEPSEEK_EXCEPTION")
+    ):
+        return cloud
+
+    local = run_local_llm(prompt)
+
+    return (
+        "⚠️ DeepSeek API не спрацював, увімкнувся fallback.\n\n"
+        f"{cloud}\n\n"
+        "=== LOCAL FALLBACK RESULT ===\n"
+        f"{local}"
+    )
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "regresolog-content-ai"}
+
+
+@app.get("/llm/status")
+def llm_status():
+    return {
+        "deepseek_key_exists": bool(DEEPSEEK_API_KEY),
+        "deepseek_model": DEEPSEEK_MODEL,
+        "deepseek_api_base": DEEPSEEK_API_BASE,
+        "local_llama_cli": find_llama_cli(),
+        "local_model_path": MODEL_PATH,
+        "local_model_exists": os.path.exists(MODEL_PATH),
+    }
+
+
+
+AI_ANALYSIS_PROMPT_VERSION = "master_reels_v2_2026_05_01"
+
+# --- VIDEO TRANSCRIPT + FRONT ANALYZE PATCH START ---
+def extract_audio_from_video(video_path: str) -> str:
+    out_path = tempfile.mktemp(suffix=".wav")
+    cmd = [
+        os.getenv("FFMPEG_BIN", "ffmpeg"), "-y", "-i", video_path,
+        "-vn", "-acodec", "pcm_s16le",
+        "-ar", "16000", "-ac", "1", out_path,
+    ]
+    subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return out_path
+
+
+def download_video_to_tmp(video_url: str) -> str:
+    tmp_path = tempfile.mktemp(suffix=".mp4")
+
+    headers = {}
+    api_token = os.getenv("VIDEO_API_TOKEN", "").strip()
+    if api_token:
+        headers["Authorization"] = f"Bearer {api_token}"
+
+    with requests.get(video_url, headers=headers, stream=True, timeout=120) as r:
+        r.raise_for_status()
+        with open(tmp_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+
+    return tmp_path
+
+
+def resolve_video_source(video_path: str = "", video_url: str = "") -> tuple[str, bool]:
+    """
+    Returns: (local_video_path, should_cleanup)
+    """
+    video_path = (video_path or "").strip()
+    video_url = (video_url or "").strip()
+
+    if video_path:
+        src = Path(video_path)
+
+        if not src.exists():
+            raise FileNotFoundError(f"video file not found: {video_path}")
+
+        # If path is already ASCII-safe, pass it directly to ffmpeg.
+        try:
+            video_path.encode("ascii")
+            return video_path, False
+        except UnicodeEncodeError:
+            pass
+
+        # Old macOS / subprocess can fail on Cyrillic paths.
+        # Copy to ASCII temp path instead of symlink to avoid symlink loops.
+        safe_dir = Path(__file__).resolve().parent / "_tmp_video_sources"
+        safe_dir.mkdir(exist_ok=True)
+
+        suffix = src.suffix if src.suffix else ".mp4"
+        safe_path = safe_dir / f"input_video_copy{suffix}"
+
+        import shutil
+        if safe_path.exists() or safe_path.is_symlink():
+            safe_path.unlink()
+
+        shutil.copy2(str(src), str(safe_path))
+        return str(safe_path), True
+
+    if video_url:
+        local_tmp = download_video_to_tmp(video_url)
+        return local_tmp, True
+
+    raise ValueError("empty video_path and empty video_url")
+
+
+def transcribe_video(video_path: str = "", video_url: str = "") -> str:
+    local_video_path, cleanup_video = resolve_video_source(video_path, video_url)
+    audio_path = extract_audio_from_video(local_video_path)
+
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        with open(audio_path, "rb") as audio_file:
+            resp = client.audio.transcriptions.create(
+                model=os.getenv("OPENAI_TRANSCRIBE_MODEL", "gpt-4o-mini-transcribe"),
+                file=audio_file,
+            )
+
+        return getattr(resp, "text", "").strip()
+
+    finally:
+        try:
+            os.remove(audio_path)
+        except Exception:
+            pass
+
+        if cleanup_video:
+            try:
+                os.remove(local_video_path)
+            except Exception:
+                pass
+
+
+def build_content_analysis_prompt(text: str = "", video_path: str = "", transcript: str = "") -> str:
+    merged = (text or "").strip()
+
+    if transcript.strip():
+        merged += "\n\n=== ТРАНСКРИПТ З ВІДЕО ===\n" + transcript.strip()
+
+    clean_text = (
+        merged
+        .encode("utf-8", errors="ignore")
+        .decode("utf-8", errors="ignore")
+    ).strip()
+
+    return f"""
+Ти — AI контент-стратег, який спеціалізується на вірусних Instagram Reels / TikTok у ніші психології, регресології, кармології, трансформаційних практик і роботи з підсвідомістю.
+
+Твоя задача — бути чесним, прямим, конкретним і практичним контент-директором. Критикуй ідею та структуру, але не принижуй автора і не використовуй образливі формулювання.
+
+Ти аналізуєш відео не як глядач, а як спеціаліст, який відповідає за:
+- утримання уваги
+- силу першої фрази
+- біль аудиторії
+- віральність
+- коментарі
+- підписки
+- продаж експертності
+
+ДЖЕРЕЛО:
+{video_path or "не передано"}
+
+ТЕКСТ / ТРАНСКРИПТ / ДАНІ З ФРОНТА:
+{clean_text}
+
+---
+
+ДАЙ ВІДПОВІДЬ СТРОГО ПО СТРУКТУРІ:
+
+## 1. ОЦІНКА ВІДЕО: 0–100
+Дай чесну оцінку відео з точки зору віральності.
+Поясни оцінку коротко і жорстко.
+
+## 2. ГОЛОВНА ТЕМА РОЛИКА
+Сформулюй тему одним реченням.
+Не абстрактно. Максимально конкретно.
+
+## 3. ГОЛОВНИЙ БІЛЬ АУДИТОРІЇ
+Напиши:
+- який біль тут можна зачепити
+- чого людина боїться
+- що її мучить
+- чому їй треба додивитися це відео
+
+## 4. ЧОМУ ВІДЕО НЕ ЗАЙДЕ / АБО ЧОМУ ЗАЙДЕ
+Без загальних фраз.
+Напиши конкретно:
+- де втрачається увага
+- які фрази слабкі
+- де немає болю
+- де немає тригера
+- де занадто багато туману
+- що звучить як “вода”
+
+## 5. СИЛА ХУКУ
+Оціни перші 3 секунди:
+- слабкий / середній / сильний
+
+Поясни:
+- чи є інтрига
+- чи є біль
+- чи є конфлікт
+- чи є причина дивитися далі
+
+## 6. 10 СИЛЬНИХ ХУКІВ
+Дай 10 варіантів хуків.
+
+Правила:
+- до 10 слів
+- болючі
+- конкретні
+- без води
+- без езотеричного туману
+- такі, які можна сказати в перші 2 секунди
+
+Формат:
+1.
+2.
+3.
+4.
+5.
+6.
+7.
+8.
+9.
+10.
+
+## 7. НОВИЙ СЦЕНАРІЙ REELS НА 15–30 СЕКУНД
+Дай готовий сценарій по блоках:
+
+Формат:
+[0–3 сек] Хук:
+текст
+
+[3–8 сек] Підсилення болю:
+текст
+
+[8–18 сек] Пояснення:
+текст
+
+[18–25 сек] Перелом / інсайт:
+текст
+
+[25–30 сек] CTA:
+текст
+
+## 8. ЩО ПОКАЗУВАТИ В КАДРІ
+Дай конкретні візуальні дії:
+- міміка
+- рух
+- кадр
+- зміна плану
+- текст на екрані
+- де зробити паузу
+- де зробити наближення
+
+## 9. ГОТОВІ СУБТИТРИ НА ЕКРАН
+Напиши короткі рядки для субтитрів.
+Кожен рядок до 7 слів.
+Без довгих речень.
+
+## 10. CTA — 5 ВАРІАНТІВ
+Дай:
+1. CTA на коментар
+2. CTA на підписку
+3. CTA на збереження
+4. CTA на повідомлення в direct
+5. CTA на запис / консультацію
+
+## 11. ЯК ЗРОБИТИ ВІДЕО СИЛЬНІШИМ
+Дай конкретні правки:
+- що прибрати
+- що скоротити
+- що додати
+- яку першу фразу замінити
+- де зробити монтажний удар
+- який текст винести на екран
+
+## 12. ФІНАЛЬНА ВЕРСІЯ ТЕКСТУ ДЛЯ ЗАПИСУ
+Напиши повністю готовий текст, який можна одразу читати на камеру.
+
+Правила відповіді:
+- не пиши абстрактно
+- не пиши “можливо”
+- не згладжуй критику
+- не використовуй канцелярит
+- давай готові фрази
+- говори українською
+- якщо відео слабке — скажи прямо, але професійно, без образ і токсичних формулювань
+"""
+
+
+@app.post("/video/transcribe-path")
+def video_transcribe_path(video_path: str = "", video_url: str = ""):
+    try:
+        transcript = transcribe_video(video_path=video_path, video_url=video_url)
+        return {
+            "status": "ok",
+            "video_path": video_path,
+            "video_url": video_url,
+            "transcript": transcript,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "transcript": "",
+        }
+
+
+@app.post("/video/analyze-path")
+def video_analyze_path(video_path: str = "", video_url: str = ""):
+    try:
+        transcript = transcribe_video(video_path=video_path, video_url=video_url)
+        prompt = build_content_analysis_prompt(
+            text="",
+            video_path=video_path or video_url,
+            transcript=transcript,
+        )
+        analysis = run_llm(prompt)  # cache disabled
+
+        return {
+            "status": "ok",
+            "video_path": video_path,
+            "transcript": transcript,
+            "result": analysis,
+            "analysis": analysis,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "result": "",
+        }
+
+
+@app.post("/analyze")
+async def analyze(request: Request):
+    text = ""
+    video_path = ""
+    video_url = ""
+
+    text = request.query_params.get("text", "") or ""
+    video_path = request.query_params.get("video_path", "") or ""
+    video_url = request.query_params.get("video_url", "") or ""
+
+    try:
+        content_type = request.headers.get("content-type", "")
+
+        if "application/json" in content_type:
+            data = await request.json()
+            text = data.get("text", text) or text
+            video_path = data.get("video_path", video_path) or video_path
+            video_url = data.get("video_url", video_url) or video_url
+        else:
+            raw = await request.body()
+            parsed = parse_qs(raw.decode("utf-8", errors="ignore"))
+            text = (parsed.get("text", [text])[0] or text)
+            video_path = (parsed.get("video_path", [video_path])[0] or video_path)
+            video_url = (parsed.get("video_url", [video_url])[0] or video_url)
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": f"request parse failed: {str(e)}",
+            "result": "",
+        }
+
+    transcript = ""
+
+    if video_path or video_url:
+        try:
+            transcript = transcribe_video(video_path=video_path, video_url=video_url)
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": f"transcription failed: {str(e)}",
+                "traceback": traceback.format_exc(),
+                "result": "",
+            }
+
+    if not text.strip() and not transcript.strip():
+        return {
+            "status": "error",
+            "error": "empty text and empty transcript",
+            "result": "",
+        }
+
+    prompt = build_content_analysis_prompt(
+        text=text,
+        video_path=video_path or video_url,
+        transcript=transcript,
+    )
+
+    return {
+        "status": "ok",
+        "result": run_llm(prompt),
+        "transcript": transcript,
+        "video_path": video_path,
+        "video_url": video_url,
+    }
+# --- VIDEO TRANSCRIPT + FRONT ANALYZE PATCH END ---
+
+
+
+@app.post("/posts/add")
+def add_post(
+    platform: str,
+    url: str = "",
+    text: str = "",
+    views: int = 0,
+    likes: int = 0,
+    comments: int = 0,
+    saves: int = 0,
+    shares: int = 0,
+    analyze_ai: bool = True,
+):
+    score = calc_score(views, likes, comments, saves, shares)
+
+    if analyze_ai and text.strip():
+        prompt = f"""
+Ти AI-контент директор для експерта-регресолога/кармолога.
+
+Проаналізуй конкретний ролик.
+
+Платформа: {platform}
+URL: {url}
+
+Опис / текст ролика:
+{text}
+
+Метрики:
+views={views}
+likes={likes}
+comments={comments}
+saves={saves}
+shares={shares}
+score={score}
+
+Дай відповідь українською:
+
+1. Тип контенту
+2. Головний біль аудиторії
+3. Хук: сильний чи слабкий
+4. Чому ролик міг спрацювати або не спрацювати
+5. Що покращити
+6. Який CTA додати
+7. Як цей ролик використати у воронці
+8. 3 нові ідеї роликів на основі цього
+"""
+        analysis = run_llm(prompt)  # cache disabled
+    else:
+        analysis = "AI analysis не запускався: немає тексту/опису або analyze_ai=false."
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO posts (
+            created_at, platform, url, text,
+            views, likes, comments, saves, shares,
+            analysis, score
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        platform, url, text,
+        views, likes, comments, saves, shares,
+        analysis, score,
+    ))
+    post_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "post_id": post_id,
+        "score": score,
+        "analysis": analysis,
+    }
+
+
+@app.get("/posts/list")
+def list_posts():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM posts ORDER BY id DESC LIMIT 200").fetchall()
+    con.close()
+    return {"posts": [dict(r) for r in rows]}
+
+
+@app.get("/posts/stats")
+def posts_stats():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    total_posts = cur.execute("SELECT COUNT(*) AS n FROM posts").fetchone()["n"]
+    total_views = cur.execute("SELECT COALESCE(SUM(views),0) AS n FROM posts").fetchone()["n"]
+    avg_score = cur.execute("SELECT COALESCE(AVG(score),0) AS n FROM posts").fetchone()["n"]
+
+    top_posts = cur.execute("""
+        SELECT id, platform, url, text, views, likes, comments, saves, shares, score
+        FROM posts
+        ORDER BY score DESC, views DESC
+        LIMIT 5
+    """).fetchall()
+
+    con.close()
+
+    return {
+        "total_posts": total_posts,
+        "total_views": total_views,
+        "avg_score": round(avg_score, 2),
+        "top_posts": [dict(r) for r in top_posts],
+    }
+
+
+@app.post("/generate")
+def generate(insight: str):
+    prompt = f"""
+Ти AI-креативний директор для експерта-регресолога.
+
+На основі інсайту:
+{insight}
+
+Згенеруй 10 ідей Reels українською.
+
+Для кожної:
+1. Назва
+2. Хук першої секунди
+3. Біль глядача
+4. Сценарій 20-40 секунд
+5. CTA
+6. Ціль: охоплення / довіра / прогрів / продаж
+"""
+    return {"result": run_llm(prompt)}
+
+
+
+
+@app.get("/login/instagram")
+def login_instagram():
+    app_id = os.getenv("META_APP_ID", "").strip()
+    redirect_uri = os.getenv("META_REDIRECT_URI", "http://127.0.0.1:8000/callback/instagram").strip()
+
+    if not app_id:
+        return {"status": "error", "message": "META_APP_ID не встановлений у .env"}
+
+    scope = "pages_show_list"
+
+    url = (
+        "https://www.facebook.com/v19.0/dialog/oauth"
+        f"?client_id={app_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&scope={scope}"
+        f"&response_type=code"
+    )
+
+    return RedirectResponse(url)
+
+
+@app.get("/callback/instagram")
+def callback_instagram(code: str = "", error: str = "", error_description: str = ""):
+    if error:
+        return {
+            "status": "error",
+            "error": error,
+            "error_description": error_description,
+        }
+
+    app_id = os.getenv("META_APP_ID", "").strip()
+    app_secret = os.getenv("META_APP_SECRET", "").strip()
+    redirect_uri = os.getenv("META_REDIRECT_URI", "http://127.0.0.1:8000/callback/instagram").strip()
+
+    if not app_id or not app_secret:
+        return {"status": "error", "message": "META_APP_ID або META_APP_SECRET не встановлені у .env"}
+
+    token_url = "https://graph.facebook.com/v19.0/oauth/access_token"
+
+    r = requests.get(token_url, params={
+        "client_id": app_id,
+        "client_secret": app_secret,
+        "redirect_uri": redirect_uri,
+        "code": code,
+    }, timeout=30)
+
+    data = r.json()
+
+    if "access_token" not in data:
+        return {
+            "status": "error",
+            "step": "exchange_code_for_token",
+            "response": data,
+        }
+
+    access_token = data["access_token"]
+
+    # save token locally
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS integrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform TEXT,
+        access_token TEXT,
+        raw_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute(
+        "INSERT INTO integrations (platform, access_token, raw_json, created_at) VALUES (?, ?, ?, ?)",
+        ("instagram", access_token, str(data), datetime.now().isoformat(timespec="seconds"))
+    )
+    con.commit()
+    con.close()
+
+    return {
+        "status": "connected",
+        "platform": "instagram",
+        "message": "Instagram/Facebook токен отримано і збережено локально.",
+        "next": "Відкрий /instagram/status для перевірки.",
+    }
+
+
+@app.get("/instagram/status")
+def instagram_status():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS integrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform TEXT,
+        access_token TEXT,
+        raw_json TEXT,
+        created_at TEXT
+    )
+    """)
+
+    row = cur.execute("""
+        SELECT id, platform, created_at
+        FROM integrations
+        WHERE platform='instagram'
+        ORDER BY id DESC
+        LIMIT 1
+    """).fetchone()
+
+    con.close()
+
+    return {
+        "connected": bool(row),
+        "latest": dict(row) if row else None,
+    }
+
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/ui")
+def ui():
+    return FileResponse("static/index.html")
+
+def init_drafts_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        title TEXT DEFAULT '',
+        caption TEXT DEFAULT '',
+        video_path TEXT DEFAULT '',
+        platforms TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft',
+        ai_adapted TEXT DEFAULT ''
+    )
+    """)
+    con.commit()
+    con.close()
+
+init_drafts_db()
+
+
+@app.post("/drafts/add")
+def add_draft(
+    title: str = "",
+    caption: str = "",
+    video_path: str = "",
+    platforms: str = "Instagram,Facebook,YouTube",
+    adapt_ai: bool = True,
+):
+    ai_adapted = ""
+
+    if adapt_ai and caption.strip():
+        prompt = f"""
+Ти AI-контент директор для експерта-регресолога/кармолога.
+
+Є базовий caption:
+{caption}
+
+Платформи: {platforms}
+
+Адаптуй цей текст окремо під:
+1. Instagram Reels
+2. Facebook
+3. YouTube Shorts
+
+Для кожної платформи дай:
+- caption
+- перший рядок-хук
+- hashtags
+- CTA
+- що краще сказати в описі
+"""
+        ai_adapted = run_llm(prompt)
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO drafts (
+            created_at, title, caption, video_path, platforms, status, ai_adapted
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        title, caption, video_path, platforms, "draft", ai_adapted
+    ))
+    draft_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "draft_id": draft_id,
+        "ai_adapted": ai_adapted
+    }
+
+
+@app.get("/drafts/list")
+def list_drafts():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM drafts ORDER BY id DESC LIMIT 100").fetchall()
+    con.close()
+    return {"drafts": [dict(r) for r in rows]}
+
+def youtube_get_access_token():
+    client_id = os.getenv("YOUTUBE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
+    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+    token_uri = os.getenv("YOUTUBE_TOKEN_URI", "https://oauth2.googleapis.com/token").strip()
+
+    if not client_id or not client_secret or not refresh_token:
+        return None, "YOUTUBE env vars missing"
+
+    r = requests.post(token_uri, data={
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }, timeout=30)
+
+    if r.status_code != 200:
+        return None, r.text
+
+    return r.json().get("access_token"), None
+
+
+@app.get("/youtube/status")
+def youtube_status():
+    token, err = youtube_get_access_token()
+    return {
+        "connected": bool(token),
+        "error": err,
+    }
+
+
+@app.get("/youtube/channel")
+def youtube_channel():
+    token, err = youtube_get_access_token()
+    if err:
+        return {"status": "error", "error": err}
+
+    r = requests.get(
+        "https://www.googleapis.com/youtube/v3/channels",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "snippet,statistics,contentDetails",
+            "mine": "true",
+        },
+        timeout=30,
+    )
+
+    return r.json()
+
+
+@app.get("/youtube/videos")
+def youtube_videos(max_results: int = 10):
+    token, err = youtube_get_access_token()
+    if err:
+        return {"status": "error", "error": err}
+
+    # 1) get uploads playlist
+    ch = requests.get(
+        "https://www.googleapis.com/youtube/v3/channels",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "contentDetails",
+            "mine": "true",
+        },
+        timeout=30,
+    ).json()
+
+    items = ch.get("items", [])
+    if not items:
+        return {"status": "error", "error": "No channel found", "raw": ch}
+
+    uploads_playlist = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+    # 2) get videos from uploads playlist
+    pl = requests.get(
+        "https://www.googleapis.com/youtube/v3/playlistItems",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "snippet,contentDetails",
+            "playlistId": uploads_playlist,
+            "maxResults": max_results,
+        },
+        timeout=30,
+    ).json()
+
+    video_ids = [
+        x["contentDetails"]["videoId"]
+        for x in pl.get("items", [])
+        if "contentDetails" in x and "videoId" in x["contentDetails"]
+    ]
+
+    if not video_ids:
+        return {"status": "ok", "videos": []}
+
+    stats = requests.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "snippet,statistics",
+            "id": ",".join(video_ids),
+        },
+        timeout=30,
+    ).json()
+
+    return {"status": "ok", "videos": stats.get("items", [])}
+
+@app.get("/youtube/public/videos")
+def youtube_public_videos(max_results: int = 10):
+    api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
+    channel_id = os.getenv("YOUTUBE_CHANNEL_ID", "").strip()
+
+    if not api_key or not channel_id:
+        return {"status": "error", "error": "YOUTUBE_API_KEY або YOUTUBE_CHANNEL_ID не встановлені у .env"}
+
+    search = requests.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        params={
+            "key": api_key,
+            "channelId": channel_id,
+            "part": "snippet,id",
+            "order": "date",
+            "maxResults": max_results,
+            "type": "video",
+        },
+        timeout=30,
+    ).json()
+
+    video_ids = [
+        item["id"]["videoId"]
+        for item in search.get("items", [])
+        if item.get("id", {}).get("videoId")
+    ]
+
+    if not video_ids:
+        return {"status": "ok", "videos": []}
+
+    stats = requests.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        params={
+            "key": api_key,
+            "id": ",".join(video_ids),
+            "part": "snippet,statistics",
+        },
+        timeout=30,
+    ).json()
+
+    return {"status": "ok", "videos": stats.get("items", [])}
+
+
+@app.post("/youtube/public/sync")
+def youtube_public_sync(max_results: int = 10):
+    data = youtube_public_videos(max_results=max_results)
+
+    if data.get("status") != "ok":
+        return data
+
+    videos = data.get("videos", [])
+    saved = 0
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    for v in videos:
+        video_id = v["id"]
+        snippet = v.get("snippet", {})
+        statistics = v.get("statistics", {})
+
+        title = snippet.get("title", "")
+        description = snippet.get("description", "")
+        published_at = snippet.get("publishedAt") or datetime.now().isoformat(timespec="seconds")
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
+        views = int(statistics.get("viewCount", 0))
+        likes = int(statistics.get("likeCount", 0)) if "likeCount" in statistics else 0
+        comments = int(statistics.get("commentCount", 0)) if "commentCount" in statistics else 0
+
+        text = f"{title}\n\n{description}".strip()
+        score = calc_score(views, likes, comments, 0, 0)
+
+        analysis = run_llm(f"""
+Проаналізуй YouTube відео для експерта-регресолога/кармолога.
+
+Назва:
+{title}
+
+Опис:
+{description}
+
+Метрики:
+views={views}
+likes={likes}
+comments={comments}
+score={score}
+
+Дай:
+1. Тема
+2. Біль аудиторії
+3. Сила заголовка
+4. Що покращити
+5. 3 ідеї наступних Shorts/Reels
+""")
+
+        cur.execute("""
+            INSERT INTO posts (
+                created_at, platform, url, text,
+                views, likes, comments, saves, shares,
+                analysis, score
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            published_at,
+            "YouTube",
+            url,
+            text,
+            views,
+            likes,
+            comments,
+            0,
+            0,
+            analysis,
+            score,
+        ))
+
+        saved += 1
+
+    con.commit()
+    con.close()
+
+    return {"status": "ok", "saved": saved}
+
+# =============================================================================
+# PLATFORM HUB PATCH V1
+# YouTube public stats + content versions + scheduler/calendar foundation
+# =============================================================================
+
+def init_platform_hub_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform TEXT NOT NULL,
+        account_id TEXT DEFAULT '',
+        account_name TEXT DEFAULT '',
+        access_token TEXT DEFAULT '',
+        refresh_token TEXT DEFAULT '',
+        expires_at TEXT DEFAULT '',
+        raw_json TEXT DEFAULT '',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS content_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        title TEXT DEFAULT '',
+        base_caption TEXT DEFAULT '',
+        video_path TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
+        source_platform TEXT DEFAULT '',
+        source_url TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft'
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        content_id INTEGER,
+        platform TEXT,
+        caption TEXT DEFAULT '',
+        hashtags TEXT DEFAULT '',
+        location TEXT DEFAULT '',
+        privacy_status TEXT DEFAULT 'private',
+        scheduled_at TEXT DEFAULT '',
+        publish_status TEXT DEFAULT 'draft',
+        external_post_id TEXT DEFAULT '',
+        external_url TEXT DEFAULT '',
+        error TEXT DEFAULT ''
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS post_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        collected_at TEXT,
+        platform TEXT,
+        external_post_id TEXT,
+        external_url TEXT DEFAULT '',
+        title TEXT DEFAULT '',
+        views INTEGER DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        comments INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        saves INTEGER DEFAULT 0,
+        watch_time REAL DEFAULT 0,
+        avg_view_duration REAL DEFAULT 0,
+        raw_json TEXT DEFAULT ''
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        content_id INTEGER,
+        platform_version_id INTEGER,
+        platform TEXT,
+        scheduled_at TEXT,
+        status TEXT DEFAULT 'scheduled',
+        error TEXT DEFAULT ''
+    )
+    """)
+
+    con.commit()
+    con.close()
+
+
+init_platform_hub_db()
+
+
+def youtube_api_key():
+    return os.getenv("YOUTUBE_API_KEY", "").strip()
+
+
+def get_youtube_public_videos(channel_id: str, max_results: int = 10):
+    key = youtube_api_key()
+    if not key:
+        return {"status": "error", "error": "YOUTUBE_API_KEY не встановлений у .env"}
+
+    search = requests.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        params={
+            "key": key,
+            "channelId": channel_id,
+            "part": "snippet,id",
+            "order": "date",
+            "maxResults": max_results,
+            "type": "video",
+        },
+        timeout=30,
+    ).json()
+
+    if "error" in search:
+        return {"status": "error", "step": "search", "response": search}
+
+    video_ids = [
+        item["id"]["videoId"]
+        for item in search.get("items", [])
+        if item.get("id", {}).get("kind") == "youtube#video"
+    ]
+
+    if not video_ids:
+        return {"status": "ok", "videos": []}
+
+    stats = requests.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        params={
+            "key": key,
+            "id": ",".join(video_ids),
+            "part": "snippet,statistics,contentDetails",
+        },
+        timeout=30,
+    ).json()
+
+    if "error" in stats:
+        return {"status": "error", "step": "videos", "response": stats}
+
+    return {"status": "ok", "videos": stats.get("items", [])}
+
+
+@app.get("/hub/status")
+def hub_status():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    tables = {}
+    for table in [
+        "platform_accounts",
+        "content_items",
+        "platform_versions",
+        "post_metrics",
+        "scheduled_posts",
+    ]:
+        tables[table] = cur.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+
+    con.close()
+
+    return {
+        "status": "ok",
+        "db_path": DB_PATH,
+        "youtube_api_key_exists": bool(youtube_api_key()),
+        "tables": tables,
+    }
+
+
+@app.get("/youtube/public/videos")
+def youtube_public_videos(channel_id: str, max_results: int = 10):
+    return get_youtube_public_videos(channel_id, max_results)
+
+
+@app.post("/youtube/sync_public")
+def youtube_sync_public(channel_id: str, max_results: int = 10):
+    data = get_youtube_public_videos(channel_id, max_results)
+
+    if data.get("status") != "ok":
+        return data
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    saved = 0
+
+    for v in data.get("videos", []):
+        video_id = v.get("id", "")
+        snippet = v.get("snippet", {})
+        statistics = v.get("statistics", {})
+
+        title = snippet.get("title", "")
+        description = snippet.get("description", "")
+        published_at = snippet.get("publishedAt") or datetime.now().isoformat(timespec="seconds")
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
+        views = int(statistics.get("viewCount", 0) or 0)
+        likes = int(statistics.get("likeCount", 0) or 0)
+        comments = int(statistics.get("commentCount", 0) or 0)
+
+        cur.execute("""
+            INSERT INTO post_metrics (
+                collected_at, platform, external_post_id, external_url,
+                title, views, likes, comments, raw_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            "youtube",
+            video_id,
+            url,
+            title,
+            views,
+            likes,
+            comments,
+            str(v),
+        ))
+
+        cur.execute("""
+            INSERT INTO posts (
+                created_at, platform, url, text,
+                views, likes, comments, saves, shares,
+                analysis, score
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            published_at,
+            "YouTube",
+            url,
+            f"{title}\n\n{description}".strip(),
+            views,
+            likes,
+            comments,
+            0,
+            0,
+            "Imported from YouTube API. AI analysis not generated yet.",
+            calc_score(views, likes, comments, 0, 0),
+        ))
+
+        saved += 1
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "saved": saved,
+        "message": "YouTube відео + метрики збережено в posts і post_metrics.",
+    }
+
+
+@app.post("/content/items/add")
+def content_item_add(
+    title: str = "",
+    base_caption: str = "",
+    video_path: str = "",
+    image_path: str = "",
+    source_platform: str = "",
+    source_url: str = "",
+):
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO content_items (
+            created_at, title, base_caption, video_path,
+            image_path, source_platform, source_url, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        title,
+        base_caption,
+        video_path,
+        image_path,
+        source_platform,
+        source_url,
+        "draft",
+    ))
+
+    content_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {"status": "ok", "content_id": content_id}
+
+
+@app.get("/content/items/list")
+def content_items_list():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("""
+        SELECT *
+        FROM content_items
+        ORDER BY id DESC
+        LIMIT 200
+    """).fetchall()
+    con.close()
+
+    return {"items": [dict(r) for r in rows]}
+
+
+@app.post("/content/adapt")
+def content_adapt(content_id: int, platforms: str = "Instagram,Facebook,YouTube"):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    item = cur.execute("""
+        SELECT *
+        FROM content_items
+        WHERE id=?
+    """, (content_id,)).fetchone()
+
+    if not item:
+        con.close()
+        return {"status": "error", "error": "content_id not found"}
+
+    prompt = f"""
+Ти AI-контент директор.
+
+Є один базовий контент:
+
+Назва:
+{item["title"]}
+
+Базовий caption:
+{item["base_caption"]}
+
+Платформи:
+{platforms}
+
+Зроби адаптацію окремо під кожну платформу:
+- Instagram Reels
+- Facebook
+- YouTube Shorts
+- Facebook Reels
+
+Для кожної платформи дай:
+1. caption
+2. хук першого рядка
+3. hashtags
+4. CTA
+5. місцеположення/гео, якщо доречно
+6. privacy/status рекомендацію
+7. що НЕ писати на цій платформі
+
+Відповідь зроби структуровано українською.
+"""
+
+    ai_result = run_llm(prompt)
+
+    for platform in [p.strip() for p in platforms.split(",") if p.strip()]:
+        cur.execute("""
+            INSERT INTO platform_versions (
+                created_at, content_id, platform, caption,
+                hashtags, location, privacy_status, publish_status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            content_id,
+            platform,
+            ai_result,
+            "",
+            "",
+            "private" if platform.lower() in ("youtube", "facebook") else "",
+            "draft",
+        ))
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "content_id": content_id,
+        "platforms": platforms,
+        "ai_adaptation": ai_result,
+    }
+
+
+@app.get("/platform_versions/list")
+def platform_versions_list(content_id: int = 0):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    base_select = """
+        SELECT
+            pv.*,
+            c.title AS content_title,
+            c.base_caption AS content_base_caption,
+            c.video_path AS content_video_path,
+            c.image_path AS content_image_path,
+            c.source_platform AS content_source_platform,
+            c.source_url AS content_source_url,
+            c.created_at AS content_created_at
+        FROM platform_versions pv
+        LEFT JOIN content_items c ON c.id = pv.content_id
+    """
+
+    if content_id:
+        rows = con.execute(base_select + """
+            WHERE pv.content_id=?
+            ORDER BY pv.id DESC
+        """, (content_id,)).fetchall()
+    else:
+        rows = con.execute(base_select + """
+            ORDER BY pv.id DESC
+            LIMIT 300
+        """).fetchall()
+
+    con.close()
+    return {"versions": [dict(r) for r in rows]}
+
+
+@app.post("/schedule/add")
+def schedule_add(
+    platform_version_id: int,
+    scheduled_at: str,
+):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    pv = cur.execute("""
+        SELECT *
+        FROM platform_versions
+        WHERE id=?
+    """, (platform_version_id,)).fetchone()
+
+    if not pv:
+        con.close()
+        return {"status": "error", "error": "platform_version_id not found"}
+
+    cur.execute("""
+        INSERT INTO scheduled_posts (
+            created_at, content_id, platform_version_id,
+            platform, scheduled_at, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        pv["content_id"],
+        platform_version_id,
+        pv["platform"],
+        scheduled_at,
+        "scheduled",
+    ))
+
+    cur.execute("""
+        UPDATE platform_versions
+        SET scheduled_at=?, publish_status='scheduled'
+        WHERE id=?
+    """, (scheduled_at, platform_version_id))
+
+    schedule_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {"status": "ok", "schedule_id": schedule_id}
+
+
+@app.get("/calendar/events")
+def calendar_events():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    rows = con.execute("""
+        SELECT
+            s.id,
+            s.platform,
+            s.scheduled_at,
+            s.status,
+            c.title,
+            pv.caption
+        FROM scheduled_posts s
+        LEFT JOIN content_items c ON c.id = s.content_id
+        LEFT JOIN platform_versions pv ON pv.id = s.platform_version_id
+        ORDER BY s.scheduled_at ASC
+        LIMIT 500
+    """).fetchall()
+
+    con.close()
+
+    events = []
+    for r in rows:
+        events.append({
+            "id": r["id"],
+            "title": f'{r["platform"]}: {r["title"] or "content"}',
+            "start": r["scheduled_at"],
+            "status": r["status"],
+            "platform": r["platform"],
+            "caption": r["caption"],
+        })
+
+    return {"events": events}
+
+
+@app.post("/scheduler/run_once")
+def scheduler_run_once():
+    """
+    Поки що це безпечний dry-run.
+    Він знаходить усе, що вже треба публікувати, але НЕ пушить у соцмережі.
+    Реальний publish підключимо окремими OAuth-патчами.
+    """
+    now = datetime.now().isoformat(timespec="seconds")
+
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    due = cur.execute("""
+        SELECT *
+        FROM scheduled_posts
+        WHERE status='scheduled'
+          AND scheduled_at <= ?
+        ORDER BY scheduled_at ASC
+        LIMIT 50
+    """, (now,)).fetchall()
+
+    con.close()
+
+    return {
+        "status": "ok",
+        "mode": "dry_run",
+        "due_count": len(due),
+        "due": [dict(r) for r in due],
+        "next": "Наступний патч: реальний publisher для YouTube/Meta/Facebook.",
+    }
+
+# =============================================================================
+# END PLATFORM HUB PATCH V1
+# =============================================================================
+
+# =============================================================================
+# PLATFORM HUB PATCH V2
+# Safe YouTube sync without duplicates + calendar helper endpoints
+# =============================================================================
+
+def init_platform_hub_v2_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_post_metrics_platform_external_collected
+        ON post_metrics(platform, external_post_id, collected_at)
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS ix_post_metrics_platform_external
+        ON post_metrics(platform, external_post_id)
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS ix_scheduled_posts_status_time
+        ON scheduled_posts(status, scheduled_at)
+    """)
+
+    con.commit()
+    con.close()
+
+
+init_platform_hub_v2_db()
+
+
+@app.post("/youtube/sync_public_safe")
+def youtube_sync_public_safe(channel_id: str, max_results: int = 10):
+    data = get_youtube_public_videos(channel_id, max_results)
+
+    if data.get("status") != "ok":
+        return data
+
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    saved_metrics = 0
+    saved_posts = 0
+    skipped_posts = 0
+
+    for v in data.get("videos", []):
+        video_id = v.get("id", "")
+        if not video_id:
+            continue
+
+        snippet = v.get("snippet", {})
+        statistics = v.get("statistics", {})
+
+        title = snippet.get("title", "")
+        description = snippet.get("description", "")
+        published_at = snippet.get("publishedAt") or datetime.now().isoformat(timespec="seconds")
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
+        views = int(statistics.get("viewCount", 0) or 0)
+        likes = int(statistics.get("likeCount", 0) or 0)
+        comments = int(statistics.get("commentCount", 0) or 0)
+
+        existing_post = cur.execute("""
+            SELECT id
+            FROM posts
+            WHERE platform='YouTube'
+              AND url=?
+            LIMIT 1
+        """, (url,)).fetchone()
+
+        cur.execute("""
+            INSERT INTO post_metrics (
+                collected_at, platform, external_post_id, external_url,
+                title, views, likes, comments, raw_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            "youtube",
+            video_id,
+            url,
+            title,
+            views,
+            likes,
+            comments,
+            str(v),
+        ))
+        saved_metrics += 1
+
+        if existing_post:
+            cur.execute("""
+                UPDATE posts
+                SET created_at=?,
+                    views=?,
+                    likes=?,
+                    comments=?,
+                    score=?,
+                    analysis=CASE
+                        WHEN analysis IS NULL OR analysis='' OR analysis LIKE 'Imported from YouTube API%'
+                        THEN ?
+                        ELSE analysis
+                    END
+                WHERE id=?
+            """, (
+                published_at,
+                views,
+                likes,
+                comments,
+                calc_score(views, likes, comments, 0, 0),
+                "Imported from YouTube API. Updated by safe sync.",
+                existing_post["id"],
+            ))
+            skipped_posts += 1
+        else:
+            cur.execute("""
+                INSERT INTO posts (
+                    created_at, platform, url, text,
+                    views, likes, comments, saves, shares,
+                    analysis, score
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now().isoformat(timespec="seconds"),
+                "YouTube",
+                url,
+                f"{title}\n\n{description}".strip(),
+                views,
+                likes,
+                comments,
+                0,
+                0,
+                "Imported from YouTube API. AI analysis not generated yet.",
+                calc_score(views, likes, comments, 0, 0),
+            ))
+            saved_posts += 1
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "saved_posts": saved_posts,
+        "updated_existing_posts": skipped_posts,
+        "saved_metrics_snapshots": saved_metrics,
+    }
+
+
+@app.get("/analytics/platform_summary")
+def analytics_platform_summary():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    rows = con.execute("""
+        SELECT
+            platform,
+            COUNT(*) AS posts,
+            SUM(views) AS views,
+            SUM(likes) AS likes,
+            SUM(comments) AS comments,
+            SUM(saves) AS saves,
+            SUM(shares) AS shares,
+            ROUND(AVG(score), 2) AS avg_score
+        FROM posts
+        GROUP BY platform
+        ORDER BY views DESC
+    """).fetchall()
+
+    con.close()
+    return {"summary": [dict(r) for r in rows]}
+
+
+@app.get("/calendar/feed")
+def calendar_feed():
+    data = calendar_events()
+    return data.get("events", [])
+
+# =============================================================================
+# END PLATFORM HUB PATCH V2
+# =============================================================================
+
+# =============================================================================
+# PLATFORM HUB PATCH V3
+# Structured per-platform AI adaptation JSON
+# =============================================================================
+
+import json
+import re
+
+
+def _extract_json_object(text: str):
+    if not text:
+        return None
+
+    text = text.strip()
+
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    m = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if not m:
+        return None
+
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+@app.post("/content/adapt_v2")
+def content_adapt_v2(content_id: int, platforms: str = "Instagram,Facebook,YouTube"):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    item = cur.execute("""
+        SELECT *
+        FROM content_items
+        WHERE id=?
+    """, (content_id,)).fetchone()
+
+    if not item:
+        con.close()
+        return {"status": "error", "error": "content_id not found"}
+
+    platform_list = [p.strip() for p in platforms.split(",") if p.strip()]
+
+    prompt = f"""
+Ти AI-контент директор.
+
+Є базовий контент:
+
+TITLE:
+{item["title"]}
+
+BASE_CAPTION:
+{item["base_caption"]}
+
+VIDEO_PATH:
+{item["video_path"]}
+
+Потрібно адаптувати контент окремо під ці платформи:
+{platform_list}
+
+Поверни ТІЛЬКИ валідний JSON без markdown, без пояснень.
+
+Формат строго такий:
+
+{{
+  "Instagram": {{
+    "caption": "...",
+    "hook": "...",
+    "hashtags": "...",
+    "cta": "...",
+    "location": "...",
+    "privacy_status": "public",
+    "dont_write": "..."
+  }},
+    "YouTube": {{
+    "caption": "...",
+    "hook": "...",
+    "hashtags": "...",
+    "cta": "...",
+    "location": "",
+    "privacy_status": "private",
+    "dont_write": "..."
+  }},
+  "Facebook": {{
+    "caption": "...",
+    "hook": "...",
+    "hashtags": "...",
+    "cta": "...",
+    "location": "...",
+    "privacy_status": "public",
+    "dont_write": "..."
+  }}
+}}
+
+Правила:
+- Instagram: сильний перший рядок, емоція, збереження, коментар.
+- Facebook: коротше, провокативніше, перші 3 секунди, мінімум довгого тексту.
+- YouTube Shorts: SEO-заголовок у caption, #shorts, підписка.
+- Facebook: тепліше, більше контексту, можна довше.
+- Якщо контент тестовий, все одно зроби коротку робочу адаптацію без довгих пояснень.
+"""
+
+    ai_text = run_llm(prompt)
+    parsed = _extract_json_object(ai_text)
+
+    if not parsed:
+        con.close()
+        return {
+            "status": "error",
+            "error": "AI did not return valid JSON",
+            "raw": ai_text,
+        }
+
+    created = []
+
+    for platform in platform_list:
+        data = parsed.get(platform) or parsed.get(platform.lower()) or {}
+
+        caption_parts = [
+            data.get("hook", "").strip(),
+            data.get("caption", "").strip(),
+            data.get("cta", "").strip(),
+            data.get("dont_write", "").strip(),
+        ]
+
+        caption = "\n\n".join([x for x in caption_parts if x])
+
+        cur.execute("""
+            INSERT INTO platform_versions (
+                created_at,
+                content_id,
+                platform,
+                caption,
+                hashtags,
+                location,
+                privacy_status,
+                publish_status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            content_id,
+            platform,
+            caption,
+            data.get("hashtags", ""),
+            data.get("location", ""),
+            data.get("privacy_status", "private" if platform.lower() == "youtube" else "public"),
+            "draft",
+        ))
+
+        created.append({
+            "platform_version_id": cur.lastrowid,
+            "platform": platform,
+        })
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "content_id": content_id,
+        "created": created,
+        "parsed": parsed,
+    }
+
+
+@app.get("/platform_versions/short")
+def platform_versions_short(content_id: int = 0):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    if content_id:
+        rows = con.execute("""
+            SELECT
+                id,
+                content_id,
+                platform,
+                substr(caption, 1, 240) AS caption_preview,
+                hashtags,
+                location,
+                privacy_status,
+                scheduled_at,
+                publish_status
+            FROM platform_versions
+            WHERE content_id=?
+            ORDER BY id DESC
+        """, (content_id,)).fetchall()
+    else:
+        rows = con.execute("""
+            SELECT
+                id,
+                content_id,
+                platform,
+                substr(caption, 1, 240) AS caption_preview,
+                hashtags,
+                location,
+                privacy_status,
+                scheduled_at,
+                publish_status
+            FROM platform_versions
+            ORDER BY id DESC
+            LIMIT 100
+        """).fetchall()
+
+    con.close()
+    return {"versions": [dict(r) for r in rows]}
+
+# =============================================================================
+# END PLATFORM HUB PATCH V3
+# =============================================================================
+
+# =============================================================================
+# PLATFORM HUB PATCH V4
+# YouTube OAuth + real video upload
+# =============================================================================
+
+from pathlib import Path
+
+try:
+    from googleapiclient.discovery import build as google_build
+    from googleapiclient.http import MediaFileUpload
+    from google.oauth2.credentials import Credentials
+    from google_auth_oauthlib.flow import InstalledAppFlow
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+except Exception:
+    google_build = None
+    MediaFileUpload = None
+    Credentials = None
+    InstalledAppFlow = None
+    GoogleAuthRequest = None
+
+
+YOUTUBE_UPLOAD_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
+
+
+def _youtube_oauth_paths():
+    client_file = os.getenv("YOUTUBE_CLIENT_SECRETS_FILE", "./client_secret.json").strip()
+    token_file = os.getenv("YOUTUBE_TOKEN_FILE", "./youtube_token.json").strip()
+    return client_file, token_file
+
+
+def _youtube_oauth_ready():
+    client_file, token_file = _youtube_oauth_paths()
+    return {
+        "google_libs_ok": bool(google_build and MediaFileUpload and Credentials and InstalledAppFlow and GoogleAuthRequest),
+        "client_secret_file": client_file,
+        "client_secret_exists": Path(client_file).exists(),
+        "token_file": token_file,
+        "token_exists": Path(token_file).exists(),
+        "scopes": YOUTUBE_UPLOAD_SCOPES,
+    }
+
+
+def get_youtube_oauth_credentials(force_reauth: bool = False):
+    if not all([google_build, MediaFileUpload, Credentials, InstalledAppFlow, GoogleAuthRequest]):
+        raise RuntimeError("Google OAuth libraries are not installed. Run: pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2")
+
+    client_file, token_file = _youtube_oauth_paths()
+
+    if not Path(client_file).exists():
+        raise RuntimeError(f"OAuth client secret file not found: {client_file}")
+
+    creds = None
+
+    if Path(token_file).exists() and not force_reauth:
+        try:
+            creds = Credentials.from_authorized_user_file(token_file, YOUTUBE_UPLOAD_SCOPES)
+        except Exception:
+            creds = None
+
+    if creds and creds.expired and creds.refresh_token:
+        creds.refresh(GoogleAuthRequest())
+
+    if not creds or not creds.valid or force_reauth:
+        flow = InstalledAppFlow.from_client_secrets_file(client_file, YOUTUBE_UPLOAD_SCOPES)
+        creds = flow.run_local_server(
+            port=8080,
+            prompt="consent",
+            access_type="offline",
+        )
+
+        with open(token_file, "w") as f:
+            f.write(creds.to_json())
+
+    return creds
+
+
+def get_youtube_oauth_client(force_reauth: bool = False):
+    creds = get_youtube_oauth_credentials(force_reauth=force_reauth)
+    return google_build("youtube", "v3", credentials=creds)
+
+
+@app.get("/youtube/oauth/status")
+def youtube_oauth_status():
+    return {
+        "status": "ok",
+        "oauth": _youtube_oauth_ready(),
+    }
+
+
+@app.post("/youtube/oauth/connect")
+def youtube_oauth_connect(force_reauth: bool = False):
+    try:
+        creds = get_youtube_oauth_credentials(force_reauth=force_reauth)
+        return {
+            "status": "ok",
+            "token_file": _youtube_oauth_paths()[1],
+            "valid": bool(creds and creds.valid),
+            "expired": bool(getattr(creds, "expired", False)),
+            "has_refresh_token": bool(getattr(creds, "refresh_token", None)),
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "oauth": _youtube_oauth_ready(),
+        }
+
+
+@app.get("/youtube/oauth/mine")
+def youtube_oauth_mine():
+    try:
+        youtube = get_youtube_oauth_client()
+        res = youtube.channels().list(
+            part="snippet,statistics,contentDetails",
+            mine=True,
+        ).execute()
+        return {
+            "status": "ok",
+            "channels": res.get("items", []),
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+def _guess_youtube_category_id(platform_version_row):
+    return "22"
+
+
+@app.post("/youtube/upload_platform_version")
+def youtube_upload_platform_version(platform_version_id: int):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    pv = cur.execute("""
+        SELECT *
+        FROM platform_versions
+        WHERE id=?
+    """, (platform_version_id,)).fetchone()
+
+    if not pv:
+        con.close()
+        return {"status": "error", "error": "platform_version_id not found"}
+
+    if str(pv["platform"]).lower() != "youtube":
+        con.close()
+        return {
+            "status": "error",
+            "error": f"platform_version_id={platform_version_id} is platform={pv['platform']}, not YouTube",
+        }
+
+    item = cur.execute("""
+        SELECT *
+        FROM content_items
+        WHERE id=?
+    """, (pv["content_id"],)).fetchone()
+
+    if not item:
+        con.close()
+        return {"status": "error", "error": "content item not found"}
+
+    video_path = (item["video_path"] or "").strip()
+
+    if not video_path:
+        con.close()
+        return {
+            "status": "error",
+            "error": "content_items.video_path is empty",
+        }
+
+    if not Path(video_path).exists():
+        con.close()
+        return {
+            "status": "error",
+            "error": f"video file not found: {video_path}",
+        }
+
+    title = (item["title"] or "").strip() or "Uploaded video"
+    description = (pv["caption"] or "").strip()
+
+    hashtags = (pv["hashtags"] or "").strip()
+    if hashtags and hashtags not in description:
+        description = (description + "\n\n" + hashtags).strip()
+
+    privacy_status = (pv["privacy_status"] or "private").strip().lower()
+    if privacy_status not in ("private", "unlisted", "public"):
+        privacy_status = "private"
+
+    body = {
+        "snippet": {
+            "title": title[:100],
+            "description": description,
+            "tags": [x.strip().lstrip("#") for x in hashtags.split() if x.strip()],
+            "categoryId": _guess_youtube_category_id(pv),
+        },
+        "status": {
+            "privacyStatus": privacy_status,
+            "selfDeclaredMadeForKids": False,
+        },
+    }
+
+    try:
+        youtube = get_youtube_oauth_client()
+
+        media = MediaFileUpload(
+            video_path,
+            chunksize=-1,
+            resumable=True,
+        )
+
+        request = youtube.videos().insert(
+            part="snippet,status",
+            body=body,
+            media_body=media,
+        )
+
+        response = None
+        last_progress = 0
+
+        while response is None:
+            status, response = request.next_chunk()
+            if status:
+                last_progress = int(status.progress() * 100)
+
+        video_id = response.get("id", "")
+        external_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
+
+        cur.execute("""
+            UPDATE platform_versions
+            SET publish_status=?,
+                external_post_id=?,
+                external_url=?,
+                error=?
+            WHERE id=?
+        """, (
+            "published" if video_id else "uploaded_unknown",
+            video_id,
+            external_url,
+            "",
+            platform_version_id,
+        ))
+
+        cur.execute("""
+            INSERT INTO posts (
+                created_at, platform, url, text,
+                views, likes, comments, saves, shares,
+                analysis, score
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            "YouTube",
+            external_url,
+            title + "\n\n" + description,
+            0,
+            0,
+            0,
+            0,
+            0,
+            "Uploaded via Platform Hub YouTube OAuth.",
+            0,
+        ))
+
+        con.commit()
+        con.close()
+
+        return {
+            "status": "ok",
+            "platform_version_id": platform_version_id,
+            "youtube_video_id": video_id,
+            "url": external_url,
+            "privacy_status": privacy_status,
+            "progress": last_progress,
+            "raw": response,
+        }
+
+    except Exception as e:
+        cur.execute("""
+            UPDATE platform_versions
+            SET publish_status='failed',
+                error=?
+            WHERE id=?
+        """, (str(e), platform_version_id))
+
+        con.commit()
+        con.close()
+
+        return {
+            "status": "error",
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+            "platform_version_id": platform_version_id,
+        }
+
+
+    # =========================
+    # Instagram API endpoints
+    # =========================
+
+    @app.get("/api/ig/media")
+    def ig_media():
+        url = f"https://graph.facebook.com/v25.0/{IG_USER_ID}/media"
+        params = {
+            "fields": "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count",
+            "access_token": IG_ACCESS_TOKEN,
+        }
+        r = requests.get(url, params=params, timeout=30)
+        return r.json()
+
+
+    @app.get("/api/ig/media/{media_id}/insights")
+    def ig_media_insights(media_id: str):
+        url = f"https://graph.facebook.com/v25.0/{media_id}/insights"
+        params = {
+            "metric": "reach,likes,comments,saves,shares,total_interactions,views",
+            "access_token": IG_ACCESS_TOKEN,
+        }
+        r = requests.get(url, params=params, timeout=30)
+        return r.json()
+
+
+    @app.post("/api/ig/publish-image")
+    def ig_publish_image(payload: dict):
+        image_url = payload.get("image_url")
+        caption = payload.get("caption", "")
+
+        create_url = f"https://graph.facebook.com/v25.0/{IG_USER_ID}/media"
+        create_resp = requests.post(create_url, data={
+            "image_url": image_url,
+            "caption": caption,
+            "access_token": IG_ACCESS_TOKEN,
+        }, timeout=60).json()
+
+        creation_id = create_resp.get("id")
+        if not creation_id:
+            return {"ok": False, "error": create_resp}
+
+        publish_url = f"https://graph.facebook.com/v25.0/{IG_USER_ID}/media_publish"
+        publish_resp = requests.post(publish_url, data={
+            "creation_id": creation_id,
+            "access_token": IG_ACCESS_TOKEN,
+        }, timeout=60).json()
+
+        return {"ok": True, "publish": publish_resp}# =============================================================================
+# END PLATFORM HUB PATCH V4
+# =============================================================================
+
+
+# =============================================================================
+# INSTAGRAM GRAPH API PATCH V1
+# Frontend-safe endpoints: media stats + image publishing
+# =============================================================================
+
+def _ig_env():
+    token = os.getenv("IG_ACCESS_TOKEN", "").strip()
+    ig_user_id = os.getenv("IG_USER_ID", "").strip()
+    if not token or not ig_user_id:
+        return None, None, {
+            "status": "error",
+            "error": "IG_ACCESS_TOKEN або IG_USER_ID не встановлені у .env",
+        }
+    return token, ig_user_id, None
+
+
+@app.get("/api/ig/status")
+def api_ig_status():
+    token, ig_user_id, err = _ig_env()
+    if err:
+        return err
+
+    r = requests.get(
+        f"https://graph.facebook.com/v25.0/{ig_user_id}",
+        params={
+            "fields": "id,username",
+            "access_token": token,
+        },
+        timeout=30,
+    )
+
+    return {
+        "status": "ok" if r.status_code == 200 else "error",
+        "http_status": r.status_code,
+        "response": r.json(),
+    }
+
+
+@app.get("/api/ig/media")
+def api_ig_media():
+    token, ig_user_id, err = _ig_env()
+    if err:
+        return err
+
+    r = requests.get(
+        f"https://graph.facebook.com/v25.0/{ig_user_id}/media",
+        params={
+            "fields": "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count",
+            "access_token": token,
+        },
+        timeout=30,
+    )
+
+    return r.json()
+
+
+@app.get("/api/ig/media/{media_id}/insights")
+def api_ig_media_insights(media_id: str):
+    token, ig_user_id, err = _ig_env()
+    if err:
+        return err
+
+    r = requests.get(
+        f"https://graph.facebook.com/v25.0/{media_id}/insights",
+        params={
+            "metric": "reach,likes,comments,saves,shares,total_interactions,views",
+            "access_token": token,
+        },
+        timeout=30,
+    )
+
+    return r.json()
+
+
+@app.post("/api/ig/publish-image")
+def api_ig_publish_image(payload: dict):
+    token, ig_user_id, err = _ig_env()
+    if err:
+        return err
+
+    image_url = (payload.get("image_url") or "").strip()
+    caption = payload.get("caption") or ""
+
+    if not image_url:
+        return {"status": "error", "error": "image_url required"}
+
+    create_resp = requests.post(
+        f"https://graph.facebook.com/v25.0/{ig_user_id}/media",
+        data={
+            "image_url": image_url,
+            "caption": caption,
+            "access_token": token,
+        },
+        timeout=60,
+    ).json()
+
+    creation_id = create_resp.get("id")
+    if not creation_id:
+        return {
+            "status": "error",
+            "stage": "create_container",
+            "response": create_resp,
+        }
+
+    publish_resp = requests.post(
+        f"https://graph.facebook.com/v25.0/{ig_user_id}/media_publish",
+        data={
+            "creation_id": creation_id,
+            "access_token": token,
+        },
+        timeout=60,
+    ).json()
+
+    return {
+        "status": "ok" if publish_resp.get("id") else "error",
+        "container": create_resp,
+        "publish": publish_resp,
+    }
+
+# =============================================================================
+# END INSTAGRAM GRAPH API PATCH V1
+# =============================================================================
+
+
+
+
+# =============================================================================
+# PLATFORM STATUS PATCH V2
+# Frontend platform connection checks
+# =============================================================================
+
+@app.get("/platform/status")
+def platform_status():
+    youtube_api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
+    youtube_channel_id = os.getenv("YOUTUBE_CHANNEL_ID", "").strip()
+    youtube_refresh = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+
+    return {
+        "instagram": {
+            "connected": bool(os.getenv("IG_ACCESS_TOKEN", "").strip() and os.getenv("IG_USER_ID", "").strip()),
+            "mode": "graph_api",
+        },
+        "youtube": {
+            "connected": bool(youtube_api_key and youtube_channel_id),
+            "oauth_upload_connected": bool(youtube_refresh),
+            "public_stats_connected": bool(youtube_api_key and youtube_channel_id),
+            "mode": "public_stats" if youtube_api_key and youtube_channel_id else "not_connected",
+        },
+        "facebook": {
+            "connected": bool(os.getenv("FB_PAGE_ID", "").strip() and os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
+            "mode": "graph_api" if os.getenv("FB_PAGE_ID", "").strip() and os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip() else "not_connected",
+            "page_id_exists": bool(os.getenv("FB_PAGE_ID", "").strip()),
+            "page_token_exists": bool(os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
+        },
+    }
+    
+# =============================================================================
+# FACEBOOK PAGE API PATCH V1
+# Separate Facebook Page connection from Instagram
+# =============================================================================
+
+META_GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v19.0").strip()
+
+
+def meta_graph_get(path: str, token: str, params: dict | None = None):
+    params = dict(params or {})
+    params["access_token"] = token
+
+    url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{path.lstrip('/')}"
+    r = requests.get(url, params=params, timeout=30)
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text}
+
+    if r.status_code >= 400 or "error" in data:
+        return {
+            "status": "error",
+            "http_status": r.status_code,
+            "response": data,
+        }
+
+    return {
+        "status": "ok",
+        "response": data,
+    }
+
+
+def get_fb_page_env():
+    return {
+        "page_id": os.getenv("FB_PAGE_ID", "").strip(),
+        "page_token": os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip(),
+        "user_token": (
+            os.getenv("META_USER_ACCESS_TOKEN", "").strip()
+            or os.getenv("IG_ACCESS_TOKEN", "").strip()
+        ),
+    }
+
+
+@app.get("/facebook/status")
+def facebook_status():
+    env = get_fb_page_env()
+    page_id = env["page_id"]
+    page_token = env["page_token"]
+
+    if not page_id or not page_token:
+        return {
+            "connected": False,
+            "mode": "not_connected",
+            "message": "FB_PAGE_ID або FB_PAGE_ACCESS_TOKEN не встановлені у .env",
+            "fb_page_id_exists": bool(page_id),
+            "fb_page_access_token_exists": bool(page_token),
+        }
+
+    data = meta_graph_get(
+        f"/{page_id}",
+        page_token,
+        {
+            "fields": "id,name,username,link,fan_count,followers_count"
+        }
+    )
+
+    if data.get("status") != "ok":
+        return {
+            "connected": False,
+            "mode": "graph_api",
+            "message": "Facebook Page token не пройшов перевірку",
+            "error": data,
+        }
+
+    return {
+        "connected": True,
+        "mode": "graph_api",
+        "page": data["response"],
+    }
+
+
+@app.get("/facebook/pages")
+def facebook_pages():
+    """
+    Показує сторінки, доступні user token.
+    Використай це, щоб взяти правильний FB_PAGE_ID і FB_PAGE_ACCESS_TOKEN.
+    """
+    env = get_fb_page_env()
+    user_token = env["user_token"]
+
+    if not user_token:
+        return {
+            "status": "error",
+            "message": "Немає META_USER_ACCESS_TOKEN або IG_ACCESS_TOKEN у .env",
+        }
+
+    return meta_graph_get(
+        "/me/accounts",
+        user_token,
+        {
+            "fields": "id,name,access_token,tasks,instagram_business_account"
+        }
+    )
+
+
+@app.get("/facebook/page/posts")
+def facebook_page_posts(limit: int = 10):
+    env = get_fb_page_env()
+    page_id = env["page_id"]
+    page_token = env["page_token"]
+
+    if not page_id or not page_token:
+        return {
+            "status": "error",
+            "message": "FB_PAGE_ID або FB_PAGE_ACCESS_TOKEN не встановлені у .env",
+        }
+
+    return meta_graph_get(
+        f"/{page_id}/posts",
+        page_token,
+        {
+            "limit": limit,
+            "fields": "id,message,created_time,permalink_url,shares,comments.summary(true),reactions.summary(true)"
+        }
+    )
+
+
+@app.post("/facebook/page/post_text")
+def facebook_page_post_text(message: str):
+    """
+    Реальна публікація текстового поста на Facebook Page.
+    Потребує Page token з pages_manage_posts.
+    """
+    env = get_fb_page_env()
+    page_id = env["page_id"]
+    page_token = env["page_token"]
+
+    if not page_id or not page_token:
+        return {
+            "status": "error",
+            "message": "FB_PAGE_ID або FB_PAGE_ACCESS_TOKEN не встановлені у .env",
+        }
+
+    url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{page_id}/feed"
+    r = requests.post(
+        url,
+        data={
+            "message": message,
+            "access_token": page_token,
+        },
+        timeout=30,
+    )
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text}
+
+    if r.status_code >= 400 or "error" in data:
+        return {
+            "status": "error",
+            "http_status": r.status_code,
+            "response": data,
+        }
+
+    return {
+        "status": "ok",
+        "platform": "facebook",
+        "response": data,
+    }
+
+# =============================================================================
+# END FACEBOOK PAGE API PATCH V1
+# =============================================================================
+
+
+
+# =============================================================================
+# A/B TESTING ENDPOINTS
+# =============================================================================
+
+def get_post_metrics(post_id: int):
+    """Отримати актуальні метрики поста з БД"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    post = con.execute("SELECT * FROM posts WHERE id=?", (post_id,)).fetchone()
+    con.close()
+    
+    if not post:
+        return None
+    
+    views = post["views"] or 0
+    likes = post["likes"] or 0
+    comments = post["comments"] or 0
+    score = post["score"] or 0
+    engagement_rate = round(((likes + comments) / views) * 100, 2) if views > 0 else 0
+    
+    return {
+        "views": views,
+        "likes": likes,
+        "comments": comments,
+        "score": score,
+        "engagement_rate": engagement_rate
+    }
+
+
+@app.post("/ab_test/create")
+def create_ab_test(
+    original_content_id: int,
+    original_platform_version_id: int,
+    changes_made: str = "",
+    platform: str = "Instagram"
+):
+    """Створює A/B тест на основі існуючого контенту"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    
+    # Отримуємо оригінальний контент
+    original_content = cur.execute(
+        "SELECT * FROM content_items WHERE id=?",
+        (original_content_id,)
+    ).fetchone()
+    
+    if not original_content:
+        con.close()
+        return {"status": "error", "error": "Original content not found"}
+    
+    # Отримуємо platform_version
+    original_pv = cur.execute(
+        "SELECT * FROM platform_versions WHERE id=?",
+        (original_platform_version_id,)
+    ).fetchone()
+    
+    if not original_pv:
+        con.close()
+        return {"status": "error", "error": "Platform version not found"}
+    
+    # Отримуємо пост, пов'язаний з цією версією
+    original_post = con.execute(
+        "SELECT * FROM posts WHERE url LIKE ? ORDER BY id DESC LIMIT 1",
+        (f"%{original_pv['external_url']}%",)
+    ).fetchone()
+    
+    # Отримуємо метрики оригіналу
+    original_metrics = get_post_metrics(original_post["id"]) if original_post else {"views": 0, "likes": 0, "comments": 0, "score": 0, "engagement_rate": 0}
+    
+    # Створюємо новий контент для варіанту B
+    cur.execute("""
+        INSERT INTO content_items (
+            created_at, title, base_caption, video_path, image_path,
+            source_platform, source_url, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        f"[TEST B] {original_content['title']}",
+        original_content['base_caption'],
+        original_content['video_path'],
+        original_content['image_path'],
+        original_content['source_platform'],
+        original_content['source_url'],
+        "draft"
+    ))
+    test_content_id = cur.lastrowid
+    
+    # Копіюємо platform_version для варіанту B з позначкою
+    cur.execute("""
+        INSERT INTO platform_versions (
+            created_at, content_id, platform, caption, hashtags,
+            location, privacy_status, scheduled_at, publish_status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        test_content_id,
+        platform,
+        f"[TEST B]\nChanges: {changes_made}\n\n{original_pv['caption']}",
+        original_pv['hashtags'],
+        original_pv['location'],
+        original_pv['privacy_status'],
+        None,
+        "draft"
+    ))
+    test_pv_id = cur.lastrowid
+    
+    # Створюємо запис A/B тесту
+    cur.execute("""
+        INSERT INTO ab_test_pairs (
+            created_at, original_content_id, original_platform_version_id,
+            original_post_id, test_content_id, test_platform_version_id,
+            changes_made, platform,
+            original_views, original_likes, original_comments,
+            original_score, original_engagement_rate,
+            status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        original_content_id,
+        original_platform_version_id,
+        original_post["id"] if original_post else None,
+        test_content_id,
+        test_pv_id,
+        changes_made,
+        platform,
+        original_metrics["views"],
+        original_metrics["likes"],
+        original_metrics["comments"],
+        original_metrics["score"],
+        original_metrics["engagement_rate"],
+        "active"
+    ))
+    
+    test_id = cur.lastrowid
+    con.commit()
+    con.close()
+    
+    return {
+        "status": "ok",
+        "test_id": test_id,
+        "test_content_id": test_content_id,
+        "test_platform_version_id": test_pv_id,
+        "message": "A/B test created. Now publish the new version!"
+    }
+
+
+@app.post("/ab_test/complete")
+def complete_ab_test(test_id: int, test_post_id: int = None):
+    """Завершує A/B тест, порівнює метрики та генерує AI висновок"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    
+    test = cur.execute("SELECT * FROM ab_test_pairs WHERE id=?", (test_id,)).fetchone()
+    
+    if not test:
+        con.close()
+        return {"status": "error", "error": "Test not found"}
+    
+    # Отримуємо метрики тестової версії
+    if test_post_id:
+        test_metrics = get_post_metrics(test_post_id)
+        # Оновлюємо test_post_id в таблиці
+        cur.execute("UPDATE ab_test_pairs SET test_post_id=? WHERE id=?", (test_post_id, test_id))
+    else:
+        test_metrics = {"views": 0, "likes": 0, "comments": 0, "score": 0, "engagement_rate": 0}
+    
+    # Оновлюємо метрики в таблиці
+    cur.execute("""
+        UPDATE ab_test_pairs
+        SET test_views=?, test_likes=?, test_comments=?,
+            test_score=?, test_engagement_rate=?, posted_at=?, status='analyzing'
+        WHERE id=?
+    """, (
+        test_metrics["views"],
+        test_metrics["likes"],
+        test_metrics["comments"],
+        test_metrics["score"],
+        test_metrics["engagement_rate"],
+        datetime.now().isoformat(timespec="seconds"),
+        test_id
+    ))
+    
+    # Розраховуємо покращення
+    original_score = test["original_score"] or 1
+    test_score = test_metrics["score"] or 0
+    improvement = round(((test_score - original_score) / original_score) * 100, 2) if original_score > 0 else 0
+    
+    winner = "B" if test_score > original_score else "A" if original_score > test_score else "draw"
+    
+    # Генеруємо AI висновок
+    insights_prompt = f"""
+Проаналізуй результати A/B тесту для експерта-регресолога.
+
+Оригінальний варіант (A):
+- Score: {test["original_score"]}
+- Перегляди: {test["original_views"]}
+- Лайки: {test["original_likes"]}
+- Коментарі: {test["original_comments"]}
+- Engagement rate: {test["original_engagement_rate"]}%
+
+Нова версія (B):
+- Score: {test_metrics["score"]}
+- Перегляди: {test_metrics["views"]}
+- Лайки: {test_metrics["likes"]}
+- Коментарі: {test_metrics["comments"]}
+- Engagement rate: {test_metrics["engagement_rate"]}%
+
+Що було змінено у версії B:
+{test["changes_made"]}
+
+Платформа: {test["platform"]}
+
+Дай відповідь українською у форматі JSON:
+{{
+    "verdict": "A/B/draw",
+    "improvement_percent": число,
+    "why_it_worked": "пояснення, чому спрацювали/не спрацювали зміни",
+    "key_insights": ["інсайт 1", "інсайт 2", "інсайт 3"],
+    "recommendations": "що робити далі з цим форматом",
+    "next_test_suggestion": "що варто протестувати наступного разу"
+}}
+"""
+    
+    insights_result = run_llm(insights_prompt)
+    
+    # Парсимо JSON з відповіді AI
+    import json
+    import re
+    try:
+        json_match = re.search(r'\{.*\}', insights_result, re.DOTALL)
+        if json_match:
+            insights_data = json.loads(json_match.group())
+        else:
+            insights_data = {"verdict": winner, "improvement_percent": improvement, "why_it_worked": insights_result[:500]}
+    except:
+        insights_data = {"verdict": winner, "improvement_percent": improvement, "why_it_worked": insights_result[:500]}
+    
+    # Фінальне оновлення
+    cur.execute("""
+        UPDATE ab_test_pairs
+        SET winner=?, improvement_percent=?, insights=?, recommendations=?,
+            status='completed', analyzed_at=?, updated_at=?
+        WHERE id=?
+    """, (
+        insights_data.get("verdict", winner),
+        insights_data.get("improvement_percent", improvement),
+        insights_data.get("why_it_worked", ""),
+        insights_data.get("recommendations", ""),
+        datetime.now().isoformat(timespec="seconds"),
+        datetime.now().isoformat(timespec="seconds"),
+        test_id
+    ))
+    
+    con.commit()
+    con.close()
+    
+    return {
+        "status": "ok",
+        "test_id": test_id,
+        "winner": insights_data.get("verdict", winner),
+        "improvement_percent": insights_data.get("improvement_percent", improvement),
+        "insights": insights_data.get("why_it_worked", ""),
+        "recommendations": insights_data.get("recommendations", ""),
+        "next_suggestion": insights_data.get("next_test_suggestion", "")
+    }
+
+
+@app.get("/ab_test/list")
+def list_ab_tests(status: str = None, platform: str = None):
+    """Отримати список A/B тестів"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    
+    query = "SELECT * FROM ab_test_pairs"
+    params = []
+    conditions = []
+    
+    if status:
+        conditions.append("status=?")
+        params.append(status)
+    if platform:
+        conditions.append("platform=?")
+        params.append(platform)
+    
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    
+    query += " ORDER BY created_at DESC LIMIT 100"
+    
+    tests = con.execute(query, params).fetchall()
+    con.close()
+    
+    return {"tests": [dict(t) for t in tests]}
+
+
+@app.get("/ab_test/{test_id}")
+def get_ab_test(test_id: int):
+    """Отримати деталі конкретного A/B тесту"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    test = con.execute("SELECT * FROM ab_test_pairs WHERE id=?", (test_id,)).fetchone()
+    
+    if not test:
+        con.close()
+        return {"status": "error", "error": "Test not found"}
+    
+    # Отримуємо додаткову інформацію про контент
+    original_content = con.execute(
+        "SELECT title, base_caption FROM content_items WHERE id=?",
+        (test["original_content_id"],)
+    ).fetchone()
+    
+    test_content = con.execute(
+        "SELECT title, base_caption FROM content_items WHERE id=?",
+        (test["test_content_id"],)
+    ).fetchone() if test["test_content_id"] else None
+    
+    con.close()
+    
+    return {
+        "status": "ok",
+        "test": dict(test),
+        "original_content": dict(original_content) if original_content else None,
+        "test_content": dict(test_content) if test_content else None
+    }
+
+
+@app.post("/ab_test/compare_metrics")
+def compare_ab_test_metrics(test_id: int):
+    """Примусово порівняти метрики для тесту (оновлює з БД)"""
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+    
+    test = cur.execute("SELECT * FROM ab_test_pairs WHERE id=?", (test_id,)).fetchone()
+    
+    if not test:
+        con.close()
+        return {"status": "error", "error": "Test not found"}
+    
+    # Оновлюємо метрики оригіналу
+    if test["original_post_id"]:
+        orig_metrics = get_post_metrics(test["original_post_id"])
+        if orig_metrics:
+            cur.execute("""
+                UPDATE ab_test_pairs
+                SET original_views=?, original_likes=?, original_comments=?,
+                    original_score=?, original_engagement_rate=?
+                WHERE id=?
+            """, (
+                orig_metrics["views"], orig_metrics["likes"], orig_metrics["comments"],
+                orig_metrics["score"], orig_metrics["engagement_rate"], test_id
+            ))
+    
+    # Оновлюємо метрики тесту
+    if test["test_post_id"]:
+        test_metrics = get_post_metrics(test["test_post_id"])
+        if test_metrics:
+            cur.execute("""
+                UPDATE ab_test_pairs
+                SET test_views=?, test_likes=?, test_comments=?,
+                    test_score=?, test_engagement_rate=?
+                WHERE id=?
+            """, (
+                test_metrics["views"], test_metrics["likes"], test_metrics["comments"],
+                test_metrics["score"], test_metrics["engagement_rate"], test_id
+            ))
+    
+    con.commit()
+    con.close()
+    
+    return {"status": "ok", "message": "Metrics updated"}
+
+# =============================================================================
+# END A/B TESTING ENDPOINTS
+# =============================================================================
+# =============================================================================
+# END PLATFORM STATUS PATCH V2
+# =============================================================================
+
+
+
+# =============================================================================
+# AI ANALYSIS CACHE PATCH V1
+# Stores AI analysis so the same post is not analyzed repeatedly
+# =============================================================================
+
+def init_ai_analysis_cache_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_analysis_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        updated_at TEXT,
+        platform TEXT DEFAULT '',
+        external_id TEXT DEFAULT '',
+        url TEXT DEFAULT '',
+        text_hash TEXT NOT NULL,
+        input_text TEXT DEFAULT '',
+        analysis TEXT DEFAULT '',
+        UNIQUE(platform, external_id, text_hash)
+    )
+    """)
+    con.commit()
+    con.close()
+
+
+init_ai_analysis_cache_db()
+
+
+@app.post("/analyze_cached")
+async def analyze_cached(request: Request):
+    payload = await request.json()
+
+    platform = str(payload.get("platform") or "").strip()
+    external_id = str(payload.get("external_id") or payload.get("post_id") or "").strip()
+    url = str(payload.get("url") or "").strip()
+
+    force_refresh = False
+    text = (
+        payload.get("text")
+        or payload.get("content")
+        or payload.get("caption")
+        or payload.get("title")
+        or ""
+    )
+    text = str(text).strip()
+
+    if not text:
+        return {
+            "status": "error",
+            "error": "empty_text",
+            "message": "Немає тексту для AI аналізу"
+        }
+
+    text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    cached = cur.execute("""
+        SELECT analysis
+        FROM ai_analysis_cache
+        WHERE platform=?
+          AND external_id=?
+          AND text_hash=?
+        LIMIT 1
+    """, (platform, external_id, text_hash)).fetchone()
+
+    if cached and cached["analysis"]:
+        con.close()
+        return {
+            "status": "ok",
+            "cached": True,
+            "result": cached["analysis"],
+            "analysis": cached["analysis"]
+        }
+
+    
+    try:
+        force_refresh_raw = ""
+        if "data" in locals() and isinstance(data, dict):
+            force_refresh_raw = str(data.get("force_refresh", ""))
+        elif "form" in locals():
+            force_refresh_raw = str(form.get("force_refresh", ""))
+        force_refresh = force_refresh_raw.lower() in {"1", "true", "yes", "y", "force"}
+    except Exception:
+        force_refresh = False
+
+    versioned_text = f"[PROMPT_VERSION={AI_ANALYSIS_PROMPT_VERSION}]\n{text}"
+    prompt = build_content_analysis_prompt(text=versioned_text, video_path="", transcript="")
+    analysis = run_llm(prompt)  # cache disabled
+
+    if not analysis or not analysis.strip():
+        con.close()
+        return {
+            "status": "error",
+            "error": "empty_ai_response",
+            "message": "AI не повернув відповідь"
+        }
+
+    now = datetime.now().isoformat(timespec="seconds")
+
+    cur.execute("""
+        INSERT OR REPLACE INTO ai_analysis_cache (
+            created_at,
+            updated_at,
+            platform,
+            external_id,
+            url,
+            text_hash,
+            input_text,
+            analysis
+        )
+        VALUES (
+            COALESCE(
+                (SELECT created_at FROM ai_analysis_cache WHERE platform=? AND external_id=? AND text_hash=?),
+                ?
+            ),
+            ?, ?, ?, ?, ?, ?, ?
+        )
+    """, (
+        platform, external_id, text_hash,
+        now,
+        now,
+        platform,
+        external_id,
+        url,
+        text_hash,
+        text,
+        analysis
+    ))
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "cached": False,
+        "result": analysis,
+        "prompt_version": AI_ANALYSIS_PROMPT_VERSION,
+        "analysis": analysis
+    }
+
+# =============================================================================
+# END AI ANALYSIS CACHE PATCH V1
+# =============================================================================
+
+
+
+@app.get("/analyze_cache/list")
+def analyze_cache_list():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("""
+        SELECT platform, external_id, url, analysis, updated_at
+        FROM ai_analysis_cache
+        ORDER BY updated_at DESC
+        LIMIT 1000
+    """).fetchall()
+    con.close()
+
+    return {"items": [dict(r) for r in rows]}
+
+
+
+# --- AI CACHE CLEAR ENDPOINT START ---
+@app.post("/ai/cache/clear")
+def ai_cache_clear():
+    import sqlite3
+    from pathlib import Path
+
+    candidates = [
+        Path("db.sqlite"),
+        Path("content_ai.sqlite"),
+        Path("data.sqlite"),
+        Path("server.sqlite"),
+        Path("app.sqlite"),
+    ]
+
+    cleared = []
+
+    for db_path in candidates:
+        if not db_path.exists():
+            continue
+
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cur = conn.cursor()
+
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [r[0] for r in cur.fetchall()]
+
+            for t in tables:
+                if any(x in t.lower() for x in ["cache", "analysis", "ai"]):
+                    try:
+                        cur.execute(f'DELETE FROM "{t}"')
+                        cleared.append(f"{db_path}:{t}")
+                    except Exception:
+                        pass
+
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    return {
+        "status": "ok",
+        "cleared": cleared,
+    }
+# --- AI CACHE CLEAR ENDPOINT END ---
+

@@ -1,0 +1,235 @@
+(function TelegramAiSchedulerV1() {
+  function findTelegramTextarea() {
+    return Array.from(document.querySelectorAll("textarea")).find(t =>
+      (t.placeholder || "").includes("Напиши текст") ||
+      (t.placeholder || "").includes("згенеруй")
+    );
+  }
+
+  function getTargetSelect() {
+    return document.getElementById("telegram-target-chat-id");
+  }
+
+  function getText() {
+    const t = findTelegramTextarea();
+    return t ? t.value.trim() : "";
+  }
+
+  function setText(value) {
+    const t = findTelegramTextarea();
+    if (!t) return;
+    t.value = value || "";
+    t.dispatchEvent(new Event("input", {bubbles: true}));
+  }
+
+  function buildUi() {
+    if (document.getElementById("telegram-ai-scheduler-v1")) return;
+
+    const textarea = findTelegramTextarea();
+    if (!textarea) return;
+
+    const box = document.createElement("div");
+    box.id = "telegram-ai-scheduler-v1";
+    box.style.margin = "12px 0";
+    box.style.padding = "12px";
+    box.style.border = "1px solid #d1d5db";
+    box.style.borderRadius = "12px";
+    box.style.background = "#f8fafc";
+
+    box.innerHTML = `
+      <div style="font-weight:900;margin-bottom:8px;">🤖 AI повідомлення для обраної клієнтки</div>
+
+      <textarea id="telegram-ai-prompt-v1"
+        placeholder="Напиши задачу для AI: наприклад, зроби тепле повідомлення про технічні роботи / анонс сеансу / прогрів..."
+        style="width:100%;min-height:80px;padding:10px;border:1px solid #d1d5db;border-radius:10px;"></textarea>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+        <button id="telegram-ai-generate-btn-v1" type="button"
+          style="padding:10px 14px;border-radius:10px;border:0;background:#111827;color:white;font-weight:900;">
+          ✨ Згенерувати AI
+        </button>
+
+        <input id="telegram-schedule-at-v1" type="datetime-local"
+          style="padding:10px;border:1px solid #d1d5db;border-radius:10px;font-weight:700;">
+
+        <button id="telegram-schedule-btn-v1" type="button"
+          style="padding:10px 14px;border-radius:10px;border:1px solid #111827;background:white;font-weight:900;">
+          🗓️ Запланувати в обраний чат
+        </button>
+      </div>
+
+      <div id="telegram-ai-status-v1"
+        style="margin-top:10px;font-size:13px;font-weight:700;color:#334155;"></div>
+    `;
+
+    textarea.parentNode.insertBefore(box, textarea);
+
+    document.getElementById("telegram-ai-generate-btn-v1").onclick = generateAi;
+    document.getElementById("telegram-schedule-btn-v1").onclick = scheduleMessage;
+  }
+
+  async function generateAi() {
+    const status = document.getElementById("telegram-ai-status-v1");
+    const prompt = document.getElementById("telegram-ai-prompt-v1").value.trim();
+    const target = getTargetSelect();
+
+    if (!target || !target.value) {
+      alert("Спочатку обери групу або канал.");
+      return;
+    }
+
+    if (!prompt) {
+      alert("Напиши задачу для AI.");
+      return;
+    }
+
+    status.textContent = "AI генерує повідомлення...";
+
+    const res = await fetch("/api/telegram/ai_generate_message", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        prompt,
+        target_chat_id: target.value
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      status.textContent = "AI помилка: " + (data.error || "unknown");
+      return;
+    }
+
+    setText(data.text || data.result || "");
+    status.textContent = "Готово. Текст вставлено в блок, можна редагувати.";
+  }
+
+  async function scheduleMessage() {
+    const status = document.getElementById("telegram-ai-status-v1");
+    const target = getTargetSelect();
+    const scheduledAt = document.getElementById("telegram-schedule-at-v1").value;
+    const text = getText();
+
+    if (!target || !target.value) {
+      alert("Оберіть групу або канал.");
+      return;
+    }
+
+    if (!text) {
+      alert("Немає тексту повідомлення.");
+      return;
+    }
+
+    if (!scheduledAt) {
+      alert("Оберіть дату і час.");
+      return;
+    }
+
+    const res = await fetch("/api/telegram/schedule_safe", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        purpose: "client_funnel",
+        target_chat_id: target.value,
+        scheduled_at: scheduledAt,
+        text
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.ok) {
+      status.textContent = "Помилка планування: " + (data.error || "unknown");
+      return;
+    }
+
+    status.textContent = "Заплановано. ID: " + data.schedule_id;
+  }
+
+  function run() {
+    setTimeout(buildUi, 400);
+  }
+
+  document.addEventListener("DOMContentLoaded", run);
+  document.addEventListener("click", run);
+
+  new MutationObserver(run).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+})();
+
+// ============================================================================
+// TELEGRAM TARGET SELECT FIX V2
+// ============================================================================
+
+(function TelegramTargetSelectFixV2() {
+  async function loadTargets() {
+    const res = await fetch("/api/telegram/chats");
+    const data = await res.json();
+
+    return (data.chats || []).filter(ch =>
+      Number(ch.enabled) === 1 &&
+      (ch.role === "client_group" || ch.role === "client_channel")
+    );
+  }
+
+  async function injectTargetSelect() {
+    const aiBox = document.getElementById("telegram-ai-scheduler-v1");
+    if (!aiBox) return;
+
+    if (document.getElementById("telegram-target-chat-id")) return;
+
+    const targets = await loadTargets();
+
+    const wrap = document.createElement("div");
+    wrap.style.margin = "0 0 12px 0";
+
+    wrap.innerHTML = `
+      <label style="display:block;font-weight:900;margin-bottom:6px;">
+        🎯 Куди постити
+      </label>
+
+      <select id="telegram-target-chat-id"
+        style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:10px;font-weight:800;">
+        <option value="">Оберіть клієнтську групу або канал</option>
+        ${targets.map(ch => `
+          <option value="${String(ch.chat_id)}">
+            ${ch.role === "client_channel" ? "📣 Канал" : "👥 Група"} — ${ch.title || ch.username || ch.chat_id}
+          </option>
+        `).join("")}
+      </select>
+    `;
+
+    aiBox.insertBefore(wrap, aiBox.firstChild);
+  }
+
+  function renameSendButton() {
+    Array.from(document.querySelectorAll("button")).forEach(btn => {
+      const txt = btn.textContent || "";
+      if (txt.includes("Відправити всім активним")) {
+        btn.textContent = "🚀 Відправити в обраний чат/канал";
+      }
+    });
+  }
+
+  function run() {
+    setTimeout(() => {
+      injectTargetSelect();
+      renameSendButton();
+    }, 300);
+  }
+
+  document.addEventListener("DOMContentLoaded", run);
+  document.addEventListener("click", run);
+
+  new MutationObserver(run).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
+})();
+
+// ============================================================================
+// /TELEGRAM TARGET SELECT FIX V2
+// ============================================================================

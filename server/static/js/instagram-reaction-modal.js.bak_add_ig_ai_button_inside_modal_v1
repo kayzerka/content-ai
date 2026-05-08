@@ -1,0 +1,49 @@
+// INSTAGRAM_REACTION_MODAL_V1
+(function () {
+  function closeModal() {
+    document.getElementById("igReactionEngineModalOverlay")?.remove();
+  }
+
+  window.closeIgReactionEngineModal = closeModal;
+
+  window.openIgReactionEngineModal = async function () {
+    let overlay = document.getElementById("igReactionEngineModalOverlay");
+
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "igReactionEngineModalOverlay";
+      overlay.className = "modal-overlay active";
+      overlay.innerHTML = `
+        <div class="modal-container" style="max-width:1180px;width:94%;max-height:92vh;">
+          <div class="modal-header">
+            <h3>🤖 AI реакції Instagram</h3>
+            <button class="modal-close" type="button" onclick="window.closeIgReactionEngineModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div id="igReactionEngineModalBody"></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      overlay.addEventListener("click", function (e) {
+        if (e.target === overlay) closeModal();
+      });
+    }
+
+    const body = document.getElementById("igReactionEngineModalBody");
+    if (!body) return;
+
+    if (typeof window.igReactionEngineLoad !== "function") {
+      body.innerHTML = `<div style="padding:18px;color:#991b1b;font-weight:700;">IG Reaction Engine не завантажився</div>`;
+      return;
+    }
+
+    await window.igReactionEngineLoad();
+
+    const box = document.getElementById("igReactionEngineBox");
+    if (box && !body.contains(box)) {
+      body.appendChild(box);
+    }
+  };
+})();

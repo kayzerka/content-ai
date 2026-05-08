@@ -1,0 +1,191 @@
+from fastapi import APIRouter, Body
+import sqlite3
+import os
+import requests
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
+
+router = APIRouter(prefix="/api/telegram", tags=["telegram-safe"])
+
+DB_PATH = os.getenv("TELEGRAM_DB_PATH", "db/telegram.sqlite")
+INTERNAL_BOT_TOKEN = (
+    os.getenv("TELEGRAM_BOT_TOKEN")
+    or os.getenv("BOT_TOKEN")
+    or os.getenv("TG_BOT_TOKEN")
+    or ""
+).strip()
+
+CLIENT_BOT_TOKEN = (
+    os.getenv("CLIENT_TELEGRAM_BOT_TOKEN")
+    or INTERNAL_BOT_TOKEN
+).strip()
+
+PURPOSE_ROLE_MAP = {
+    "planner_internal": ["internal_planner"],
+    "internal_planner": ["internal_planner"],
+    "client_funnel": ["client_channel", "client_group"],
+    "client_broadcast": ["client_channel", "client_group"],
+}
+
+
+def db():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    return con
+
+
+def get_chat_ids_for_purpose(purpose: str):
+    roles = PURPOSE_ROLE_MAP.get((purpose or "").strip(), [])
+
+    if not roles:
+        return []
+
+    placeholders = ",".join(["?"] * len(roles))
+
+    con = db()
+
+    rows = con.execute(
+        f"""
+        SELECT chat_id
+        FROM telegram_chats
+        WHERE enabled=1
+          AND role IN ({placeholders})
+        """,
+        roles,
+    ).fetchall()
+
+    con.close()
+
+    return [str(r["chat_id"]) for r in rows]
+
+
+def send_to_chat(chat_id: str, text: str, purpose: str = "client_funnel"):
+
+    bot_token = CLIENT_BOT_TOKEN
+
+    if purpose in ("planner_internal", "internal_planner"):
+        bot_token = INTERNAL_BOT_TOKEN
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+
+    try:
+        r = requests.post(
+            url,
+            json={
+                "chat_id": chat_id,
+                "text": text,
+            },
+            timeout=30,
+        )
+
+        return r.json()
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+        }
+
+
+@router.post("/send_safe")
+def send_safe(payload: dict = Body(default={})):
+    text = payload.get("text") or ""
+    purpose = payload.get("purpose") or "client_broadcast"
+
+    if not text:
+        return {
+            "ok": False,
+            "error": "empty_text",
+        }
+
+    chat_ids = get_chat_ids_for_purpose(purpose)
+
+    results = []
+
+    for cid in chat_ids:
+        tg = send_to_chat(cid, text, purpose=purpose)
+
+        results.append({
+            "chat_id": cid,
+            "ok": bool(tg.get("ok")),
+            "telegram": tg,
+        })
+
+    return {
+        "ok": any(r["ok"] for r in results),
+        "purpose": purpose,
+        "sent_count": sum(1 for r in results if r["ok"]),
+        "results": results,
+    }
+
+
+@router.get("/client_updates")
+def client_bot_updates():
+    token = CLIENT_BOT_TOKEN
+
+    if not token:
+        return {"ok": False, "error": "missing_client_bot_token"}
+
+    r = requests.get(
+        f"https://api.telegram.org/bot{token}/getUpdates",
+        timeout=20,
+    )
+
+    data = r.json()
+    saved = []
+
+    con = db()
+
+    for upd in data.get("result", []):
+        msg = upd.get("message") or upd.get("channel_post") or upd.get("my_chat_member")
+        if not msg:
+            continue
+
+        chat = msg.get("chat") or {}
+        chat_id = str(chat.get("id") or "")
+
+        if not chat_id:
+            continue
+
+        chat_type = chat.get("type") or ""
+        title = chat.get("title") or chat.get("first_name") or ""
+        username = chat.get("username") or ""
+
+        role = "client_channel" if chat_type == "channel" else "client_group"
+
+        con.execute(
+            """
+            INSERT INTO telegram_chats (
+                chat_id, type, title, username,
+                enabled, role, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(chat_id) DO UPDATE SET
+                type=excluded.type,
+                title=excluded.title,
+                username=excluded.username,
+                enabled=1,
+                role=excluded.role,
+                updated_at=datetime('now')
+            """,
+            (chat_id, chat_type, title, username, role),
+        )
+
+        saved.append({
+            "chat_id": chat_id,
+            "type": chat_type,
+            "title": title,
+            "username": username,
+            "role": role,
+        })
+
+    con.commit()
+    con.close()
+
+    return {
+        "ok": True,
+        "saved": saved,
+        "raw_count": len(data.get("result", [])),
+    }
+

@@ -1,0 +1,295 @@
+(function(){
+  function $(id){ return document.getElementById(id); }
+
+  async function jget(url){
+    const r = await fetch(url);
+    return await r.json();
+  }
+
+  async function jpost(url, payload){
+    const r = await fetch(url, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload || {})
+    });
+    return await r.json();
+  }
+
+  function esc(s){
+    return String(s ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;");
+  }
+
+  function findInstagramRoot(){
+    const h = [...document.querySelectorAll("h1,h2,h3")].find(x =>
+      (x.textContent || "").includes("Instagram-стрічка")
+    );
+    if(!h) return null;
+
+    let cur = h;
+    while(cur && cur.parentElement){
+      if(cur.parentElement.children.length > 1) return cur.parentElement;
+      cur = cur.parentElement;
+    }
+    return h.parentElement;
+  }
+
+  function ensureBox(){
+    if($("igReactionEngineBox")) return $("igReactionEngineBox");
+
+    const root = findInstagramRoot();
+    if(!root) return null;
+
+    const box = document.createElement("div");
+    box.id = "igReactionEngineBox";
+    box.style.cssText = `
+      margin:18px 0;
+      background:#fff;
+      border-radius:18px;
+      padding:18px;
+      box-shadow:0 10px 30px rgba(0,0,0,.06);
+      border:1px solid #eef0f4;
+    `;
+
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <h3 style="margin:0;font-size:22px">🤖 AI реакції Instagram</h3>
+          <p style="margin:6px 0 0;color:#6b7280">
+            Автономний модуль: реакція → аналіз користувача → стиль → draft відповіді → воронка.
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="igRxRefreshBtn" class="btn btn-dark">Оновити</button>
+          <button id="igRxTestBtn" class="btn btn-outline-dark">Тест реакції</button>
+          <button id="igRxSaveSettingsBtn" class="btn btn-primary">Зберегти налаштування</button>
+        </div>
+      </div>
+
+      <div id="igRxStatus" style="margin-top:12px;color:#374151">Завантаження...</div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
+        <div>
+          <h4 style="margin:0 0 8px">⚙️ Воронка / CTA</h4>
+
+          <label>Головна ціль воронки</label>
+          <textarea data-ig-setting="main_funnel_goal"></textarea>
+
+          <label>Основний CTA</label>
+          <textarea data-ig-setting="soft_redirect_cta"></textarea>
+
+          <label>CTA cold</label>
+          <textarea data-ig-setting="cold_user_cta"></textarea>
+
+          <label>CTA warm</label>
+          <textarea data-ig-setting="warm_user_cta"></textarea>
+
+          <label>CTA hot</label>
+          <textarea data-ig-setting="hot_user_cta"></textarea>
+
+          <label>Офер</label>
+          <input data-ig-setting="default_offer">
+
+          <label>Ключові слова ліда</label>
+          <input data-ig-setting="lead_keywords">
+        </div>
+
+        <div>
+          <h4 style="margin:0 0 8px">🧠 Правила AI</h4>
+
+          <label>Голос бренду</label>
+          <textarea data-ig-setting="brand_voice"></textarea>
+
+          <label>Що AI не має писати</label>
+          <textarea data-ig-setting="forbidden_topics"></textarea>
+
+          <label>Політика токсичних коментарів</label>
+          <textarea data-ig-setting="toxic_policy"></textarea>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label>Public min</label>
+              <input data-ig-setting="public_reply_min_chars">
+            </div>
+            <div>
+              <label>Public max</label>
+              <input data-ig-setting="public_reply_max_chars">
+            </div>
+            <div>
+              <label>Direct min</label>
+              <input data-ig-setting="direct_reply_min_chars">
+            </div>
+            <div>
+              <label>Direct max</label>
+              <input data-ig-setting="direct_reply_max_chars">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:18px">
+        <h4 style="margin:0 0 8px">📥 Drafts відповідей</h4>
+        <div id="igRxDrafts">Завантаження...</div>
+      </div>
+
+      <style>
+        #igReactionEngineBox label {
+          display:block;
+          margin:9px 0 4px;
+          font-weight:700;
+          font-size:13px;
+          color:#111827;
+        }
+        #igReactionEngineBox textarea,
+        #igReactionEngineBox input {
+          width:100%;
+          border:1px solid #d1d5db;
+          border-radius:10px;
+          padding:9px 10px;
+          font-size:14px;
+          background:#fff;
+        }
+        #igReactionEngineBox textarea {
+          min-height:56px;
+          resize:vertical;
+        }
+        #igReactionEngineBox .ig-draft-card {
+          border:1px solid #e5e7eb;
+          border-radius:14px;
+          padding:12px;
+          margin:10px 0;
+          background:#fafafa;
+        }
+        #igReactionEngineBox .ig-pill {
+          display:inline-block;
+          padding:3px 8px;
+          border-radius:999px;
+          background:#111;
+          color:white;
+          font-size:12px;
+          margin-right:5px;
+        }
+      </style>
+    `;
+
+    const firstCard = root.querySelector(".card, .panel, .instagram-card") || root.children[1];
+    if(firstCard && firstCard.parentNode){
+      firstCard.parentNode.insertBefore(box, firstCard.nextSibling);
+    } else {
+      root.appendChild(box);
+    }
+
+    $("igRxRefreshBtn").onclick = loadAll;
+    $("igRxSaveSettingsBtn").onclick = saveSettings;
+    $("igRxTestBtn").onclick = testReaction;
+
+    return box;
+  }
+
+  async function loadSettings(){
+    const data = await jget("/api/instagram/reactions/settings");
+    const s = data.settings || {};
+    document.querySelectorAll("#igReactionEngineBox [data-ig-setting]").forEach(el => {
+      const k = el.getAttribute("data-ig-setting");
+      el.value = s[k] || "";
+    });
+  }
+
+  async function loadStatus(){
+    const data = await jget("/api/instagram/reactions/status");
+    const t = data.tables || {};
+    $("igRxStatus").innerHTML = `
+      <b>Статус:</b>
+      reactions=${t.ig_reactions || 0},
+      profiles=${t.ig_user_profiles || 0},
+      drafts=${t.ig_ai_reply_drafts || 0},
+      pending=${data.drafts_pending || 0}
+    `;
+  }
+
+  async function loadDrafts(){
+    const data = await jget("/api/instagram/replies/drafts?limit=20");
+    const drafts = data.drafts || [];
+    if(!drafts.length){
+      $("igRxDrafts").innerHTML = `<div style="color:#6b7280">Drafts ще немає.</div>`;
+      return;
+    }
+
+    $("igRxDrafts").innerHTML = drafts.map(d => `
+      <div class="ig-draft-card">
+        <div style="margin-bottom:8px">
+          <span class="ig-pill">${esc(d.selected_prompt_mode)}</span>
+          <span class="ig-pill">${esc(d.reply_strategy)}</span>
+          <span class="ig-pill">${esc(d.channel)}</span>
+          <b>@${esc(d.username || "user")}</b>
+        </div>
+
+        <div style="font-size:13px;color:#6b7280;margin-bottom:8px">
+          Реакція: ${esc(d.reaction_text || "")}
+        </div>
+
+        <div style="margin-bottom:8px">
+          <b>Public:</b><br>${esc(d.public_reply || "")}
+        </div>
+
+        ${d.direct_reply ? `<div style="margin-bottom:8px"><b>Direct:</b><br>${esc(d.direct_reply)}</div>` : ""}
+
+        ${d.followup_question ? `<div style="margin-bottom:8px"><b>Follow-up:</b><br>${esc(d.followup_question)}</div>` : ""}
+
+        <div style="font-size:12px;color:#6b7280">
+          Note: ${esc(d.internal_note || "")}
+        </div>
+      </div>
+    `).join("");
+  }
+
+  async function saveSettings(){
+    const settings = {};
+    document.querySelectorAll("#igReactionEngineBox [data-ig-setting]").forEach(el => {
+      settings[el.getAttribute("data-ig-setting")] = el.value;
+    });
+    const res = await jpost("/api/instagram/reactions/settings", {settings});
+    alert(res.status === "ok" ? "Налаштування збережено" : "Помилка збереження");
+    await loadAll();
+  }
+
+  async function testReaction(){
+    const text = prompt("Тестова реакція користувача:", "Я боюсь регресії, раптом побачу щось страшне?");
+    if(!text) return;
+
+    const res = await jpost("/api/instagram/reactions/manual-add", {
+      username:"front_test_user",
+      text,
+      event_type:"comment"
+    });
+
+    console.log("IG test reaction:", res);
+    await loadAll();
+  }
+
+  async function loadAll(){
+    ensureBox();
+    await loadSettings();
+    await loadStatus();
+    await loadDrafts();
+  }
+
+  function boot(){
+    ensureBox();
+    loadAll().catch(err => {
+      console.error("IG Reaction Engine UI error:", err);
+      const box = ensureBox();
+      if(box) box.querySelector("#igRxStatus").textContent = "Помилка завантаження IG Reaction Engine: " + err.message;
+    });
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+
+  window.igReactionEngineLoad = loadAll;
+})();

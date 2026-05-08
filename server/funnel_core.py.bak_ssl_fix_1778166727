@@ -1,0 +1,798 @@
+
+import os
+import json
+import time
+import sqlite3
+import urllib.request
+import urllib.error
+from typing import Any, Dict, Optional, List
+
+DB_PATH = os.getenv("CONTENT_AI_DB", os.getenv("DB_PATH", "content_ai.sqlite3"))
+
+def now_ts() -> int:
+    return int(time.time())
+
+def db():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    return con
+
+def jdump(x: Any) -> str:
+    return json.dumps(x or {}, ensure_ascii=False)
+
+def jload(s: Optional[str], default=None):
+    if default is None:
+        default = {}
+    try:
+        return json.loads(s) if s else default
+    except Exception:
+        return default
+
+def init_funnel_db():
+    con = db()
+    cur = con.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS funnels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        status TEXT DEFAULT 'active',
+        source_platform TEXT DEFAULT 'instagram',
+        source_type TEXT DEFAULT 'reel',
+        goal TEXT DEFAULT 'consultation',
+        trigger_type TEXT DEFAULT 'keyword',
+        trigger_value TEXT DEFAULT '',
+        output_type TEXT DEFAULT 'telegram_bot',
+        output_target TEXT DEFAULT '',
+        ai_enabled INTEGER DEFAULT 1,
+        config_json TEXT DEFAULT '{}',
+        created_ts INTEGER
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS funnel_steps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        funnel_id INTEGER NOT NULL,
+        step_order INTEGER NOT NULL,
+        step_type TEXT NOT NULL,
+        step_name TEXT DEFAULT '',
+        config_json TEXT DEFAULT '{}',
+        created_ts INTEGER,
+        FOREIGN KEY(funnel_id) REFERENCES funnels(id)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS funnel_contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        funnel_id INTEGER NOT NULL,
+        platform TEXT NOT NULL,
+        external_user_id TEXT NOT NULL,
+        username TEXT DEFAULT '',
+        first_seen_ts INTEGER,
+        current_step INTEGER DEFAULT 1,
+        lead_score REAL DEFAULT 0,
+        tags_json TEXT DEFAULT '[]',
+        state_json TEXT DEFAULT '{}',
+        UNIQUE(funnel_id, platform, external_user_id)
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS funnel_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        funnel_id INTEGER,
+        contact_id INTEGER,
+        event_type TEXT NOT NULL,
+        payload_json TEXT DEFAULT '{}',
+        created_ts INTEGER
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS funnel_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        funnel_id INTEGER,
+        contact_id INTEGER,
+        execute_at INTEGER NOT NULL,
+        action_type TEXT NOT NULL,
+        payload_json TEXT DEFAULT '{}',
+        status TEXT DEFAULT 'pending',
+        created_ts INTEGER,
+        executed_ts INTEGER
+    )
+    """)
+
+    con.commit()
+    con.close()
+
+def row_to_dict(r):
+    return dict(r) if r else None
+
+def log_event(funnel_id, contact_id, event_type, payload=None):
+    init_funnel_db()
+    con = db()
+    con.execute("""
+        INSERT INTO funnel_events(funnel_id, contact_id, event_type, payload_json, created_ts)
+        VALUES (?, ?, ?, ?, ?)
+    """, (funnel_id, contact_id, event_type, jdump(payload), now_ts()))
+    con.commit()
+    con.close()
+
+def create_default_funnel(name="Instagram → Telegram → Consultation"):
+    init_funnel_db()
+    con = db()
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO funnels(
+            name, status, source_platform, source_type, goal,
+            trigger_type, trigger_value, output_type, output_target,
+            ai_enabled, config_json, created_ts
+        )
+        VALUES (?, 'active', 'instagram', 'reel', 'consultation',
+                'keyword', 'ПРИЧИНА', 'telegram_bot', '', 1, ?, ?)
+    """, (name, jdump({
+        "description": "MVP funnel: comment/DM keyword → Telegram bot → free gift → warmup → CTA",
+        "lead_magnet": "Безкоштовний гайд / консультаційна діагностика",
+    }), now_ts()))
+
+    funnel_id = cur.lastrowid
+
+    steps = [
+        (1, "send_message", "DM welcome", {
+            "text": "Дякую за реакцію ❤️ Напиши мені в Telegram, і я надішлю безкоштовний матеріал.",
+        }),
+        (2, "send_telegram_invite", "Telegram invite", {
+            "text": "Перейди в Telegram, щоб отримати матеріал:",
+            "url": "",
+        }),
+        (3, "send_free_gift", "Free gift", {
+            "title": "Безкоштовний матеріал",
+            "text": "Ось твій матеріал ❤️",
+            "url": "",
+        }),
+        (4, "wait_delay", "Wait 1 day", {
+            "delay_seconds": 86400,
+            "next_action": "send_ai_message",
+        }),
+        (5, "send_ai_message", "AI warmup", {
+            "prompt": "Плавно прогрій людину до консультації. Не тисни. Постав 1 мʼяке питання про її ситуацію.",
+        }),
+        (6, "send_cta", "Consultation CTA", {
+            "text": "Якщо хочеш, можемо розібрати твою ситуацію на консультації. Напиши: ХОЧУ РОЗБІР.",
+            "url": "",
+        }),
+    ]
+
+    for order, stype, sname, cfg in steps:
+        cur.execute("""
+            INSERT INTO funnel_steps(funnel_id, step_order, step_type, step_name, config_json, created_ts)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (funnel_id, order, stype, sname, jdump(cfg), now_ts()))
+
+    con.commit()
+    con.close()
+    return funnel_id
+
+def list_funnels():
+    init_funnel_db()
+    con = db()
+    rows = con.execute("SELECT * FROM funnels ORDER BY id DESC").fetchall()
+    con.close()
+    return [row_to_dict(r) for r in rows]
+
+def get_funnel(funnel_id: int):
+    init_funnel_db()
+    con = db()
+    f = con.execute("SELECT * FROM funnels WHERE id=?", (funnel_id,)).fetchone()
+    steps = con.execute("""
+        SELECT * FROM funnel_steps WHERE funnel_id=? ORDER BY step_order ASC
+    """, (funnel_id,)).fetchall()
+    con.close()
+    out = row_to_dict(f)
+    if not out:
+        return None
+    out["config"] = jload(out.pop("config_json", "{}"))
+    out["steps"] = []
+    for s in steps:
+        d = row_to_dict(s)
+        d["config"] = jload(d.pop("config_json", "{}"))
+        out["steps"].append(d)
+    return out
+
+def create_or_get_contact(funnel_id: int, platform: str, external_user_id: str, username: str = ""):
+    init_funnel_db()
+    con = db()
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT OR IGNORE INTO funnel_contacts(
+            funnel_id, platform, external_user_id, username,
+            first_seen_ts, current_step, lead_score, tags_json, state_json
+        )
+        VALUES (?, ?, ?, ?, ?, 1, 0, '[]', '{}')
+    """, (funnel_id, platform, external_user_id, username or "", now_ts()))
+
+    con.commit()
+
+    row = cur.execute("""
+        SELECT * FROM funnel_contacts
+        WHERE funnel_id=? AND platform=? AND external_user_id=?
+    """, (funnel_id, platform, external_user_id)).fetchone()
+
+    con.close()
+    return row_to_dict(row)
+
+def get_step(funnel_id: int, step_order: int):
+    init_funnel_db()
+    con = db()
+    row = con.execute("""
+        SELECT * FROM funnel_steps
+        WHERE funnel_id=? AND step_order=?
+    """, (funnel_id, step_order)).fetchone()
+    con.close()
+
+    d = row_to_dict(row)
+    if d:
+        d["config"] = jload(d.pop("config_json", "{}"))
+    return d
+
+def advance_contact(contact_id: int, next_step: int):
+    init_funnel_db()
+    con = db()
+    con.execute("UPDATE funnel_contacts SET current_step=? WHERE id=?", (next_step, contact_id))
+    con.commit()
+    con.close()
+
+def enqueue_job(funnel_id: int, contact_id: int, execute_at: int, action_type: str, payload: Dict[str, Any]):
+    init_funnel_db()
+    con = db()
+    con.execute("""
+        INSERT INTO funnel_jobs(funnel_id, contact_id, execute_at, action_type, payload_json, status, created_ts)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?)
+    """, (funnel_id, contact_id, execute_at, action_type, jdump(payload), now_ts()))
+    con.commit()
+    con.close()
+
+
+def generate_funnel_ai_text(contact: Dict[str, Any], prompt: str, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    MVP AI generator:
+    - tries DeepSeek-compatible chat endpoint if DEEPSEEK_API_KEY exists
+    - falls back to deterministic local text
+    """
+    cfg = cfg or {}
+    api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    api_base = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com").rstrip("/")
+    model = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+    state = jload(contact.get("state_json"), {})
+    tags = jload(contact.get("tags_json"), [])
+
+    system = cfg.get("system") or (
+        "Ти мʼякий Telegram/Instagram sales assistant для експертної консультації. "
+        "Пиши українською. Не тисни. Не обіцяй медичних результатів. "
+        "1 повідомлення, коротко, тепло, з одним питанням."
+    )
+
+    user = (
+        f"Згенеруй повідомлення для ліда у воронці.\n"
+        f"platform={contact.get('platform')}\n"
+        f"username={contact.get('username')}\n"
+        f"state={json.dumps(state, ensure_ascii=False)}\n"
+        f"tags={json.dumps(tags, ensure_ascii=False)}\n"
+        f"Завдання: {prompt}\n"
+    )
+
+    if api_key:
+        try:
+            payload = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": float(cfg.get("temperature", 0.7)),
+                "max_tokens": int(cfg.get("max_tokens", 220)),
+            }
+
+            req = urllib.request.Request(
+                api_base + "/chat/completions",
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + api_key,
+                },
+                method="POST",
+            )
+
+            with urllib.request.urlopen(req, timeout=int(cfg.get("timeout", 35))) as resp:
+                raw = resp.read().decode("utf-8", errors="replace")
+                data = json.loads(raw)
+                text = (
+                    data.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                    .strip()
+                )
+
+                if text:
+                    return {
+                        "ok": True,
+                        "provider": "deepseek",
+                        "model": model,
+                        "text": text,
+                        "raw": data,
+                    }
+
+        except Exception as e:
+            return {
+                "ok": False,
+                "provider": "deepseek",
+                "error": str(e),
+                "text": (
+                    "Бачу, що ця тема тобі відгукнулась ❤️ "
+                    "Що саме зараз найбільше хочеться змінити у своїй ситуації?"
+                ),
+            }
+
+    return {
+        "ok": True,
+        "provider": "fallback",
+        "model": "local_template",
+        "text": (
+            "Бачу, що ця тема тобі відгукнулась ❤️ "
+            "Що саме зараз найбільше хочеться змінити у своїй ситуації?"
+        ),
+    }
+
+
+def execute_step(contact: Dict[str, Any], step: Dict[str, Any]):
+    funnel_id = contact["funnel_id"]
+    contact_id = contact["id"]
+    step_type = step["step_type"]
+    cfg = step.get("config") or {}
+
+    result = {
+        "ok": True,
+        "step_type": step_type,
+        "step_order": step["step_order"],
+        "action": None,
+        "message": None,
+        "payload": cfg,
+    }
+
+    if step_type in ("send_message", "send_dm", "send_telegram_invite", "send_free_gift", "send_cta"):
+        result["action"] = "message_ready"
+        result["message"] = cfg.get("text") or cfg.get("title") or ""
+
+        log_event(funnel_id, contact_id, f"step_{step_type}", {
+            "step_order": step["step_order"],
+            "config": cfg,
+        })
+
+        advance_contact(contact_id, step["step_order"] + 1)
+        return result
+
+    if step_type == "send_ai_message":
+        prompt = cfg.get("prompt", "")
+        gen = generate_funnel_ai_text(contact, prompt, cfg)
+
+        result["action"] = "ai_message_generated"
+        result["message"] = gen.get("text", "")
+        result["generated"] = {
+            "ok": gen.get("ok"),
+            "provider": gen.get("provider"),
+            "model": gen.get("model"),
+            "error": gen.get("error"),
+        }
+
+        log_event(funnel_id, contact_id, "step_send_ai_message", {
+            "step_order": step["step_order"],
+            "prompt": prompt,
+            "generated_text": result["message"],
+            "provider": gen.get("provider"),
+            "model": gen.get("model"),
+            "ok": gen.get("ok"),
+            "error": gen.get("error"),
+        })
+
+        advance_contact(contact_id, step["step_order"] + 1)
+        return result
+
+    if step_type == "wait_delay":
+        delay = int(cfg.get("delay_seconds") or 3600)
+        next_step = step["step_order"] + 1
+
+        enqueue_job(funnel_id, contact_id, now_ts() + delay, "continue_funnel", {
+            "next_step": next_step,
+            "from_step": step["step_order"],
+        })
+
+        log_event(funnel_id, contact_id, "step_wait_delay", {
+            "delay_seconds": delay,
+            "next_step": next_step,
+        })
+
+        advance_contact(contact_id, next_step)
+        result["action"] = "job_scheduled"
+        result["message"] = f"Scheduled next step in {delay} seconds"
+        return result
+
+    result["ok"] = False
+    result["action"] = "unknown_step"
+    result["message"] = f"Unknown step_type={step_type}"
+    return result
+
+def process_funnel_event(
+    funnel_id: int,
+    platform: str,
+    external_user_id: str,
+    event_type: str,
+    payload: Optional[Dict[str, Any]] = None,
+    username: str = "",
+):
+    init_funnel_db()
+    payload = payload or {}
+
+    contact = create_or_get_contact(funnel_id, platform, external_user_id, username)
+    log_event(funnel_id, contact["id"], event_type, payload)
+
+    step_order = int(contact.get("current_step") or 1)
+    step = get_step(funnel_id, step_order)
+
+    if not step:
+        return {
+            "ok": True,
+            "done": True,
+            "message": "No more steps",
+            "contact": contact,
+        }
+
+    result = execute_step(contact, step)
+    return {
+        "ok": result.get("ok", False),
+        "done": False,
+        "contact": contact,
+        "step": step,
+        "result": result,
+    }
+
+def pending_jobs(limit: int = 50):
+    init_funnel_db()
+    con = db()
+    rows = con.execute("""
+        SELECT * FROM funnel_jobs
+        WHERE status='pending' AND execute_at <= ?
+        ORDER BY execute_at ASC
+        LIMIT ?
+    """, (now_ts(), limit)).fetchall()
+    con.close()
+    return [row_to_dict(r) for r in rows]
+
+def run_due_jobs(limit: int = 50):
+    init_funnel_db()
+    jobs = pending_jobs(limit)
+    results = []
+
+    for job in jobs:
+        payload = jload(job.get("payload_json"), {})
+        contact_id = job["contact_id"]
+
+        con = db()
+        contact = con.execute("SELECT * FROM funnel_contacts WHERE id=?", (contact_id,)).fetchone()
+        con.close()
+
+        if not contact:
+            continue
+
+        contact = row_to_dict(contact)
+        next_step = int(payload.get("next_step") or contact.get("current_step") or 1)
+        step = get_step(contact["funnel_id"], next_step)
+
+        if step:
+            res = execute_step(contact, step)
+        else:
+            res = {"ok": True, "done": True, "message": "No step found"}
+
+        con = db()
+        con.execute("""
+            UPDATE funnel_jobs
+            SET status='done', executed_ts=?
+            WHERE id=?
+        """, (now_ts(), job["id"]))
+        con.commit()
+        con.close()
+
+        results.append({
+            "job": job,
+            "result": res,
+        })
+
+    return results
+
+def funnel_stats():
+    init_funnel_db()
+    con = db()
+    rows = con.execute("""
+        SELECT
+            f.id,
+            f.name,
+            f.status,
+            COUNT(DISTINCT c.id) AS contacts,
+            COUNT(e.id) AS events,
+            SUM(CASE WHEN e.event_type LIKE 'step_%' THEN 1 ELSE 0 END) AS steps_executed
+        FROM funnels f
+        LEFT JOIN funnel_contacts c ON c.funnel_id = f.id
+        LEFT JOIN funnel_events e ON e.funnel_id = f.id
+        GROUP BY f.id
+        ORDER BY f.id DESC
+    """).fetchall()
+    con.close()
+    return [row_to_dict(r) for r in rows]
+
+
+# =========================
+# FUNNEL ADMIN V1
+# =========================
+
+def update_funnel(funnel_id: int, patch: Dict[str, Any]):
+    init_funnel_db()
+
+    allowed = [
+        "name", "status", "source_platform", "source_type", "goal",
+        "trigger_type", "trigger_value", "output_type", "output_target",
+        "ai_enabled"
+    ]
+
+    sets = []
+    vals = []
+
+    for k in allowed:
+        if k in patch:
+            sets.append(f"{k}=?")
+            vals.append(patch[k])
+
+    if "config" in patch:
+        sets.append("config_json=?")
+        vals.append(jdump(patch.get("config") or {}))
+
+    if not sets:
+        return get_funnel(funnel_id)
+
+    vals.append(funnel_id)
+
+    con = db()
+    con.execute(f"UPDATE funnels SET {', '.join(sets)} WHERE id=?", vals)
+    con.commit()
+    con.close()
+
+    log_event(funnel_id, None, "funnel_updated", patch)
+    return get_funnel(funnel_id)
+
+def upsert_funnel_step(
+    funnel_id: int,
+    step_order: int,
+    step_type: str,
+    step_name: str = "",
+    config: Optional[Dict[str, Any]] = None,
+):
+    init_funnel_db()
+    config = config or {}
+
+    con = db()
+    cur = con.cursor()
+
+    existing = cur.execute("""
+        SELECT id FROM funnel_steps
+        WHERE funnel_id=? AND step_order=?
+    """, (funnel_id, step_order)).fetchone()
+
+    if existing:
+        cur.execute("""
+            UPDATE funnel_steps
+            SET step_type=?, step_name=?, config_json=?
+            WHERE funnel_id=? AND step_order=?
+        """, (step_type, step_name or "", jdump(config), funnel_id, step_order))
+        step_id = existing["id"]
+    else:
+        cur.execute("""
+            INSERT INTO funnel_steps(
+                funnel_id, step_order, step_type, step_name, config_json, created_ts
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (funnel_id, step_order, step_type, step_name or "", jdump(config), now_ts()))
+        step_id = cur.lastrowid
+
+    con.commit()
+    con.close()
+
+    log_event(funnel_id, None, "funnel_step_upserted", {
+        "step_id": step_id,
+        "step_order": step_order,
+        "step_type": step_type,
+        "step_name": step_name,
+        "config": config,
+    })
+
+    return get_funnel(funnel_id)
+
+def delete_funnel_step(funnel_id: int, step_order: int):
+    init_funnel_db()
+    con = db()
+    con.execute("""
+        DELETE FROM funnel_steps
+        WHERE funnel_id=? AND step_order=?
+    """, (funnel_id, step_order))
+    con.commit()
+    con.close()
+
+    log_event(funnel_id, None, "funnel_step_deleted", {
+        "step_order": step_order,
+    })
+
+    return get_funnel(funnel_id)
+
+def get_contact_by_external(funnel_id: int, platform: str, external_user_id: str):
+    init_funnel_db()
+    con = db()
+    row = con.execute("""
+        SELECT * FROM funnel_contacts
+        WHERE funnel_id=? AND platform=? AND external_user_id=?
+    """, (funnel_id, platform, external_user_id)).fetchone()
+    con.close()
+    return row_to_dict(row)
+
+def set_contact_step(contact_id: int, step_order: int):
+    init_funnel_db()
+    con = db()
+    con.execute("""
+        UPDATE funnel_contacts
+        SET current_step=?
+        WHERE id=?
+    """, (step_order, contact_id))
+    con.commit()
+    con.close()
+
+def run_contact_next_step(funnel_id: int, platform: str, external_user_id: str):
+    init_funnel_db()
+
+    contact = get_contact_by_external(funnel_id, platform, external_user_id)
+    if not contact:
+        return {
+            "ok": False,
+            "error": "contact_not_found",
+            "hint": "First send /api/funnels/event for this user"
+        }
+
+    step_order = int(contact.get("current_step") or 1)
+    step = get_step(funnel_id, step_order)
+
+    if not step:
+        return {
+            "ok": True,
+            "done": True,
+            "contact": contact,
+            "message": "No more steps"
+        }
+
+    result = execute_step(contact, step)
+
+    return {
+        "ok": result.get("ok", False),
+        "done": False,
+        "contact": contact,
+        "step": step,
+        "result": result,
+    }
+
+def funnel_contact_debug(funnel_id: int, platform: str, external_user_id: str):
+    init_funnel_db()
+    con = db()
+
+    contact = con.execute("""
+        SELECT * FROM funnel_contacts
+        WHERE funnel_id=? AND platform=? AND external_user_id=?
+    """, (funnel_id, platform, external_user_id)).fetchone()
+
+    if not contact:
+        con.close()
+        return {"ok": False, "error": "contact_not_found"}
+
+    contact = row_to_dict(contact)
+
+    events = con.execute("""
+        SELECT * FROM funnel_events
+        WHERE contact_id=?
+        ORDER BY id DESC
+        LIMIT 30
+    """, (contact["id"],)).fetchall()
+
+    jobs = con.execute("""
+        SELECT * FROM funnel_jobs
+        WHERE contact_id=?
+        ORDER BY id DESC
+        LIMIT 30
+    """, (contact["id"],)).fetchall()
+
+    con.close()
+
+    return {
+        "ok": True,
+        "contact": contact,
+        "events": [row_to_dict(x) for x in events],
+        "jobs": [row_to_dict(x) for x in jobs],
+    }
+
+def list_telegram_destinations():
+    """
+    Best-effort discovery of Telegram assets from existing project DB.
+    Does not assume exact schema; checks common table names.
+    """
+    init_funnel_db()
+    con = db()
+    cur = con.cursor()
+
+    tables = [r["name"] for r in cur.execute("""
+        SELECT name FROM sqlite_master
+        WHERE type='table'
+    """).fetchall()]
+
+    candidates = []
+    possible = [
+        "telegram_chats",
+        "telegram_groups",
+        "telegram_channels",
+        "tg_chats",
+        "tg_groups",
+        "connected_telegram_chats",
+    ]
+
+    for t in possible:
+        if t not in tables:
+            continue
+
+        try:
+            cols = [c["name"] for c in cur.execute(f"PRAGMA table_info({t})").fetchall()]
+            rows = cur.execute(f"SELECT * FROM {t} LIMIT 100").fetchall()
+
+            for r in rows:
+                d = row_to_dict(r)
+                title = (
+                    d.get("title")
+                    or d.get("name")
+                    or d.get("chat_title")
+                    or d.get("username")
+                    or str(d.get("chat_id") or d.get("id") or "")
+                )
+                chat_id = (
+                    d.get("chat_id")
+                    or d.get("telegram_chat_id")
+                    or d.get("external_id")
+                    or d.get("id")
+                )
+
+                candidates.append({
+                    "source_table": t,
+                    "title": title,
+                    "chat_id": chat_id,
+                    "username": d.get("username") or d.get("handle") or "",
+                    "type": d.get("type") or d.get("chat_type") or "",
+                    "raw": d,
+                })
+        except Exception as e:
+            candidates.append({
+                "source_table": t,
+                "error": str(e),
+            })
+
+    con.close()
+
+    return {
+        "ok": True,
+        "items": candidates,
+        "tables_checked": possible,
+        "tables_found": [x for x in possible if x in tables],
+    }

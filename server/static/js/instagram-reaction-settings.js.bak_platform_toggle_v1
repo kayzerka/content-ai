@@ -1,0 +1,117 @@
+(function(){
+  function el(tag, attrs={}, html=""){
+    const n = document.createElement(tag);
+    Object.entries(attrs).forEach(([k,v]) => n.setAttribute(k,v));
+    n.innerHTML = html;
+    return n;
+  }
+
+  async function apiGet(){
+    const r = await fetch("/api/instagram/reactions/settings");
+    return await r.json();
+  }
+
+  async function apiSave(settings){
+    const r = await fetch("/api/instagram/reactions/settings", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({settings})
+    });
+    return await r.json();
+  }
+
+  function field(key, label, value, type="textarea"){
+    if(type === "input"){
+      return `
+        <label style="display:block;margin:10px 0 4px;font-weight:600">${label}</label>
+        <input data-ig-setting="${key}" value="${String(value||"").replaceAll('"','&quot;')}"
+          style="width:100%;padding:8px;border:1px solid #ddd;border-radius:8px">
+      `;
+    }
+    return `
+      <label style="display:block;margin:10px 0 4px;font-weight:600">${label}</label>
+      <textarea data-ig-setting="${key}"
+        style="width:100%;min-height:58px;padding:8px;border:1px solid #ddd;border-radius:8px">${value||""}</textarea>
+    `;
+  }
+
+  async function openPanel(){
+    let old = document.getElementById("igReactionSettingsPanel");
+    if(old){ old.remove(); return; }
+
+    const data = await apiGet();
+    const s = data.settings || {};
+
+    const panel = el("div", {
+      id:"igReactionSettingsPanel",
+      style:"position:fixed;right:20px;bottom:80px;width:460px;max-height:80vh;overflow:auto;background:#fff;z-index:99999;border:1px solid #ddd;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.18);padding:16px;font-family:Arial,sans-serif"
+    });
+
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <h3 style="margin:0">Instagram Reaction Engine</h3>
+        <button id="igCloseSettings" style="border:0;background:#eee;border-radius:8px;padding:6px 10px">✕</button>
+      </div>
+
+      <p style="font-size:13px;color:#666;margin:8px 0 14px">
+        AI сам вибирає стиль. Тут налаштовується тільки воронка, CTA, ліміти і заборони.
+      </p>
+
+      ${field("main_funnel_goal","Головна ціль воронки",s.main_funnel_goal)}
+      ${field("soft_redirect_cta","Основний мʼякий CTA",s.soft_redirect_cta)}
+      ${field("cold_user_cta","CTA для холодного користувача",s.cold_user_cta)}
+      ${field("warm_user_cta","CTA для теплого користувача",s.warm_user_cta)}
+      ${field("hot_user_cta","CTA для гарячого користувача",s.hot_user_cta)}
+      ${field("default_offer","Офер / куди ведемо",s.default_offer,"input")}
+      ${field("redirect_channel","Канал редиректу",s.redirect_channel,"input")}
+      ${field("lead_keywords","Ключові слова ліда",s.lead_keywords,"input")}
+      ${field("brand_voice","Голос бренду",s.brand_voice)}
+      ${field("forbidden_topics","Що AI не має писати",s.forbidden_topics)}
+      ${field("toxic_policy","Політика токсичних коментарів",s.toxic_policy)}
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        ${field("public_reply_min_chars","Public min",s.public_reply_min_chars,"input")}
+        ${field("public_reply_max_chars","Public max",s.public_reply_max_chars,"input")}
+        ${field("direct_reply_min_chars","Direct min",s.direct_reply_min_chars,"input")}
+        ${field("direct_reply_max_chars","Direct max",s.direct_reply_max_chars,"input")}
+      </div>
+
+      <button id="igSaveSettings" style="width:100%;margin-top:14px;padding:10px;border:0;border-radius:10px;background:#111;color:#fff;font-weight:700">
+        Зберегти налаштування
+      </button>
+
+      <pre id="igSettingsResult" style="white-space:pre-wrap;font-size:12px;background:#f7f7f7;border-radius:8px;padding:8px;margin-top:10px"></pre>
+    `;
+
+    document.body.appendChild(panel);
+
+    document.getElementById("igCloseSettings").onclick = () => panel.remove();
+
+    document.getElementById("igSaveSettings").onclick = async () => {
+      const settings = {};
+      panel.querySelectorAll("[data-ig-setting]").forEach(x => {
+        settings[x.getAttribute("data-ig-setting")] = x.value;
+      });
+      const res = await apiSave(settings);
+      document.getElementById("igSettingsResult").textContent = JSON.stringify(res, null, 2);
+    };
+  }
+
+  function boot(){
+    if(document.getElementById("igReactionSettingsBtn")) return;
+
+    const btn = el("button", {
+      id:"igReactionSettingsBtn",
+      style:"position:fixed;right:20px;bottom:20px;z-index:99998;border:0;border-radius:999px;background:#111;color:#fff;padding:12px 16px;box-shadow:0 8px 24px rgba(0,0,0,.2);font-weight:700"
+    }, "IG AI ⚙️");
+
+    btn.onclick = openPanel;
+    document.body.appendChild(btn);
+  }
+
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();

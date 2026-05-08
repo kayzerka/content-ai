@@ -1,0 +1,71 @@
+
+from typing import Optional, Dict, Any
+from fastapi import APIRouter
+from pydantic import BaseModel
+
+from funnel_core import (
+    init_funnel_db,
+    create_default_funnel,
+    list_funnels,
+    get_funnel,
+    process_funnel_event,
+    run_due_jobs,
+    funnel_stats,
+)
+
+router = APIRouter(prefix="/api/funnels", tags=["funnels"])
+
+class FunnelCreateRequest(BaseModel):
+    name: Optional[str] = None
+
+class FunnelEventRequest(BaseModel):
+    funnel_id: int
+    platform: str = "instagram"
+    external_user_id: str
+    username: Optional[str] = ""
+    event_type: str = "manual"
+    payload: Optional[Dict[str, Any]] = None
+
+@router.get("/health")
+def funnels_health():
+    init_funnel_db()
+    return {"ok": True, "module": "funnels", "status": "ready"}
+
+@router.post("/init")
+def funnels_init():
+    init_funnel_db()
+    return {"ok": True}
+
+@router.post("/default")
+def funnels_create_default(req: FunnelCreateRequest = FunnelCreateRequest()):
+    funnel_id = create_default_funnel(req.name or "Instagram → Telegram → Consultation")
+    return {"ok": True, "funnel_id": funnel_id, "funnel": get_funnel(funnel_id)}
+
+@router.get("")
+def funnels_list():
+    return {"ok": True, "items": list_funnels()}
+
+@router.get("/{funnel_id}")
+def funnels_get(funnel_id: int):
+    f = get_funnel(funnel_id)
+    return {"ok": bool(f), "item": f}
+
+@router.post("/event")
+def funnels_event(req: FunnelEventRequest):
+    res = process_funnel_event(
+        funnel_id=req.funnel_id,
+        platform=req.platform,
+        external_user_id=req.external_user_id,
+        username=req.username or "",
+        event_type=req.event_type,
+        payload=req.payload or {},
+    )
+    return res
+
+@router.post("/jobs/run-due")
+def funnels_run_jobs():
+    return {"ok": True, "items": run_due_jobs()}
+
+@router.get("/analytics/summary")
+def funnels_analytics_summary():
+    return {"ok": True, "items": funnel_stats()}

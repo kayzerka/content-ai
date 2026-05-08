@@ -1,0 +1,55 @@
+from fastapi import FastAPI
+import subprocess
+
+app = FastAPI()
+
+MODEL_PATH = "/Volumes/B/Regresolog/content_ai/models/model.gguf"
+
+def run_llm(prompt):
+    cmd = [
+        "llama-cli",
+        "-m", MODEL_PATH,
+        "-p", prompt,
+        "-n", "512",
+        "-t", "6",
+        "-c", "2048",
+        "-ngl", "0"
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.stdout
+
+
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
+
+@app.post("/analyze")
+def analyze(text: str):
+    prompt = f"""
+    Проаналізуй цей контент:
+
+    {text}
+
+    Дай JSON:
+    topic, pain, hook, format, emotion, cta, recommendation
+    """
+
+    result = run_llm(prompt)
+    return {"result": result}
+
+
+@app.post("/generate")
+def generate(insight: str):
+    prompt = f"""
+    На основі цього:
+
+    {insight}
+
+    Згенеруй 5 ідей reels
+    """
+
+    result = run_llm(prompt)
+    return {"result": result}
+    

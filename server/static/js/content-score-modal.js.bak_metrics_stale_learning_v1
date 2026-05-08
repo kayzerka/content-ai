@@ -1,0 +1,775 @@
+/**
+ * Content Score Modal V3
+ * Result button appears in the SAME row.
+ */
+const ContentScoreModal = (function() {
+  let modalElement = null;
+  let platformRows = [];
+  let scoreResults = {};
+  let scoreControllers = {};
+
+  function esc(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"]/g, function(m) {
+      return ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[m]);
+    });
+  }
+
+  function ensureStyles() {
+    if (document.getElementById('cs_spinner_styles')) return;
+    document.head.insertAdjacentHTML('beforeend', `
+      <style id="cs_spinner_styles">
+        .cs-btn-loading {
+          opacity: .75;
+          pointer-events: none;
+        }
+        .cs-mini-spinner {
+          display:inline-block;
+          width:12px;
+          height:12px;
+          border:2px solid rgba(255,255,255,.45);
+          border-top-color:#fff;
+          border-radius:50%;
+          animation: csSpin .75s linear infinite;
+          margin-right:6px;
+          vertical-align:-2px;
+        }
+        @keyframes csSpin { to { transform: rotate(360deg); } }
+        .cs-result-btn {
+          margin-left:6px;
+          padding:6px 10px !important;
+          font-size:12px !important;
+          white-space:nowrap;
+        }
+      </style>
+    `);
+  }
+
+  function template() {
+    return `
+      <div id="contentScoreModalOverlay" class="modal-overlay">
+        <div class="modal-container" style="max-width: 1120px;">
+          <div class="modal-header">
+            <h3><span>🎯</span> Hook / Retention Analyzer</h3>
+            <button class="modal-close" onclick="ContentScoreModal.close()">×</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="toolbar">
+              <button class="btn primary" id="cs_tab_local" onclick="ContentScoreModal.switchSource('local')">📁 Локальний ролик</button>
+              <button class="btn" id="cs_tab_path" onclick="ContentScoreModal.switchSource('path')">🧾 Шлях на сервері</button>
+              <button class="btn" id="cs_tab_platform" onclick="ContentScoreModal.switchSource('platform')">🌐 З платформи</button>
+              <button class="btn" onclick="ContentScoreModal.loadHistory()">📚 Історія</button>
+            </div>
+
+            <div id="cs_source_local">
+              <label>Платформа</label>
+              <select id="cs_local_platform">
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Facebook">Facebook</option>
+              </select>
+
+              <label>Вибери відео з компа</label>
+              <input id="cs_video_file" type="file" accept="video/*" />
+
+              <label>Title / перший рядок</label>
+              <input id="cs_local_title" placeholder="Наприклад: Я не могла схуднути 8 років..." />
+
+              <label>Caption / додатковий текст</label>
+              <textarea id="cs_local_text" rows="5" placeholder="Можна пусто — тоді система візьме транскрипт з відео."></textarea>
+
+              <button class="btn primary" onclick="ContentScoreModal.scoreLocalFile()">🎯 Аналізувати локальний файл</button>
+            </div>
+
+            <div id="cs_source_path" style="display:none;">
+              <label>Платформа</label>
+              <select id="cs_path_platform">
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Facebook">Facebook</option>
+              </select>
+
+              <label>video_path на сервері</label>
+              <input id="cs_video_path" placeholder="/Volumes/D/.../video.mov" />
+
+              <label>або video_url</label>
+              <input id="cs_video_url" placeholder="https://..." />
+
+              <label>Title / перший рядок</label>
+              <input id="cs_path_title" />
+
+              <label>Caption / додатковий текст</label>
+              <textarea id="cs_path_text" rows="5"></textarea>
+
+              <button class="btn primary" onclick="ContentScoreModal.scoreServerPath()">🎯 Аналізувати шлях / URL</button>
+            </div>
+
+            <div id="cs_source_platform" style="display:none;">
+              <div class="toolbar">
+                <select id="cs_platform_select" style="max-width:220px;">
+                  <option value="ALL">Instagram + YouTube</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="YouTube">YouTube</option>
+                </select>
+                <button class="btn primary" onclick="ContentScoreModal.loadPlatformPosts()">🔄 Завантажити ролики</button>
+              </div>
+              <div id="cs_platform_list" class="muted">Натисни “Завантажити ролики”.</div>
+            </div>
+
+            <div id="contentScoreResult" style="margin-top:18px;" class="muted">
+              Вибери джерело контенту для аналізу.
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn" onclick="ContentScoreModal.close()">Закрити</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function ensure() {
+    ensureStyles();
+    if (!modalElement) {
+      document.body.insertAdjacentHTML('beforeend', template());
+      modalElement = document.getElementById('contentScoreModalOverlay');
+    }
+  }
+
+  function open(prefill = {}) {
+    ensure();
+    modalElement.classList.add('active');
+    if (prefill.platform) {
+      document.getElementById('cs_local_platform').value = prefill.platform;
+      document.getElementById('cs_path_platform').value = prefill.platform;
+    }
+    if (prefill.title) {
+      document.getElementById('cs_local_title').value = prefill.title;
+      document.getElementById('cs_path_title').value = prefill.title;
+    }
+    if (prefill.text) {
+      document.getElementById('cs_local_text').value = prefill.text;
+      document.getElementById('cs_path_text').value = prefill.text;
+    }
+  }
+
+  function close() {
+    if (modalElement) modalElement.classList.remove('active');
+  }
+
+  function switchSource(name) {
+    ensure();
+    for (const x of ['local', 'path', 'platform']) {
+      document.getElementById('cs_source_' + x).style.display = x === name ? '' : 'none';
+      const b = document.getElementById('cs_tab_' + x);
+      if (b) b.className = x === name ? 'btn primary' : 'btn';
+    }
+  }
+
+  function renderCompactBox(data) {
+    const s = data.scores || {};
+    const box = document.getElementById('contentScoreResult');
+    if (!box) return;
+    box.innerHTML = `
+      <div class="card" style="box-shadow:none;border:1px solid #e5e7eb;">
+        ✅ Аналіз готовий. Overall: <b>${s.overall_score ?? '—'}/100</b>,
+        Hook: <b>${s.hook_score ?? '—'}/100</b>,
+        Risk: <b>${s.retention_risk ?? '—'}/100</b>.
+        Результат відкривається кнопкою <b>📄 Результат</b> у відповідному рядку.
+      </div>
+    `;
+  }
+
+  function openResultByData(data) {
+    const s = data.scores || {};
+    const analysis = data.analysis || data.result || '';
+    const transcript = data.transcript || '';
+
+    const body = `Scoreboard:
+Overall: ${s.overall_score ?? '—'}/100
+Hook: ${s.hook_score ?? '—'}/100
+Caption: ${s.caption_score ?? '—'}/100
+Retention risk: ${s.retention_risk ?? '—'}/100
+Verdict: ${s.verdict ?? '—'}
+Engagement: ${s.engagement_rate_pct ?? '—'}%
+
+${transcript ? '----------------------------------------\\nTRANSCRIPT:\\n' + transcript + '\\n' : ''}
+----------------------------------------
+
+${analysis}`;
+
+    openPlainResultModal(`🎯 Hook Score · Overall ${s.overall_score ?? '—'}/100`, body);
+  }
+
+  function openPlainResultModal(title, body) {
+    let overlay = document.getElementById('contentScoreResultModalOverlay');
+    if (!overlay) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div id="contentScoreResultModalOverlay" class="modal-overlay">
+          <div class="modal-container" style="max-width: 940px;">
+            <div class="modal-header">
+              <h3 id="contentScoreResultModalTitle">🎯 Hook Score Result</h3>
+              <button class="modal-close" onclick="document.getElementById('contentScoreResultModalOverlay').classList.remove('active')">×</button>
+            </div>
+            <div class="modal-body">
+              <pre id="contentScoreResultModalText" style="background:#f9fafb;color:#111827;border:1px solid #e5e7eb;max-height:70vh;white-space:pre-wrap;"></pre>
+            </div>
+            <div class="modal-footer">
+              <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('contentScoreResultModalText').innerText)">📋 Скопіювати</button>
+              <button class="btn primary" onclick="document.getElementById('contentScoreResultModalOverlay').classList.remove('active')">Закрити</button>
+            </div>
+          </div>
+        </div>
+      `);
+      overlay = document.getElementById('contentScoreResultModalOverlay');
+    }
+
+    document.getElementById('contentScoreResultModalTitle').innerText = title;
+    document.getElementById('contentScoreResultModalText').innerText = body;
+    overlay.classList.add('active');
+  }
+
+  async function scoreLocalFile() {
+    const file = document.getElementById('cs_video_file').files[0];
+    if (!file) return alert('Вибери відеофайл.');
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('platform', document.getElementById('cs_local_platform').value);
+    fd.append('title', document.getElementById('cs_local_title').value);
+    fd.append('text', document.getElementById('cs_local_text').value);
+
+    document.getElementById('contentScoreResult').innerHTML = '⏳ Аналізую локальний файл...';
+    const res = await fetch('/ai/content-score-video', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    if (!res.ok || data.status === 'error') {
+      document.getElementById('contentScoreResult').innerHTML = `<pre>❌ ${esc(JSON.stringify(data, null, 2))}</pre>`;
+      return;
+    }
+
+    renderCompactBox(data);
+    openResultByData(data);
+  }
+
+  async function scoreServerPath() {
+    const fd = new FormData();
+    fd.append('platform', document.getElementById('cs_path_platform').value);
+    fd.append('video_path', document.getElementById('cs_video_path').value);
+    fd.append('video_url', document.getElementById('cs_video_url').value);
+    fd.append('title', document.getElementById('cs_path_title').value);
+    fd.append('text', document.getElementById('cs_path_text').value);
+
+    document.getElementById('contentScoreResult').innerHTML = '⏳ Аналізую video_path / URL...';
+    const res = await fetch('/ai/content-score-video', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    if (!res.ok || data.status === 'error') {
+      document.getElementById('contentScoreResult').innerHTML = `<pre>❌ ${esc(JSON.stringify(data, null, 2))}</pre>`;
+      return;
+    }
+
+    renderCompactBox(data);
+    openResultByData(data);
+  }
+
+  function normalizeIg(data) {
+    const list = data?.data || [];
+    return list.map(x => ({
+      platform: 'Instagram',
+      id: x.id || '',
+      title: (x.caption || '').slice(0, 220),
+      text: x.caption || '',
+      url: x.permalink || '',
+      video_url: x.media_url || '',
+      thumbnail_url: x.thumbnail_url || '',
+      media_type: x.media_type || x.media_product_type || '',
+      views: x.views ?? x.plays ?? x.video_views ?? x.total_views ?? x.reach ?? x.insights?.views ?? x.insights?.plays ?? x.insights?.video_views ?? x.insights?.reach ?? 0,
+      likes: x.like_count ?? x.insights?.likes ?? 0,
+      comments: x.comments_count ?? x.insights?.comments ?? 0,
+      saves: x.saves ?? x.saved ?? x.insights?.saved ?? 0,
+      shares: x.shares ?? x.insights?.shares ?? 0
+    }));
+  }
+
+  function normalizeYt(data) {
+    const posts = data?.posts || [];
+    return posts
+      .filter(p => String(p.platform || '').toLowerCase() === 'youtube')
+      .map(p => ({
+        platform: 'YouTube',
+        id: p.id || '',
+        title: (p.text || '').split('\\n')[0].slice(0, 220),
+        text: p.text || '',
+        url: p.url || '',
+        views: p.views || 0,
+        likes: p.likes || 0,
+        comments: p.comments || 0,
+        saves: p.saves || 0,
+        shares: p.shares || 0
+      }));
+  }
+
+  async function loadPlatformPosts() {
+    const selected = document.getElementById('cs_platform_select').value;
+    const box = document.getElementById('cs_platform_list');
+    box.innerHTML = '⏳ Завантаження...';
+
+    let rows = [];
+
+    if (selected === 'ALL' || selected === 'Instagram') {
+      const ig = await fetch('/api/ig/media?limit=25&enrich=1').then(r => r.json()).catch(() => ({ data: [] }));
+      rows = rows.concat(normalizeIg(ig));
+    }
+
+    if (selected === 'ALL' || selected === 'YouTube') {
+      const yt = await fetch('/posts/list').then(r => r.json()).catch(() => ({ posts: [] }));
+      rows = rows.concat(normalizeYt(yt));
+    }
+
+    platformRows = rows;
+    scoreResults = {};
+
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty-state">Немає роликів. Спочатку синхронізуй Instagram / YouTube.</div>';
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Views</th>
+              <th>Likes</th>
+              <th>Comments</th>
+              <th>Content</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r, i) => `
+              <tr id="cs_row_${i}">
+                <td>${esc(r.platform)}${r.video_url ? '<br><span class="muted">🎥 video</span>' : ''}</td>
+                <td>${Number(r.views || 0).toLocaleString()}</td>
+                <td>${r.likes || 0}</td>
+                <td>${r.comments || 0}</td>
+                <td class="small">${esc(r.title || r.text || '')}</td>
+                <td>
+                  <button
+                    id="cs_score_btn_${i}"
+                    class="btn primary cs-score-btn"
+                    style="padding:6px 10px; font-size:12px;"
+                    data-score-index="${i}">
+                    🎯 Score
+                  </button>
+                  <button
+                    id="cs_cancel_btn_${i}"
+                    class="btn cs-cancel-btn"
+                    style="display:none; padding:6px 10px; font-size:12px;"
+                    data-cancel-index="${i}">
+                    ⛔ Cancel
+                  </button>
+                  <button
+                    id="cs_result_btn_${i}"
+                    class="btn cs-result-btn"
+                    style="display:none;"
+                    data-result-index="${i}">
+                    📄 Результат
+                  </button>
+                  <button
+                    id="cs_strategy_btn_${i}"
+                    class="btn cs-strategy-btn"
+                    style="display:none; padding:6px 10px; font-size:12px;"
+                    data-strategy-index="${i}">
+                    🧠 AI Strategy
+                  </button>
+                  <button
+                    id="cs_delete_btn_${i}"
+                    class="btn cs-delete-btn"
+                    style="display:none; padding:6px 10px; font-size:12px;"
+                    data-delete-index="${i}">
+                    ❌
+                  </button>
+                  ${r.url ? `<a class="btn" style="padding:6px 10px; font-size:12px;" href="${esc(r.url)}" target="_blank">🔗</a>` : ''}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    hydrateExistingScores();
+  }
+
+  async function hydrateExistingScores() {
+    for (let i = 0; i < platformRows.length; i++) {
+      const r = platformRows[i];
+      if (!r) continue;
+
+      try {
+        const qs = new URLSearchParams({
+          platform: r.platform || '',
+          external_id: r.id || '',
+          url: r.url || ''
+        });
+
+        const data = await fetch('/ai/content-score/latest?' + qs.toString()).then(x => x.json());
+
+        if (data.status === 'ok') {
+          scoreResults[i] = data;
+
+          const scoreBtn = document.getElementById(`cs_score_btn_${i}`);
+          const resultBtn = document.getElementById(`cs_result_btn_${i}`);
+
+          if (scoreBtn) {
+            scoreBtn.innerHTML = '✅ Готово';
+            scoreBtn.title = 'Аналіз вже є в БД';
+          }
+
+          if (resultBtn) resultBtn.style.display = 'inline-block';
+
+          const strategyBtn = document.getElementById(`cs_strategy_btn_${i}`);
+          const deleteBtn = document.getElementById(`cs_delete_btn_${i}`);
+          if (strategyBtn) strategyBtn.style.display = 'inline-block';
+          if (deleteBtn) deleteBtn.style.display = 'inline-block';
+        }
+      } catch (e) {
+        console.warn('[ContentScore] hydrate failed', i, e);
+      }
+    }
+  }
+
+  function setButtonLoading(index, loading) {
+    const btn = document.getElementById(`cs_score_btn_${index}`);
+    if (!btn) return;
+
+    const cancelBtn = document.getElementById(`cs_cancel_btn_${index}`);
+
+    if (loading) {
+      btn.classList.add('cs-btn-loading');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="cs-mini-spinner"></span>Аналіз...`;
+      if (cancelBtn) cancelBtn.style.display = 'inline-block';
+    } else {
+      btn.classList.remove('cs-btn-loading');
+      btn.disabled = false;
+      btn.innerHTML = `✅ Готово`;
+      if (cancelBtn) cancelBtn.style.display = 'none';
+    }
+  }
+
+  async function scorePlatformPost(index) {
+    const r = platformRows[index];
+    if (!r) return;
+
+    setButtonLoading(index, true);
+    document.getElementById('contentScoreResult').innerHTML = `⏳ Аналізую рядок #${index + 1}...`;
+
+    const controller = new AbortController();
+    scoreControllers[index] = controller;
+
+    try {
+      let res;
+
+      const isVideoLike = String(r.media_type || '').toUpperCase().includes('VIDEO') ||
+                          String(r.media_type || '').toUpperCase().includes('REELS') ||
+                          !!r.video_url;
+
+      if (r.video_url && isVideoLike) {
+        const fd = new FormData();
+        fd.append('platform', r.platform || '');
+        fd.append('external_id', r.id || '');
+        fd.append('source_url', r.url || r.video_url || '');
+        fd.append('title', r.title || '');
+        fd.append('text', r.text || '');
+        fd.append('video_url', r.video_url || '');
+
+        res = await fetch('/ai/content-score-video', {
+          method: 'POST',
+          body: fd,
+          signal: controller.signal
+        });
+      } else {
+        res = await fetch('/ai/content-score', {
+          method: 'POST',
+          signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platform: r.platform,
+            external_id: r.id,
+            title: r.title,
+            text: r.text,
+            url: r.url,
+            metrics: {
+              views: r.views,
+              likes: r.likes,
+              comments: r.comments,
+              saves: r.saves,
+              shares: r.shares
+            }
+          })
+        });
+      }
+
+      const data = await res.json();
+
+      if (!res.ok || data.status === 'error') {
+        throw new Error(data.error || JSON.stringify(data));
+      }
+
+      delete scoreControllers[index];
+      scoreResults[index] = data;
+      setButtonLoading(index, false);
+
+      const resultBtn = document.getElementById(`cs_result_btn_${index}`);
+      const strategyBtn = document.getElementById(`cs_strategy_btn_${index}`);
+      const deleteBtn = document.getElementById(`cs_delete_btn_${index}`);
+
+      if (resultBtn) resultBtn.style.display = 'inline-block';
+      if (strategyBtn) strategyBtn.style.display = 'inline-block';
+      if (deleteBtn) deleteBtn.style.display = 'inline-block';
+
+      renderCompactBox(data);
+    } catch (e) {
+      delete scoreControllers[index];
+      const btn = document.getElementById(`cs_score_btn_${index}`);
+
+      if (e.name === 'AbortError') {
+        if (btn) {
+          btn.classList.remove('cs-btn-loading');
+          btn.disabled = false;
+          btn.innerHTML = '🎯 Score';
+        }
+        const cancelBtn = document.getElementById(`cs_cancel_btn_${index}`);
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        document.getElementById('contentScoreResult').innerHTML = `⛔ Аналіз скасовано для рядка #${index + 1}`;
+        return;
+      }
+      if (btn) {
+        btn.classList.remove('cs-btn-loading');
+        btn.disabled = false;
+        btn.innerHTML = '❌ Помилка';
+        btn.title = e.message || 'Score error';
+      }
+
+      let cell = btn ? btn.closest('td') : null;
+      if (cell && !cell.querySelector('.cs-error-inline')) {
+        cell.insertAdjacentHTML('beforeend', `<div class="cs-error-inline" style="margin-top:6px;color:#991b1b;font-size:11px;max-width:260px;white-space:normal;">${esc(e.message || 'Score error')}</div>`);
+      }
+
+      console.error('[ContentScore] score error', e);
+      document.getElementById('contentScoreResult').innerHTML = `<pre>❌ ${esc(e.message)}</pre>`;
+    }
+  }
+
+  function openRowResult(index) {
+    const data = scoreResults[index];
+    if (!data) {
+      alert('Для цього рядка ще немає результату. Спочатку натисни Score.');
+      return;
+    }
+    openResultByData(data);
+  }
+
+  function cancelScore(index) {
+    const c = scoreControllers[index];
+    if (c) c.abort();
+  }
+
+
+  async function deleteScore(index) {
+    const r = platformRows[index];
+    if (!r) return;
+
+    if (!confirm('Видалити збережений аналіз для цього ролика?')) return;
+
+    const fd = new FormData();
+    fd.append('platform', r.platform || '');
+    fd.append('external_id', r.id || '');
+    fd.append('url', r.url || '');
+
+    await fetch('/ai/content-score/delete', { method: 'POST', body: fd });
+
+    delete scoreResults[index];
+
+    const scoreBtn = document.getElementById(`cs_score_btn_${index}`);
+    const resultBtn = document.getElementById(`cs_result_btn_${index}`);
+    const strategyBtn = document.getElementById(`cs_strategy_btn_${index}`);
+    const deleteBtn = document.getElementById(`cs_delete_btn_${index}`);
+
+    if (scoreBtn) {
+      scoreBtn.innerHTML = '🎯 Score';
+      scoreBtn.disabled = false;
+      scoreBtn.title = '';
+    }
+    if (resultBtn) resultBtn.style.display = 'none';
+    if (strategyBtn) strategyBtn.style.display = 'none';
+    if (deleteBtn) deleteBtn.style.display = 'none';
+
+    document.getElementById('contentScoreResult').innerHTML = '🗑 Аналіз видалено. Можна запускати Score заново.';
+  }
+
+  async function strategyScore(index) {
+    const r = platformRows[index];
+    const saved = scoreResults[index];
+
+    if (!saved) {
+      alert('Спочатку треба зробити Score.');
+      return;
+    }
+
+    const btn = document.getElementById(`cs_strategy_btn_${index}`);
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span class="cs-mini-spinner"></span>Strategy...';
+    }
+
+    try {
+      const scoreId = saved?.item?.id || saved?.score_id || 0;
+
+      const res = await fetch('/ai/content-score/strategy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          score_id: scoreId,
+          platform: r.platform || '',
+          external_id: r.id || '',
+          url: r.url || ''
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.status === 'error') {
+        throw new Error(data.error || JSON.stringify(data));
+      }
+
+      openPlainResultModal('🧠 AI Strategy · ' + (r.platform || ''), data.strategy || data.result || '');
+    } catch (e) {
+      alert('Strategy error: ' + e.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🧠 AI Strategy';
+      }
+    }
+  }
+
+
+  async function loadHistory() {
+    document.getElementById('contentScoreResult').innerHTML = '⏳ Завантажую історію...';
+    const res = await fetch('/ai/content-score/history?limit=50');
+    const data = await res.json();
+    const rows = data.items || [];
+
+    if (!rows.length) {
+      document.getElementById('contentScoreResult').innerHTML = '<div class="empty-state">Історія порожня.</div>';
+      return;
+    }
+
+    document.getElementById('contentScoreResult').innerHTML = `
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Дата</th><th>Платформа</th><th>Overall</th><th>Hook</th><th>Caption</th><th>Risk</th><th>Verdict</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${esc(r.created_at || '')}</td>
+                <td>${esc(r.platform || '')}</td>
+                <td><b>${r.overall_score}</b></td>
+                <td>${r.hook_score}</td>
+                <td>${r.caption_score}</td>
+                <td>${r.retention_risk}</td>
+                <td>${esc(r.verdict || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function scorePost(postId, platform, title, content, metrics, url = '') {
+    open({ platform, title, text: content });
+    switchSource('platform');
+    platformRows = [{
+      id: postId,
+      platform,
+      title,
+      text: content,
+      url,
+      views: metrics?.views || 0,
+      likes: metrics?.likes || 0,
+      comments: metrics?.comments || 0,
+      saves: metrics?.saves || 0,
+      shares: metrics?.shares || 0
+    }];
+    scorePlatformPost(0);
+  }
+
+  document.addEventListener('click', function(e) {
+    const scoreBtn = e.target.closest('.cs-score-btn');
+    if (scoreBtn) {
+      e.preventDefault();
+      const idx = Number(scoreBtn.getAttribute('data-score-index'));
+      ContentScoreModal.scorePlatformPost(idx);
+      return;
+    }
+
+    const cancelBtn = e.target.closest('.cs-cancel-btn');
+    if (cancelBtn) {
+      e.preventDefault();
+      const idx = Number(cancelBtn.getAttribute('data-cancel-index'));
+      ContentScoreModal.cancelScore(idx);
+      return;
+    }
+
+    const strategyBtn = e.target.closest('.cs-strategy-btn');
+    if (strategyBtn) {
+      e.preventDefault();
+      const idx = Number(strategyBtn.getAttribute('data-strategy-index'));
+      ContentScoreModal.strategyScore(idx);
+      return;
+    }
+
+    const deleteBtn = e.target.closest('.cs-delete-btn');
+    if (deleteBtn) {
+      e.preventDefault();
+      const idx = Number(deleteBtn.getAttribute('data-delete-index'));
+      ContentScoreModal.deleteScore(idx);
+      return;
+    }
+
+    const resultBtn = e.target.closest('.cs-result-btn');
+    if (resultBtn) {
+      e.preventDefault();
+      const idx = Number(resultBtn.getAttribute('data-result-index'));
+      ContentScoreModal.openRowResult(idx);
+    }
+  });
+
+  return {
+    open,
+    close,
+    switchSource,
+    scoreLocalFile,
+    scoreServerPath,
+    loadPlatformPosts,
+    scorePlatformPost,
+    openRowResult,
+    cancelScore,
+    deleteScore,
+    strategyScore,
+    hydrateExistingScores,
+    loadHistory,
+    scorePost
+  };
+})();
+
+window.ContentScoreModal = ContentScoreModal;

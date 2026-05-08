@@ -1,0 +1,448 @@
+/**
+ * Модальне вікно #2 — AI-аналіз контенту
+ * Відображає пости окремо для Instagram та YouTube з кнопкою запуску AI аналізу
+ */
+
+const AIAnalysisModal = (function() {
+  let modalElement = null;
+  let currentPlatform = 'all';
+  let analysisResults = {};
+
+  function getModalTemplate() {
+    return `
+      <div id="aiAnalysisModalOverlay" class="modal-overlay">
+        <div class="modal-container" style="max-width: 1600px;">
+          <div class="modal-header">
+            <h3><span>🧠</span> AI-аналіз контенту</h3>
+            <button class="modal-close" onclick="AIAnalysisModal.close()">×</button>
+          </div>
+          <div class="modal-body" id="aiAnalysisModalBody">
+            <div class="loading-spinner"><div class="spinner"></div><span>Завантаження постів...</span></div>
+          </div>
+          <div class="modal-footer">
+            <div style="flex:1; display: flex; gap: 8px;">
+              <button class="btn" onclick="AIAnalysisModal.setPlatform('instagram')">📸 Instagram</button>
+              <button class="btn" onclick="AIAnalysisModal.setPlatform('youtube')">▶️ YouTube</button>
+              <button class="btn" onclick="AIAnalysisModal.setPlatform('all')">🌐 Всі</button>
+            </div>
+            <button class="btn" onclick="AIAnalysisModal.close()">Закрити</button>
+            <button class="btn primary" onclick="AIAnalysisModal.refresh()">🔄 Оновити</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function formatDate(dateString) {
+    if (!dateString) return '—';
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return '—';
+      return date.toLocaleString('uk-UA', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch(e) {
+      return '—';
+    }
+  }
+
+  function getScoreBadge(score) {
+    const numScore = Number(score) || 0;
+    if (numScore >= 50) return `<span class="score-badge score-high">🔥 ${numScore}</span>`;
+    if (numScore >= 20) return `<span class="score-badge score-mid">📈 ${numScore}</span>`;
+    return `<span class="score-badge score-low">⚠️ ${numScore}</span>`;
+  }
+
+  function getScoreClass(score) {
+    const numScore = Number(score) || 0;
+    if (numScore >= 50) return 'score-high';
+    if (numScore >= 20) return 'score-mid';
+    return 'score-low';
+  }
+
+  async function runAIAnalysis(postId, platform, title, content, metrics, url = '') {
+    const button = document.getElementById(`ai_btn_${postId}`);
+    const originalText = button ? button.innerHTML : '';
+    if (button) {
+      button.innerHTML = '⏳ Аналізую...';
+      button.disabled = true;
+    }
+    
+    try {
+      const prompt = `Платформа: ${platform}
+
+Назва/текст:
+${title}
+
+Повний опис:
+${content}
+
+Метрики:
+- Перегляди: ${metrics.views || 0}
+- Лайки: ${metrics.likes || 0}
+- Коментарі: ${metrics.comments || 0}
+- Score: ${metrics.score || 0}
+
+URL:
+${url || ''}
+
+Проаналізуй цей контент через актуальний MASTER Reels prompt.`;
+
+      const response = await fetch('/analyze_cached', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: platform, external_id: postId, url: url, text: prompt, force_refresh: 1 })
+      });
+      
+      const result = await response.json();
+      const analysis = result.result || result.analysis || 'Аналіз виконано, але відповідь порожня';
+      
+      if (button) {
+        button.innerHTML = '✅ Готово';
+        setTimeout(() => { if(button) button.innerHTML = '🧠 AI аналіз'; }, 3000);
+      }
+      
+      /* AI_RECOMMENDATION_RENDER_V1 */
+      const recoCell = document.getElementById(`ai_reco_${postId}`);
+      if (recoCell) {
+        recoCell.innerHTML = `
+          <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+            <button class="btn" style="padding:4px 10px; font-size:11px;" onclick="AIAnalysisModal.showCachedResult('${postId}')">
+              📖 Відкрити
+            </button>
+            <button class="btn" title="Скинути кеш і згенерувати заново" style="padding:4px 8px; font-size:11px; color:#dc2626;" onclick="AIAnalysisModal.resetAnalysis('${postId}', '${platform}')">
+              ✖
+            </button>
+          </div>
+        `;
+        recoCell.style.whiteSpace = 'pre-wrap';
+        recoCell.style.maxHeight = '260px';
+        recoCell.style.overflowY = 'auto';
+      }
+
+      AIResultModal.open(analysis);
+      return analysis;
+      
+    } catch (error) {
+      console.error('AI analysis error:', error);
+      if (button) {
+        button.innerHTML = '❌ Помилка';
+        setTimeout(() => { if(button) button.innerHTML = '🧠 AI аналіз'; }, 3000);
+      }
+      alert(`❌ Помилка AI аналізу: ${error.message}`);
+      return `Помилка: ${error.message}`;
+    }
+  }
+
+
+  async function loadAnalysisCache() {
+    try {
+      const res = await fetch('/analyze_cache/list');
+      if (!res.ok) return;
+
+      const data = await res.json();
+      for (const item of (data.items || [])) {
+        if (item.external_id && item.analysis) {
+          analysisResults[item.external_id] = item.analysis;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load AI cache:', e);
+    }
+  }
+
+  async function loadPosts() {
+    const body = document.getElementById('aiAnalysisModalBody');
+    if (!body) return;
+
+    body.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><span>Завантаження постів...</span></div>`;
+
+    try {
+      // disabled old cache restore: do not show stale AI recommendations
+      analysisResults = {};
+
+      // Отримуємо Instagram дані
+      let igPosts = [];
+      try {
+        const igResponse = await fetch('/api/ig/media');
+        console.log('Instagram API response status:', igResponse.status);
+        
+        if (igResponse.ok) {
+          const igData = await igResponse.json();
+          console.log('Instagram data received:', igData);
+          
+          const mediaList = igData?.data || (Array.isArray(igData) ? igData : []);
+          igPosts = mediaList.map(item => ({
+            platform: 'Instagram',
+            id: item.id,
+            title: (item.caption || '').substring(0, 100) || 'Без опису',
+            content: item.caption || '',
+            views: item.views || item.insights?.impressions || 0,
+            likes: item.like_count || 0,
+            comments: item.comments_count || 0,
+            score: (item.like_count || 0) + (item.comments_count || 0) * 3,
+            url: item.permalink || '',
+            created_at: item.timestamp || new Date().toISOString(),
+            analysis: '' // disabled old cached AI analysis
+          }));
+        } else {
+          console.error('Instagram API error:', igResponse.status);
+        }
+      } catch (igErr) {
+        console.error('Failed to fetch Instagram:', igErr);
+      }
+
+      // Отримуємо YouTube дані
+      let ytPosts = [];
+      try {
+        const postsResponse = await fetch('/posts/list');
+        console.log('Posts list API response status:', postsResponse.status);
+        
+        if (postsResponse.ok) {
+          const postsData = await postsResponse.json();
+          console.log('YouTube posts received:', postsData?.posts?.length || 0);
+          
+          ytPosts = (postsData.posts || [])
+            .filter(p => String(p.platform || '').toLowerCase() === 'youtube')
+            .map(p => ({
+              platform: 'YouTube',
+              id: p.id,
+              title: (p.text || '').split('\n')[0].substring(0, 100) || 'Без назви',
+              content: p.text || '',
+              views: Number(p.views || 0),
+              likes: Number(p.likes || 0),
+              comments: Number(p.comments || 0),
+              score: Number(p.score || ((p.likes || 0) + (p.comments || 0) * 2)),
+              url: p.url || '',
+              created_at: p.created_at || p.timestamp || p.published_at || '',
+              analysis: '' // disabled old cached AI analysis
+            }));
+        }
+      } catch (ytErr) {
+        console.error('Failed to fetch YouTube posts:', ytErr);
+      }
+
+      let hubPosts = [];
+      try {
+        const pvResponse = await fetch('/platform_versions/list');
+        if (pvResponse.ok) {
+          const pvData = await pvResponse.json();
+          hubPosts = (pvData.versions || []).map(pv => {
+            const title = pv.content_title || (pv.caption || '').substring(0, 100) || `Platform version #${pv.id}`;
+            const content = [
+              pv.content_title || '',
+              pv.content_base_caption || '',
+              pv.caption || '',
+              pv.hashtags || ''
+            ].filter(Boolean).join('\n\n');
+
+            return {
+              platform: pv.platform || 'PlatformHub',
+              id: `pv_${pv.id}`,
+              title: title,
+              content: content,
+              views: 0,
+              likes: 0,
+              comments: 0,
+              score: 0,
+              url: pv.external_url || pv.content_source_url || '',
+              created_at: pv.content_created_at || pv.created_at || '',
+              analysis: ''
+            };
+          });
+        }
+      } catch (hubErr) {
+        console.error('Failed to fetch platform_versions:', hubErr);
+      }
+
+      let allPosts = [...igPosts, ...ytPosts, ...hubPosts];
+      
+      // Фільтрація за платформою
+      if (currentPlatform === 'instagram') allPosts = igPosts;
+      if (currentPlatform === 'youtube') allPosts = ytPosts;
+      
+      // Сортування за score
+      allPosts.sort((a, b) => (b.score || 0) - (a.score || 0));
+      
+      console.log(`Total posts loaded: ${allPosts.length} (Instagram: ${igPosts.length}, YouTube: ${ytPosts.length}, Hub: ${hubPosts.length})`);
+      
+      if (allPosts.length === 0) {
+        body.innerHTML = `
+          <div class="empty-state">
+            📭 Немає постів.<br><br>
+            <strong>Можливі причини:</strong><br>
+            • Instagram: потрібно налаштувати IG_ACCESS_TOKEN та IG_USER_ID<br>
+            • YouTube: натисніть "Синхронізувати YouTube" на вкладці YouTube<br><br>
+            <button class="btn" onclick="AIAnalysisModal.refresh()">🔄 Спробувати ще раз</button>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `<div class="modal-table-wrapper"><table class="modal-table"><thead><tr>
+        <th>Платформа</th>
+        <th>Контент</th>
+        <th>Перегляди</th>
+        <th>Лайки</th>
+        <th>Коментарі</th>
+        <th>Score</th>
+        <th>AI оцінка</th>
+        <th>Рекомендації</th>
+        <th>Час посту</th>
+        <th>Посилання</th>
+        <th>Дія</th>
+      </tr></thead><tbody>`;
+
+      for (const post of allPosts) {
+        const scoreClass = getScoreClass(post.score);
+        const previewAnalysis = post.analysis && post.analysis.length > 10 
+          ? post.analysis.substring(0, 100) 
+          : 'Аналіз не виконано';
+        
+        // Очищаємо ID для безпечного використання в атрибуті
+        const safeId = String(post.id).replace(/[^a-zA-Z0-9_-]/g, '_');
+        
+        html += `<tr>
+          <td><strong>${post.platform}</strong></td>
+          <td class="analysis-preview" style="max-width: 220px;" title="${escapeHtml(post.content.substring(0, 300))}">
+            ${escapeHtml(post.title.length > 60 ? post.title.substring(0, 60) + '…' : post.title)}
+          </td>
+          <td>${(post.views || 0).toLocaleString()}</td>
+          <td>${(post.likes || 0).toLocaleString()}</td>
+          <td>${(post.comments || 0).toLocaleString()}</td>
+          <td><span class="score-badge ${scoreClass}">${post.score || 0}</span></td>
+          <td class="analysis-preview" style="max-width: 180px; font-size: 11px; color: #4b5563;">
+            ${escapeHtml(previewAnalysis)}${previewAnalysis.length >= 100 ? '…' : ''}
+          </td>
+          <td id="ai_reco_${safeId}" class="analysis-preview" style="max-width: 260px; font-size: 11px; color: #d97706;">—</td>
+          <td style="font-size: 11px; white-space: nowrap;">${formatDate(post.created_at)}</td>
+          <td>${post.url ? `<a href="${escapeHtml(post.url)}" target="_blank" rel="noopener" style="color: #3b82f6;">🔗</a>` : '—'}</td>
+          <td>
+            <button id="ai_btn_${safeId}" class="btn" style="padding: 4px 10px; font-size: 11px; white-space: nowrap;" 
+              onclick="AIAnalysisModal.analyzePost('${safeId}', '${post.platform}', \`${escapeHtml(post.title).replace(/`/g, '\\`')}\`, \`${escapeHtml(post.content.substring(0, 500)).replace(/`/g, '\\`')}\`, {
+                views: ${post.views || 0}, 
+                likes: ${post.likes || 0}, 
+                comments: ${post.comments || 0}, 
+                score: ${post.score || 0}
+              }, '${escapeHtml(post.url || '').replace(/'/g, "\'")}')">
+              🧠 AI аналіз
+            </button>
+            <button class="btn" style="padding: 4px 10px; font-size: 11px; white-space: nowrap; margin-top:6px;"
+              onclick="ContentScoreModal.scorePost('${safeId}', '${post.platform}', `${escapeHtml(post.title).replace(/`/g, '\\`')}`, `${escapeHtml(post.content.substring(0, 1200)).replace(/`/g, '\\`')}`, {
+                views: ${post.views || 0},
+                likes: ${post.likes || 0},
+                comments: ${post.comments || 0},
+                score: ${post.score || 0}
+              }, '${escapeHtml(post.url || '').replace(/'/g, "\\'")}')">
+              🎯 Score
+            </button>
+          </td>
+        </tr>`;
+      }
+
+      html += `</tbody></table></div>
+      <div class="muted" style="margin-top: 16px; font-size: 12px; text-align: center;">
+        📊 Всього постів: ${allPosts.length} (📸 Instagram: ${igPosts.length}, ▶️ YouTube: ${ytPosts.length}, 🧩 Hub: ${hubPosts.length})
+      </div>`;
+      
+      body.innerHTML = html;
+      // Restore cached AI answers disabled to prevent stale recommendations
+
+      
+    } catch (error) {
+      console.error('Load posts error:', error);
+      body.innerHTML = `<div class="empty-state" style="color: #dc2626;">
+        ❌ Помилка завантаження: ${error.message}<br>
+        <button class="btn" style="margin-top: 16px;" onclick="AIAnalysisModal.refresh()">🔄 Спробувати ще раз</button>
+      </div>`;
+    }
+  }
+
+
+
+  function showCachedResult(postId) {
+    const text = analysisResults[postId] || 'Відповідь не знайдена в кеші';
+    AIResultModal.open(text);
+  }
+
+  async function resetAnalysis(postId, platform) {
+    try {
+      await fetch('/analyze_cache/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: platform, external_id: postId })
+      });
+
+      delete analysisResults[postId];
+      try { localStorage.removeItem('analysisResults'); } catch(e) {}
+
+      const recoCell = document.getElementById(`ai_reco_${postId}`);
+      if (recoCell) recoCell.innerHTML = '—';
+
+      const btn = document.getElementById(`ai_btn_${postId}`);
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '🧠 AI аналіз';
+      }
+
+      alert('✅ AI відповідь скинута. Тепер можна згенерувати заново.');
+    } catch (e) {
+      alert('❌ Не вдалося скинути AI відповідь: ' + e.message);
+    }
+  }
+
+  function setPlatform(platform) {
+    currentPlatform = platform;
+    loadPosts();
+  }
+
+  async function analyzePost(postId, platform, title, content, metrics, url = '') {
+    const result = await runAIAnalysis(postId, platform, title, content, metrics, url);
+    return result;
+  }
+
+  function open() {
+    if (!modalElement) {
+      document.body.insertAdjacentHTML('beforeend', getModalTemplate());
+      modalElement = document.getElementById('aiAnalysisModalOverlay');
+    }
+    if (modalElement) {
+      modalElement.classList.add('active');
+      loadPosts();
+    }
+  }
+
+  function close() {
+    if (modalElement) modalElement.classList.remove('active');
+  }
+
+  function refresh() { 
+    loadPosts(); 
+  }
+
+  // Глобальний escapeHtml
+  window.escapeHtml = window.escapeHtml || function(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>]/g, function(m) {
+      if (m === '&') return '&amp;';
+      if (m === '<') return '&lt;';
+      if (m === '>') return '&gt;';
+      return m;
+    });
+  };
+
+  return { 
+    open, 
+    close, 
+    refresh, 
+    setPlatform, 
+    analyzePost,
+    resetAnalysis,
+    showCachedResult 
+  };
+})();
+
+window.AIAnalysisModal = AIAnalysisModal;

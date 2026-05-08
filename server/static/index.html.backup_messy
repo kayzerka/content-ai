@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <title>Regresolog Content AI</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f5f5f5; color: #222; }
+    header { background: #111; color: white; padding: 22px 34px; }
+    nav { background: #fff; padding: 12px 34px; border-bottom: 1px solid #ddd; }
+    nav button { margin-right: 10px; padding: 10px 14px; cursor: pointer; border: 1px solid #ccc; background: white; border-radius: 8px; }
+    nav button:hover { background: #eee; }
+    section { display: none; padding: 28px 34px; }
+    section.active { display: block; }
+    .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+    .card { background: white; padding: 18px; border-radius: 14px; box-shadow: 0 1px 5px rgba(0,0,0,.08); margin-bottom: 16px; }
+    .metric { font-size: 28px; font-weight: bold; }
+    textarea, input, select { width: 100%; padding: 12px; margin: 8px 0 16px; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; }
+    .grid5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+    .btn { background: #111; color: white; border: 0; padding: 12px 18px; border-radius: 10px; cursor: pointer; }
+    .btn2 { background: #444; color: white; border: 0; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+    pre { background: #111; color: #0f0; padding: 16px; border-radius: 12px; white-space: pre-wrap; max-height: 420px; overflow: auto; }
+    table { width: 100%; background: white; border-collapse: collapse; border-radius: 12px; overflow: hidden; }
+    th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; vertical-align: top; }
+    td.small { max-width: 420px; }
+  </style>
+</head>
+<body>
+<header>
+  <h1>🧠 Regresolog Content AI</h1>
+  <p>AI-аналітик контенту: Instagram / TikTok / YouTube</p>
+</header>
+
+<nav>
+  <button onclick="show('dashboard')">Dashboard</button>
+  <button onclick="show('analyze')">Add / Analyze</button>
+  <button onclick="show('library'); loadPosts()">Content Library</button>
+  <button onclick="show('strategy')">Strategy</button>
+  <button onclick="show('generator')">Generator</button>
+  <button onclick="show('publish'); loadDrafts()">Центр публікацій</button>
+  <button id="btn_ig" onclick="show('instagram'); igStatus(); igLoadMedia()">Instagram</button>
+  <button id="btn_yt" onclick="window.loadYouTubeContent()">YouTube</button>
+  
+</nav>
+
+<section id="dashboard" class="active">
+  <h2>Dashboard</h2>
+
+  <div class="cards">
+    <div class="card" onclick="window.dashboardShowPlatform("Instagram")" style="cursor:pointer">
+      <div>Instagram</div><div class="metric" id="m_ig_posts">0</div>
+    </div>
+
+    <div class="card" onclick="window.dashboardShowPlatform("YouTube")" style="cursor:pointer">
+      <div>YouTube</div><div class="metric" id="m_yt_posts">0</div>
+    </div>
+
+    <div class="card" onclick="window.dashboardShowPlatform("ALL")" style="cursor:pointer">
+      <div>Total</div><div class="metric" id="m_views">0</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <pre id="api_status_box">Loading...</pre>
+  </div>
+
+  <div class="card">
+    <h3 id="dashboard_table_title">Content</h3>
+    <div id="top_posts_table">Loading...</div>
+  </div>
+</section>
+
+<section id="analyze">
+  <h2>➕ Add / Analyze Content</h2>
+
+  <label>Платформа</label>
+  <select id="platform">
+    <option>Instagram</option>
+    <option>TikTok</option>
+    <option>YouTube</option>
+  </select>
+
+  <label>Посилання на ролик</label>
+  <input id="url" placeholder="https://..." />
+
+  <label>Текст / сценарій / опис ролика</label>
+  <textarea id="text" rows="8" placeholder="Встав текст ролика..."></textarea>
+
+  <div class="grid5">
+    <div><label>Views</label><input id="views" type="number" value="0"></div>
+    <div><label>Likes</label><input id="likes" type="number" value="0"></div>
+    <div><label>Comments</label><input id="comments" type="number" value="0"></div>
+    <div><label>Saves</label><input id="saves" type="number" value="0"></div>
+    <div><label>Shares</label><input id="shares" type="number" value="0"></div>
+  </div>
+
+  <button class="btn" onclick="saveAndAnalyze()">Зберегти + AI Analyze</button>
+
+  <h3>AI Analysis</h3>
+  <pre id="analysis_result">Тут буде відповідь AI...</pre>
+</section>
+
+<section id="library">
+  <h2>📚 Content Library</h2>
+  <button class="btn2" onclick="loadPosts()">Оновити список</button>
+  <br><br>
+  <div id="posts_table">Поки немає даних.</div>
+</section>
+
+
+<section id="instagram">
+  <h2>📸 Instagram API</h2>
+
+  <div class="card">
+    <button class="btn2" onclick="igStatus()">Перевірити IG підключення</button>
+    <button class="btn2" onclick="igLoadMedia()">Завантажити пости + метрики</button>
+    <pre id="ig_status">Натисни перевірку.</pre>
+  </div>
+
+  <div class="card">
+    <h3>Опублікувати image post</h3>
+    <label>Public image URL https://...</label>
+    <input id="ig_image_url" placeholder="https://site.com/image.jpg">
+
+    <label>Caption</label>
+    <textarea id="ig_caption" rows="6" placeholder="Текст поста..."></textarea>
+
+    <button class="btn" onclick="igPublishImage()">Опублікувати в Instagram</button>
+    <pre id="ig_publish_result">Тут буде результат публікації.</pre>
+  </div>
+
+  <div class="card">
+    <h3>Instagram media</h3>
+    <div id="ig_media_table">Поки немає даних.</div>
+  </div>
+</section>
+
+
+<section id="strategy">
+  <h2>🧭 Strategy</h2>
+  <div class="card">
+    <h3>Позиціонування</h3>
+    <p>Експерт не продає магію. Експерт показує глибинні причини, які люди роками ігнорують.</p>
+  </div>
+  <div class="card">
+    <h3>Фокус</h3>
+    <p>1) Думка експерта. 2) Діалог з болем. 3) Кейси. 4) Прямий CTA на консультацію.</p>
+  </div>
+</section>
+
+<section id="generator">
+  <h2>✍️ Generator</h2>
+  <label>Інсайт для генерації</label>
+  <textarea id="insight" rows="6">Найкраще працюють ролики, де регресолог говорить як експерт і ставить глядачу пряме питання у біль.</textarea>
+  <button class="btn" onclick="generate()">Generate Reels Ideas</button>
+  <h3>Generated ideas</h3>
+  <pre id="generate_result">Тут будуть ідеї...</pre>
+</section>
+
+<section id="publish">
+  <h2>🚀 Центр публікацій</h2>
+
+  <div class="card">
+    <h3>Нова чернетка контенту</h3>
+
+    <label>Назва</label>
+    <input id="draft_title" placeholder="Наприклад: Кейс про зір / прогрів до консультації" />
+
+    <label>Шлях до відео на компʼютері</label>
+    <input id="draft_video_path" placeholder="/Volumes/B/Regresolog/videos/video1.mp4" />
+
+    <label>Базовий caption</label>
+    <textarea id="draft_caption" rows="8" placeholder="Встав базовий текст для поста..."></textarea>
+
+    <label>Платформи</label>
+    <input id="draft_platforms" value="Instagram,TikTok,YouTube" />
+
+    <button class="btn" onclick="saveDraft()">Зберегти чернетку + AI адаптація</button>
+  </div>
+
+  <div class="card">
+    <h3>Чернетки контенту</h3>
+    <button class="btn2" onclick="loadDrafts()">Оновити чернетки</button>
+    <br><br>
+    <div id="drafts_table">Поки немає чернеток.</div>
+  </div>
+</section>
+
+<script>
+
+async function loadDashboard() {
+  const statusBox = document.getElementById("api_status_box");
+  const topBox = document.getElementById("top_posts_table");
+
+  statusBox.textContent = "Оновлюю API...";
+  topBox.innerHTML = "Завантажую...";
+
+  let platformStatus = {};
+  let igMedia = {data: []};
+  let localStats = {top_posts: [], total_views: 0, avg_score: 0};
+
+  try {
+    platformStatus = await (await fetch("/platform/status")).json();
+  } catch (e) {
+    platformStatus = {error: String(e)};
+  }
+
+  try {
+    igMedia = await (await fetch("/api/ig/media")).json();
+  } catch (e) {
+    igMedia = {error: String(e), data: []};
+  }
+
+  try {
+    localStats = await (await fetch("/posts/stats")).json();
+  } catch (e) {
+    localStats = {error: String(e), top_posts: []};
+  }
+
+  const igItems = (igMedia.data || []).map(x => ({
+    platform: "Instagram",
+    id: x.id,
+    date: x.timestamp || "",
+    type: x.media_product_type || x.media_type || "",
+    title: (x.caption || "").slice(0, 180),
+    views: "",
+    likes: x.like_count ?? 0,
+    comments: x.comments_count ?? 0,
+    score: (x.like_count || 0) + (x.comments_count || 0) * 3,
+    url: x.permalink || ""
+  }));
+
+  const dbItems = (localStats.top_posts || []).map(x => ({
+    platform: x.platform || "",
+    id: x.id,
+    date: "",
+    type: "",
+    title: (x.text || "").slice(0, 180),
+    views: x.views ?? 0,
+    likes: x.likes ?? 0,
+    comments: x.comments ?? 0,
+    score: x.score ?? 0,
+    url: x.url || ""
+  }));
+
+  const all = [...igItems, ...dbItems]
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, 15);
+
+  const igCount = igItems.length;
+  const ytCount = dbItems.filter(x => String(x.platform).toLowerCase() === "youtube").length;
+  
+  var el = document.getElementById("m_ig_posts"); if (el) el.textContent = igCount;
+  var el = document.getElementById("m_yt_posts"); if (el) el.textContent = ytCount;
+  
+  
+  var el = document.getElementById("m_views"); if (el) el.textContent = localStats.total_views ?? 0;
+  var el = document.getElementById("m_score"); if (el) el.textContent = localStats.avg_score ?? 0;
+
+  statusBox.textContent = JSON.stringify({
+    platform_status: platformStatus,
+    instagram_loaded: igCount,
+    local_db_top_posts: dbItems.length
+  }, null, 2);
+
+  if (!all.length) {
+    topBox.innerHTML = "Немає даних.";
+    return;
+  }
+
+  let html = "<table><thead><tr><th>Платформа</th><th>ID</th><th>Тип</th><th>Views</th><th>Likes</th><th>Comments</th><th>Score</th><th>Контент</th><th>Link</th></tr></thead><tbody>";
+
+  for (const p of all) {
+    html += `<tr>
+      <td>${p.platform}</td>
+      <td>${p.id}</td>
+      <td>${p.type || ""}</td>
+      <td>${p.views}</td>
+      <td>${p.likes}</td>
+      <td>${p.comments}</td>
+      <td><b>${p.score}</b></td>
+      <td class="small">${p.title || ""}</td>
+      <td>${p.url ? `<a href="${p.url}" target="_blank">Open</a>` : ""}</td>
+    </tr>`;
+  }
+
+  html += "</tbody></table>";
+  topBox.innerHTML = html;
+}
+
+function show(id) {
+  document.querySelectorAll("section").forEach(s => s.classList.remove("active"));
+  document.getElementById(id).classList.add("active");
+}
+
+async function saveAndAnalyze() {
+  const params = new URLSearchParams({
+    platform: document.getElementById("platform").value,
+    url: document.getElementById("url").value,
+    text: document.getElementById("text").value,
+    views: document.getElementById("views").value || 0,
+    likes: document.getElementById("likes").value || 0,
+    comments: document.getElementById("comments").value || 0,
+    saves: document.getElementById("saves").value || 0,
+    shares: document.getElementById("shares").value || 0,
+    analyze_ai: "true"
+  });
+
+  var el = document.getElementById("analysis_result"); if (el) el.textContent = "AI аналізує і зберігає...";
+  const res = await fetch("/posts/add?" + params.toString(), {method: "POST"});
+  const data = await res.json();
+  document.getElementById("analysis_result").textContent =
+    "POST ID: " + data.post_id + "\nSCORE: " + data.score + "\n\n" + (data.analysis || "");
+  
+async function saveDraft() {
+  const params = new URLSearchParams({
+    title: document.getElementById("draft_title").value,
+    caption: document.getElementById("draft_caption").value,
+    video_path: document.getElementById("draft_video_path").value,
+    platforms: document.getElementById("draft_platforms").value,
+    adapt_ai: "true"
+  });
+
+  const box = document.getElementById("drafts_table");
+  box.innerHTML = "<pre>AI адаптує caption під платформи...</pre>";
+
+  const res = await fetch("/drafts/add?" + params.toString(), {method: "POST"});
+  const data = await res.json();
+
+  box.innerHTML = `<pre>DRAFT ID: ${data.draft_id}\n\n${data.ai_adapted || ""}</pre>`;
+  loadDrafts();
+}
+
+async function loadDrafts() {
+  const res = await fetch("/drafts/list");
+  const data = await res.json();
+  const drafts = data.drafts || [];
+
+  if (!drafts.length) {
+    document.getElementById("drafts_table").innerHTML = "Поки немає чернеток.";
+    return;
+  }
+
+  let html = "<table><thead><tr><th>ID</th><th>Дата</th><th>Назва</th><th>Платформи</th><th>Статус</th></tr></thead><tbody>";
+
+  for (const d of drafts) {
+    html += `<tr>
+      <td>${d.id}</td>
+      <td>${d.created_at || ""}</td>
+      <td>${d.title || ""}</td>
+      <td>${d.platforms || ""}</td>
+      <td>${d.status || ""}</td>
+    </tr>
+    <tr>
+      <td colspan="5">
+        <details>
+          <summary><b>AI адаптація draft #${d.id}</b></summary>
+          <pre>${d.ai_adapted || "AI адаптації немає"}</pre>
+        </details>
+      </td>
+    </tr>`;
+  }
+
+  html += "</tbody></table>";
+  document.getElementById("drafts_table").innerHTML = html;
+}
+
+
+loadDashboard();
+
+async function refreshPlatformButtons() {
+  try {
+    const res = await fetch("/platform/status");
+    const data = await res.json();
+
+    const ig = document.getElementById("btn_ig");
+    const yt = document.getElementById("btn_yt");
+    const tt = document.getElementById("btn_tt");
+
+    if (ig) ig.textContent = (data.instagram?.connected ? "🟢 " : "⚪ ") + "Instagram";
+    if (yt) yt.textContent = (data.youtube?.connected ? "🟢 " : "⚪ ") + "YouTube";
+    if (tt) tt.textContent = (data.tiktok?.connected ? "🟢 " : "⚪ ") + "TikTok";
+  } catch (e) {
+    console.log("platform status failed", e);
+  }
+}
+
+refreshPlatformButtons();
+
+}
+
+async function loadPosts() {
+  const res = await fetch("/posts/list");
+  const data = await res.json();
+  const posts = data.posts || [];
+
+  if (!posts.length) {
+    document.getElementById("posts_table").innerHTML = "Поки немає даних.";
+    return;
+  }
+
+  let html = "<table><thead><tr><th>ID</th><th>Дата</th><th>Платформа</th><th>Текст</th><th>Views</th><th>Likes</th><th>Comments</th><th>Saves</th><th>Shares</th><th>Score</th></tr></thead><tbody>";
+
+  for (const p of posts) {
+    html += `<tr>
+      <td>${p.id}</td>
+      <td>${p.created_at || ""}</td>
+      <td>${p.platform || ""}</td>
+      <td class="small">${(p.text || "").slice(0, 180)}</td>
+      <td>${p.views}</td>
+      <td>${p.likes}</td>
+      <td>${p.comments}</td>
+      <td>${p.saves}</td>
+      <td>${p.shares}</td>
+      <td><b>${p.score}</b></td>
+    </tr>
+    <tr>
+      <td colspan="10">
+        <details>
+          <summary><b>AI аналіз ролика #${p.id}</b></summary>
+          <pre>${p.analysis || "AI аналізу немає"}</pre>
+        </details>
+      </td>
+    </tr>`;
+  }
+
+  html += "</tbody></table>";
+  document.getElementById("posts_table").innerHTML = html;
+}
+
+async function loadStats() {
+  if (!document.getElementById("m_posts")) {
+    return loadDashboard();
+  }
+
+  const res = await fetch("/posts/stats");
+  const data = await res.json();
+
+  var el = document.getElementById("m_posts"); if (el) el.textContent = data.total_posts;
+  var el = document.getElementById("m_views"); if (el) el.textContent = data.total_views;
+  var el = document.getElementById("m_score"); if (el) el.textContent = data.avg_score;
+  var el = document.getElementById("top_posts"); if (el) el.textContent = JSON.stringify(data.top_posts, null, 2);
+}
+
+async function generate() {
+  const insight = document.getElementById("insight").value;
+  var el = document.getElementById("generate_result"); if (el) el.textContent = "AI генерує...";
+  const res = await fetch("/generate?insight=" + encodeURIComponent(insight), {method: "POST"});
+  const data = await res.json();
+  var el = document.getElementById("generate_result"); if (el) el.textContent = data.result || JSON.stringify(data, null, 2);
+}
+
+
+async function saveDraft() {
+  const params = new URLSearchParams({
+    title: document.getElementById("draft_title").value,
+    caption: document.getElementById("draft_caption").value,
+    video_path: document.getElementById("draft_video_path").value,
+    platforms: document.getElementById("draft_platforms").value,
+    adapt_ai: "true"
+  });
+
+  const box = document.getElementById("drafts_table");
+  box.innerHTML = "<pre>AI адаптує caption під платформи...</pre>";
+
+  const res = await fetch("/drafts/add?" + params.toString(), {method: "POST"});
+  const data = await res.json();
+
+  box.innerHTML = `<pre>DRAFT ID: ${data.draft_id}\n\n${data.ai_adapted || ""}</pre>`;
+  loadDrafts();
+}
+
+async function loadDrafts() {
+  const res = await fetch("/drafts/list");
+  const data = await res.json();
+  const drafts = data.drafts || [];
+
+  if (!drafts.length) {
+    document.getElementById("drafts_table").innerHTML = "Поки немає чернеток.";
+    return;
+  }
+
+  let html = "<table><thead><tr><th>ID</th><th>Дата</th><th>Назва</th><th>Платформи</th><th>Статус</th></tr></thead><tbody>";
+
+  for (const d of drafts) {
+    html += `<tr>
+      <td>${d.id}</td>
+      <td>${d.created_at || ""}</td>
+      <td>${d.title || ""}</td>
+      <td>${d.platforms || ""}</td>
+      <td>${d.status || ""}</td>
+    </tr>
+    <tr>
+      <td colspan="5">
+        <details>
+          <summary><b>AI адаптація draft #${d.id}</b></summary>
+          <pre>${d.ai_adapted || "AI адаптації немає"}</pre>
+        </details>
+      </td>
+    </tr>`;
+  }
+
+  html += "</tbody></table>";
+  document.getElementById("drafts_table").innerHTML = html;
+}
+
+
+loadDashboard();
+
+
+async function igStatus() {
+  const res = await fetch("/api/ig/status");
+  const data = await res.json();
+  var el = document.getElementById("ig_status"); if (el) el.textContent = JSON.stringify(data, null, 2);
+}
+
+async function igLoadMedia() {
+  const res = await fetch("/api/ig/media");
+  const data = await res.json();
+  const items = data.data || [];
+
+  if (!items.length) {
+    document.getElementById("ig_media_table").innerHTML = "<pre>" + JSON.stringify(data, null, 2) + "</pre>";
+    return;
+  }
+
+  let html = "<table><thead><tr><th>ID</th><th>Дата</th><th>Тип</th><th>Likes</th><th>Comments</th><th>Caption</th><th>Дії</th></tr></thead><tbody>";
+
+  for (const m of items) {
+    html += `<tr>
+      <td>${m.id}</td>
+      <td>${m.timestamp || ""}</td>
+      <td>${m.media_type || ""}</td>
+      <td>${m.like_count ?? ""}</td>
+      <td>${m.comments_count ?? ""}</td>
+      <td class="small">${(m.caption || "").slice(0, 180)}</td>
+      <td>
+        <button class="btn2" onclick="igLoadInsights('${m.id}')">Insights</button>
+        ${m.permalink ? `<a href="${m.permalink}" target="_blank">Open</a>` : ""}
+      </td>
+    </tr>`;
+  }
+
+  html += "</tbody></table><pre id='ig_insights_result'>Натисни Insights на пості.</pre>";
+  document.getElementById("ig_media_table").innerHTML = html;
+}
+
+async function igLoadInsights(mediaId) {
+  const res = await fetch(`/api/ig/media/${mediaId}/insights`);
+  const data = await res.json();
+  var el = document.getElementById("ig_insights_result"); if (el) el.textContent = JSON.stringify(data, null, 2);
+}
+
+async function igPublishImage() {
+  const imageUrl = document.getElementById("ig_image_url").value.trim();
+  const caption = document.getElementById("ig_caption").value;
+
+  const box = document.getElementById("ig_publish_result");
+  box.textContent = "Публікую...";
+
+  const res = await fetch("/api/ig/publish-image", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      image_url: imageUrl,
+      caption: caption
+    })
+  });
+
+  const data = await res.json();
+  box.textContent = JSON.stringify(data, null, 2);
+}
+
+
+
+
+
+
+function getPlatformLogBox() {
+  let box = document.getElementById("platform_check_result");
+  if (!box) {
+    const dash = document.getElementById("dashboard");
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = `<h3>🔌 Platform log</h3><pre id="platform_check_result">Ready.</pre>`;
+    dash.appendChild(div);
+    box = document.getElementById("platform_check_result");
+  }
+  return box;
+}
+
+async function loadYouTubeContent() {
+  show("dashboard");
+  const box = getPlatformLogBox();
+  box.textContent = "Тягну YouTube контент...";
+
+  const channelIdInput = document.getElementById("ytChannelId");
+  const channelId = channelIdInput ? channelIdInput.value.trim() : "";
+
+  const url = channelId
+    ? `/youtube/sync_public_safe?channel_id=${encodeURIComponent(channelId)}&max_results=20`
+    : `/youtube/sync_public_safe?max_results=20`;
+
+  const syncRes = await fetch(url, {method: "POST"});
+  const syncData = await syncRes.json();
+
+  await loadDashboard();
+  await loadPosts();
+
+  box.textContent = JSON.stringify({
+    platform: "youtube",
+    action: "sync_public_safe",
+    result: syncData
+  }, null, 2);
+}
+
+
+
+async function checkYouTube() {
+  show("dashboard");
+  const box = getPlatformLogBox();
+  box.textContent = "Перевіряю YouTube...";
+  const res = await fetch("/youtube/status");
+  const data = await res.json();
+  box.textContent = JSON.stringify(data, null, 2);
+}
+
+async function checkTikTok() {
+  show("dashboard");
+  const box = getPlatformLogBox();
+  box.textContent = "Перевіряю TikTok...";
+  const res = await fetch("/tiktok/status");
+  const data = await res.json();
+  box.textContent = JSON.stringify(data, null, 2);
+}
+
+
+function connectInstagram() {
+  window.location.href = "/login/instagram";
+}
+</script>
+
+<!-- PLATFORM_HUB_UI_V2 -->
+
+<style>
+  #platformHubBox {
+    margin: 24px 0;
+    padding: 18px;
+    border: 1px solid #ddd;
+    border-radius: 14px;
+    background: #fafafa;
+  }
+  #platformHubBox h2 {
+    margin-top: 0;
+  }
+  #platformHubBox input,
+  #platformHubBox textarea,
+  #platformHubBox select {
+    width: 100%;
+    padding: 9px;
+    margin: 6px 0 12px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+  }
+  #platformHubBox button {
+    padding: 10px 14px;
+    margin: 4px 4px 10px 0;
+    border-radius: 9px;
+    border: 0;
+    cursor: pointer;
+    background: #111;
+    color: #fff;
+  }
+  #platformHubLog {
+    white-space: pre-wrap;
+    background: #111;
+    color: #d7ffd7;
+    padding: 12px;
+    border-radius: 10px;
+    max-height: 280px;
+    overflow: auto;
+  }
+  #calendar {
+    margin-top: 16px;
+    background: #fff;
+    padding: 12px;
+    border-radius: 12px;
+  }
+</style>
+
+<div id="platformHubBox" style="display:none">
+  <h2>Platform Hub</h2>
+
+  <h3>YouTube Sync</h3>
+  <label>YouTube Channel ID</label>
+  <input id="ytChannelId" value="UC6s7cvJx9g9ylPBPFTc6mzg">
+
+  <button onclick="hubStatus()">Hub Status</button>
+  <button onclick="syncYouTube()">Sync YouTube</button>
+  <button onclick="platformSummary()">Platform Summary</button>
+
+  <h3>Content Item</h3>
+  <label>Title</label>
+  <input id="contentTitle" placeholder="Назва контенту">
+
+  <label>Base Caption</label>
+  <textarea id="baseCaption" rows="4" placeholder="Базовий текст / ідея ролика"></textarea>
+
+  <label>Video Path</label>
+  <input id="videoPath" placeholder="/path/to/video.mp4">
+
+  <button onclick="addContentItem()">Add Content</button>
+
+  <h3>AI Adaptation</h3>
+  <label>Content ID</label>
+  <input id="adaptContentId" placeholder="Наприклад: 1">
+
+  <label>Platforms</label>
+  <input id="adaptPlatforms" value="Instagram,TikTok,YouTube,Facebook">
+
+  <button onclick="adaptContent()">Adapt Content</button>
+  <button onclick="listVersions()">List Platform Versions</button>
+
+  <h3>Schedule</h3>
+  <label>Platform Version ID</label>
+  <input id="scheduleVersionId" placeholder="ID platform_versions">
+
+  <label>Scheduled At</label>
+  <input id="scheduledAt" type="datetime-local">
+
+  <button onclick="addSchedule()">Add To Calendar</button>
+  <button onclick="loadCalendar()">Reload Calendar</button>
+  <button onclick="schedulerRunOnce()">Scheduler Dry Run</button>
+
+  <div id="calendar"></div>
+
+  <h3>Log</h3>
+  <pre id="platformHubLog">Ready.</pre>
+</div>
+
+<script>
+function logHub(data) {
+  const el = document.getElementById("platformHubLog");
+  el.textContent = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+}
+
+async function apiGet(url) {
+  const r = await fetch(url);
+  const data = await r.json();
+  logHub(data);
+  return data;
+}
+
+async function apiPost(url) {
+  const r = await fetch(url, { method: "POST" });
+  const data = await r.json();
+  logHub(data);
+  return data;
+}
+
+async function hubStatus() {
+  return apiGet("/hub/status");
+}
+
+async function syncYouTube() {
+  const channelId = document.getElementById("ytChannelId").value.trim();
+  return apiPost(`/youtube/sync_public_safe?channel_id=${encodeURIComponent(channelId)}&max_results=20`);
+}
+
+async function platformSummary() {
+  return apiGet("/analytics/platform_summary");
+}
+
+async function addContentItem() {
+  const title = document.getElementById("contentTitle").value.trim();
+  const baseCaption = document.getElementById("baseCaption").value.trim();
+  const videoPath = document.getElementById("videoPath").value.trim();
+
+  const params = new URLSearchParams({
+    title,
+    base_caption: baseCaption,
+    video_path: videoPath,
+    source_platform: "manual",
+    source_url: ""
+  });
+
+  return apiPost(`/content/items/add?${params.toString()}`);
+}
+
+async function adaptContent() {
+  const contentId = document.getElementById("adaptContentId").value.trim();
+  const platforms = document.getElementById("adaptPlatforms").value.trim();
+
+  if (!contentId) {
+    logHub("content_id required");
+    return;
+  }
+
+  return apiPost(`/content/adapt?content_id=${encodeURIComponent(contentId)}&platforms=${encodeURIComponent(platforms)}`);
+}
+
+async function listVersions() {
+  return apiGet("/platform_versions/list");
+}
+
+async function addSchedule() {
+  const versionId = document.getElementById("scheduleVersionId").value.trim();
+  const scheduledLocal = document.getElementById("scheduledAt").value.trim();
+
+  if (!versionId || !scheduledLocal) {
+    logHub("platform_version_id and scheduled_at required");
+    return;
+  }
+
+  const scheduledAt = scheduledLocal.length === 16 ? scheduledLocal + ":00" : scheduledLocal;
+
+  const data = await apiPost(`/schedule/add?platform_version_id=${encodeURIComponent(versionId)}&scheduled_at=${encodeURIComponent(scheduledAt)}`);
+  return data;
+}
+
+let hubCalendar = null;
+
+async function loadCalendar() {
+  const el = document.getElementById("calendar");
+  if (el) el.innerHTML = "<pre>Calendar disabled поки йде ребілд фронту.</pre>";
+  return;
+}
+
+async function schedulerRunOnce() {
+  return apiPost("/scheduler/run_once");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  setTimeout(loadCalendar, 500);
+});
+</script>
+
+</body>
+</html>
+
+<script>
+function getPlatformLogBox_FIXED() {
+  let box = document.getElementById("platform_check_result");
+
+  if (!box) {
+    const dash = document.getElementById("dashboard") || document.body;
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = '<h3>🔌 Platform log</h3><pre id="platform_check_result">Ready.</pre>';
+    dash.appendChild(div);
+    box = document.getElementById("platform_check_result");
+  }
+
+  return box;
+}
+
+window.loadYouTubeContent = async function () {
+  show("dashboard");
+
+  const box = getPlatformLogBox_FIXED();
+  box.textContent = "Тягну YouTube контент...";
+
+  const channelInput = document.getElementById("ytChannelId");
+  const channelId = channelInput ? channelInput.value.trim() : "UC6s7cvJx9g9ylPBPFTc6mzg";
+
+  const res = await fetch(`/youtube/sync_public_safe?channel_id=${encodeURIComponent(channelId)}&max_results=20`, {
+    method: "POST"
+  });
+
+  const data = await res.json();
+
+  if (typeof loadDashboard === "function") {
+    await loadDashboard();
+  }
+
+  box.textContent = JSON.stringify(data, null, 2);
+};
+
+window.loadTikTokContent = async function () {
+  show("dashboard");
+
+  const box = getPlatformLogBox_FIXED();
+  box.textContent = "Перевіряю TikTok...";
+
+  const res = await fetch("/tiktok/status");
+  const data = await res.json();
+
+  box.textContent = JSON.stringify(data, null, 2);
+};
+</script>

@@ -1,0 +1,419 @@
+/**
+ * Content Score Modal V2
+ * Sources:
+ * - local file upload
+ * - server video_path / video_url
+ * - platform post list
+ */
+const ContentScoreModal = (function() {
+  let modalElement = null;
+  let platformRows = [];
+
+  function esc(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>"]/g, function(m) {
+      return ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[m]);
+    });
+  }
+
+  function template() {
+    return `
+      <div id="contentScoreModalOverlay" class="modal-overlay">
+        <div class="modal-container" style="max-width: 1120px;">
+          <div class="modal-header">
+            <h3><span>🎯</span> Hook / Retention Analyzer</h3>
+            <button class="modal-close" onclick="ContentScoreModal.close()">×</button>
+          </div>
+
+          <div class="modal-body">
+            <div class="toolbar">
+              <button class="btn primary" id="cs_tab_local" onclick="ContentScoreModal.switchSource('local')">📁 Локальний ролик</button>
+              <button class="btn" id="cs_tab_path" onclick="ContentScoreModal.switchSource('path')">🧾 Шлях на сервері</button>
+              <button class="btn" id="cs_tab_platform" onclick="ContentScoreModal.switchSource('platform')">🌐 З платформи</button>
+              <button class="btn" onclick="ContentScoreModal.loadHistory()">📚 Історія</button>
+            </div>
+
+            <div id="cs_source_local">
+              <label>Платформа</label>
+              <select id="cs_local_platform">
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Facebook">Facebook</option>
+              </select>
+
+              <label>Вибери відео з компа</label>
+              <input id="cs_video_file" type="file" accept="video/*" />
+
+              <label>Title / перший рядок</label>
+              <input id="cs_local_title" placeholder="Наприклад: Я не могла схуднути 8 років..." />
+
+              <label>Caption / додатковий текст</label>
+              <textarea id="cs_local_text" rows="5" placeholder="Можна пусто — тоді система візьме транскрипт з відео."></textarea>
+
+              <button class="btn primary" onclick="ContentScoreModal.scoreLocalFile()">🎯 Аналізувати локальний файл</button>
+            </div>
+
+            <div id="cs_source_path" style="display:none;">
+              <label>Платформа</label>
+              <select id="cs_path_platform">
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Facebook">Facebook</option>
+              </select>
+
+              <label>video_path на сервері</label>
+              <input id="cs_video_path" placeholder="/Volumes/D/даша учеба/БВ/Ролік_2/Ролік_2_мастер.mov" />
+
+              <label>або video_url</label>
+              <input id="cs_video_url" placeholder="https://..." />
+
+              <label>Title / перший рядок</label>
+              <input id="cs_path_title" />
+
+              <label>Caption / додатковий текст</label>
+              <textarea id="cs_path_text" rows="5"></textarea>
+
+              <button class="btn primary" onclick="ContentScoreModal.scoreServerPath()">🎯 Аналізувати шлях / URL</button>
+            </div>
+
+            <div id="cs_source_platform" style="display:none;">
+              <div class="toolbar">
+                <select id="cs_platform_select" style="max-width:220px;">
+                  <option value="ALL">Instagram + YouTube</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="YouTube">YouTube</option>
+                </select>
+                <button class="btn primary" onclick="ContentScoreModal.loadPlatformPosts()">🔄 Завантажити ролики</button>
+              </div>
+
+              <div id="cs_platform_list" class="muted">
+                Натисни “Завантажити ролики”.
+              </div>
+            </div>
+
+            <div id="contentScoreResult" style="margin-top:18px;" class="muted">
+              Вибери джерело контенту для аналізу.
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn" onclick="ContentScoreModal.close()">Закрити</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function ensure() {
+    if (!modalElement) {
+      document.body.insertAdjacentHTML('beforeend', template());
+      modalElement = document.getElementById('contentScoreModalOverlay');
+    }
+  }
+
+  function open(prefill = {}) {
+    ensure();
+    modalElement.classList.add('active');
+
+    if (prefill.platform) {
+      const p1 = document.getElementById('cs_local_platform');
+      const p2 = document.getElementById('cs_path_platform');
+      if (p1) p1.value = prefill.platform;
+      if (p2) p2.value = prefill.platform;
+    }
+    if (prefill.title) {
+      document.getElementById('cs_local_title').value = prefill.title;
+      document.getElementById('cs_path_title').value = prefill.title;
+    }
+    if (prefill.text) {
+      document.getElementById('cs_local_text').value = prefill.text;
+      document.getElementById('cs_path_text').value = prefill.text;
+    }
+  }
+
+  function close() {
+    if (modalElement) modalElement.classList.remove('active');
+  }
+
+  function switchSource(name) {
+    ensure();
+
+    for (const x of ['local', 'path', 'platform']) {
+      document.getElementById('cs_source_' + x).style.display = x === name ? '' : 'none';
+      const b = document.getElementById('cs_tab_' + x);
+      if (b) b.className = x === name ? 'btn primary' : 'btn';
+    }
+
+    document.getElementById('contentScoreResult').innerHTML =
+      name === 'local' ? '📁 Вибери файл з компа.' :
+      name === 'path' ? '🧾 Встав шлях до файлу на сервері або URL.' :
+      '🌐 Завантаж список уже опублікованих роликів.';
+  }
+
+  function loading(msg) {
+    document.getElementById('contentScoreResult').innerHTML =
+      `<div class="loading-spinner"><div class="spinner"></div><span>${esc(msg)}</span></div>`;
+  }
+
+  function renderScore(data) {
+    const s = data.scores || {};
+    const f = s.features || {};
+    const transcript = data.transcript || '';
+    const analysis = data.analysis || data.result || '';
+
+    document.getElementById('contentScoreResult').innerHTML = `
+      <div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 12px 0;">
+        <div class="card"><div class="metric-label">Overall</div><div class="metric">${s.overall_score ?? '—'}</div></div>
+        <div class="card"><div class="metric-label">Hook</div><div class="metric">${s.hook_score ?? '—'}</div></div>
+        <div class="card"><div class="metric-label">Caption</div><div class="metric">${s.caption_score ?? '—'}</div></div>
+        <div class="card"><div class="metric-label">Retention risk</div><div class="metric">${s.retention_risk ?? '—'}</div></div>
+      </div>
+
+      ${transcript ? `
+        <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
+          <strong>📝 Transcript:</strong>
+          <pre style="background:#f9fafb; color:#111827; border:1px solid #e5e7eb; max-height:180px;">${esc(transcript)}</pre>
+        </div>
+      ` : ''}
+
+      <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
+        <strong>Rule features:</strong>
+        <pre>${esc(JSON.stringify(f, null, 2))}</pre>
+      </div>
+
+      <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
+        <strong>AI diagnosis:</strong>
+        <pre style="background:#f9fafb; color:#111827; border:1px solid #e5e7eb; max-height:55vh;">${esc(analysis)}</pre>
+      </div>
+    `;
+  }
+
+  async function scoreLocalFile() {
+    const file = document.getElementById('cs_video_file').files[0];
+    if (!file) {
+      alert('Вибери відеофайл.');
+      return;
+    }
+
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('platform', document.getElementById('cs_local_platform').value);
+    fd.append('title', document.getElementById('cs_local_title').value);
+    fd.append('text', document.getElementById('cs_local_text').value);
+
+    loading('Завантажую файл, витягую аудіо, роблю транскрипт і score...');
+    const res = await fetch('/ai/content-score-video', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    if (!res.ok || data.status === 'error') {
+      document.getElementById('contentScoreResult').innerHTML = `<pre>❌ ${esc(JSON.stringify(data, null, 2))}</pre>`;
+      return;
+    }
+
+    renderScore(data);
+  }
+
+  async function scoreServerPath() {
+    const fd = new FormData();
+    fd.append('platform', document.getElementById('cs_path_platform').value);
+    fd.append('video_path', document.getElementById('cs_video_path').value);
+    fd.append('video_url', document.getElementById('cs_video_url').value);
+    fd.append('title', document.getElementById('cs_path_title').value);
+    fd.append('text', document.getElementById('cs_path_text').value);
+
+    loading('Читаю video_path / video_url, роблю транскрипт і score...');
+    const res = await fetch('/ai/content-score-video', { method: 'POST', body: fd });
+    const data = await res.json();
+
+    if (!res.ok || data.status === 'error') {
+      document.getElementById('contentScoreResult').innerHTML = `<pre>❌ ${esc(JSON.stringify(data, null, 2))}</pre>`;
+      return;
+    }
+
+    renderScore(data);
+  }
+
+  function normalizeIg(data) {
+    const list = data?.data || [];
+    return list.map(x => ({
+      platform: 'Instagram',
+      id: x.id || '',
+      title: (x.caption || '').slice(0, 220),
+      text: x.caption || '',
+      url: x.permalink || '',
+      views: x.views ?? x.plays ?? x.video_views ?? x.total_views ?? x.reach ?? x.insights?.views ?? x.insights?.plays ?? x.insights?.video_views ?? x.insights?.reach ?? 0,
+      likes: x.like_count ?? x.insights?.likes ?? 0,
+      comments: x.comments_count ?? x.insights?.comments ?? 0,
+      saves: x.saves ?? x.saved ?? x.insights?.saved ?? 0,
+      shares: x.shares ?? x.insights?.shares ?? 0
+    }));
+  }
+
+  function normalizeYt(data) {
+    const posts = data?.posts || [];
+    return posts
+      .filter(p => String(p.platform || '').toLowerCase() === 'youtube')
+      .map(p => ({
+        platform: 'YouTube',
+        id: p.id || '',
+        title: (p.text || '').split('\n')[0].slice(0, 220),
+        text: p.text || '',
+        url: p.url || '',
+        views: p.views || 0,
+        likes: p.likes || 0,
+        comments: p.comments || 0,
+        saves: p.saves || 0,
+        shares: p.shares || 0
+      }));
+  }
+
+  async function loadPlatformPosts() {
+    const selected = document.getElementById('cs_platform_select').value;
+    const box = document.getElementById('cs_platform_list');
+    box.innerHTML = '⏳ Завантаження...';
+
+    let rows = [];
+
+    if (selected === 'ALL' || selected === 'Instagram') {
+      const ig = await fetch('/api/ig/media').then(r => r.json()).catch(() => ({ data: [] }));
+      rows = rows.concat(normalizeIg(ig));
+    }
+
+    if (selected === 'ALL' || selected === 'YouTube') {
+      const yt = await fetch('/posts/list').then(r => r.json()).catch(() => ({ posts: [] }));
+      rows = rows.concat(normalizeYt(yt));
+    }
+
+    platformRows = rows;
+
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty-state">Немає роликів. Спочатку синхронізуй Instagram / YouTube.</div>';
+      return;
+    }
+
+    box.innerHTML = `
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Views</th>
+              <th>Likes</th>
+              <th>Comments</th>
+              <th>Content</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((r, i) => `
+              <tr>
+                <td>${esc(r.platform)}</td>
+                <td>${Number(r.views || 0).toLocaleString()}</td>
+                <td>${r.likes || 0}</td>
+                <td>${r.comments || 0}</td>
+                <td class="small">${esc(r.title || r.text || '')}</td>
+                <td>
+                  <button class="btn primary" style="padding:6px 10px; font-size:12px;" onclick="ContentScoreModal.scorePlatformPost(${i})">
+                    🎯 Score
+                  </button>
+                  ${r.url ? `<a class="btn" style="padding:6px 10px; font-size:12px;" href="${esc(r.url)}" target="_blank">🔗</a>` : ''}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  async function scorePlatformPost(index) {
+    const r = platformRows[index];
+    if (!r) return;
+
+    loading('Рахую score по вже залитому ролику...');
+
+    const res = await fetch('/ai/content-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        platform: r.platform,
+        external_id: r.id,
+        title: r.title,
+        text: r.text,
+        url: r.url,
+        metrics: {
+          views: r.views,
+          likes: r.likes,
+          comments: r.comments,
+          saves: r.saves,
+          shares: r.shares
+        }
+      })
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || data.status === 'error') {
+      document.getElementById('contentScoreResult').innerHTML = `<pre>❌ ${esc(JSON.stringify(data, null, 2))}</pre>`;
+      return;
+    }
+
+    renderScore(data);
+  }
+
+  async function loadHistory() {
+    loading('Завантажую історію...');
+    const res = await fetch('/ai/content-score/history?limit=50');
+    const data = await res.json();
+    const rows = data.items || [];
+
+    if (!rows.length) {
+      document.getElementById('contentScoreResult').innerHTML = '<div class="empty-state">Історія порожня.</div>';
+      return;
+    }
+
+    document.getElementById('contentScoreResult').innerHTML = `
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr><th>Дата</th><th>Платформа</th><th>Overall</th><th>Hook</th><th>Caption</th><th>Risk</th><th>Verdict</th></tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${esc(r.created_at || '')}</td>
+                <td>${esc(r.platform || '')}</td>
+                <td><b>${r.overall_score}</b></td>
+                <td>${r.hook_score}</td>
+                <td>${r.caption_score}</td>
+                <td>${r.retention_risk}</td>
+                <td>${esc(r.verdict || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function scorePost(postId, platform, title, content, metrics, url = '') {
+    open({ platform, title, text: content });
+    switchSource('platform');
+    platformRows = [{ id: postId, platform, title, text: content, metrics, url }];
+    scorePlatformPost(0);
+  }
+
+  return {
+    open,
+    close,
+    switchSource,
+    scoreLocalFile,
+    scoreServerPath,
+    loadPlatformPosts,
+    scorePlatformPost,
+    loadHistory,
+    scorePost
+  };
+})();
+
+window.ContentScoreModal = ContentScoreModal;

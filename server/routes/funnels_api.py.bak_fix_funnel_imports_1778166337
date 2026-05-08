@@ -1,0 +1,137 @@
+
+from typing import Optional, Dict, Any
+from fastapi import APIRouter
+from pydantic import BaseModel
+
+from funnel_core import (
+    init_funnel_db,
+    create_default_funnel,
+    list_funnels,
+    get_funnel,
+    process_funnel_event,
+    run_due_jobs,
+    funnel_stats,
+    update_funnel,
+)
+
+router = APIRouter(prefix="/api/funnels", tags=["funnels"])
+
+class FunnelCreateRequest(BaseModel):
+    name: Optional[str] = None
+
+
+
+class FunnelUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    status: Optional[str] = None
+    source_platform: Optional[str] = None
+    source_type: Optional[str] = None
+    goal: Optional[str] = None
+    trigger_type: Optional[str] = None
+    trigger_value: Optional[str] = None
+    output_type: Optional[str] = None
+    output_target: Optional[str] = None
+    ai_enabled: Optional[int] = None
+    config: Optional[Dict[str, Any]] = None
+
+class FunnelStepUpsertRequest(BaseModel):
+    funnel_id: int
+    step_order: int
+    step_type: str
+    step_name: Optional[str] = ""
+    config: Optional[Dict[str, Any]] = None
+
+class FunnelStepDeleteRequest(BaseModel):
+    funnel_id: int
+    step_order: int
+
+class FunnelRunNextRequest(BaseModel):
+    funnel_id: int
+    platform: str = "instagram"
+    external_user_id: str
+
+class FunnelEventRequest(BaseModel):
+    funnel_id: int
+    platform: str = "instagram"
+    external_user_id: str
+    username: Optional[str] = ""
+    event_type: str = "manual"
+    payload: Optional[Dict[str, Any]] = None
+
+@router.get("/health")
+def funnels_health():
+    init_funnel_db()
+    return {"ok": True, "module": "funnels", "status": "ready"}
+
+@router.post("/init")
+def funnels_init():
+    init_funnel_db()
+    return {"ok": True}
+
+@router.post("/default")
+def funnels_create_default(req: FunnelCreateRequest = FunnelCreateRequest()):
+    funnel_id = create_default_funnel(req.name or "Instagram → Telegram → Consultation")
+    return {"ok": True, "funnel_id": funnel_id, "funnel": get_funnel(funnel_id)}
+
+@router.get("")
+def funnels_list():
+    return {"ok": True, "items": list_funnels()}
+
+@router.get("/{funnel_id}")
+def funnels_get(funnel_id: int):
+    f = get_funnel(funnel_id)
+    return {"ok": bool(f), "item": f}
+
+@router.post("/event")
+def funnels_event(req: FunnelEventRequest):
+    res = process_funnel_event(
+        funnel_id=req.funnel_id,
+        platform=req.platform,
+        external_user_id=req.external_user_id,
+        username=req.username or "",
+        event_type=req.event_type,
+        payload=req.payload or {},
+    )
+    return res
+
+@router.post("/jobs/run-due")
+def funnels_run_jobs():
+    return {"ok": True, "items": run_due_jobs()}
+
+@router.get("/analytics/summary")
+def funnels_analytics_summary():
+    return {"ok": True, "items": funnel_stats()}
+
+
+@router.patch("/{funnel_id}")
+def funnels_update(funnel_id: int, req: FunnelUpdateRequest):
+    patch = {k: v for k, v in req.dict().items() if v is not None}
+    return {"ok": True, "item": update_funnel(funnel_id, patch)}
+
+@router.post("/steps/upsert")
+def funnels_step_upsert(req: FunnelStepUpsertRequest):
+    item = upsert_funnel_step(
+        funnel_id=req.funnel_id,
+        step_order=req.step_order,
+        step_type=req.step_type,
+        step_name=req.step_name or "",
+        config=req.config or {},
+    )
+    return {"ok": True, "item": item}
+
+@router.post("/steps/delete")
+def funnels_step_delete(req: FunnelStepDeleteRequest):
+    item = delete_funnel_step(req.funnel_id, req.step_order)
+    return {"ok": True, "item": item}
+
+@router.post("/contact/run-next")
+def funnels_contact_run_next(req: FunnelRunNextRequest):
+    return run_contact_next_step(req.funnel_id, req.platform, req.external_user_id)
+
+@router.get("/contact/debug")
+def funnels_contact_debug_endpoint(funnel_id: int, platform: str, external_user_id: str):
+    return funnel_contact_debug(funnel_id, platform, external_user_id)
+
+@router.get("/telegram/destinations")
+def funnels_telegram_destinations():
+    return list_telegram_destinations()

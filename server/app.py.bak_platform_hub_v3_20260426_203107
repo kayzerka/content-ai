@@ -1,0 +1,1482 @@
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
+import sqlite3
+import subprocess
+import shutil
+import os
+import requests
+from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = FastAPI()
+
+MODEL_PATH = "/Volumes/B/Regresolog/content_ai/models/model.gguf"
+DB_PATH = "/Volumes/B/Regresolog/content_ai/data/content.db"
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat").strip()
+DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com").strip()
+
+
+def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        platform TEXT,
+        url TEXT DEFAULT '',
+        text TEXT,
+        views INTEGER DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        comments INTEGER DEFAULT 0,
+        saves INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        analysis TEXT DEFAULT '',
+        score REAL DEFAULT 0
+    )
+    """)
+
+    # safe migrations
+    cols = [r[1] for r in cur.execute("PRAGMA table_info(posts)").fetchall()]
+    if "url" not in cols:
+        cur.execute("ALTER TABLE posts ADD COLUMN url TEXT DEFAULT ''")
+    if "analysis" not in cols:
+        cur.execute("ALTER TABLE posts ADD COLUMN analysis TEXT DEFAULT ''")
+
+    con.commit()
+    con.close()
+
+
+init_db()
+
+
+def calc_score(views, likes, comments, saves, shares):
+    if views <= 0:
+        return 0
+    return round(((likes + comments * 3 + saves * 4 + shares * 5) / views) * 1000, 2)
+
+
+def find_llama_cli():
+    candidates = [
+        shutil.which("llama-cli"),
+        shutil.which("main"),
+        "/Volumes/B/Regresolog/content_ai/llama.cpp/build/bin/llama-cli",
+        "/Volumes/B/Regresolog/llama.cpp/build/bin/llama-cli",
+        "/usr/local/bin/llama-cli",
+        "/opt/homebrew/bin/llama-cli",
+    ]
+
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+
+    return None
+
+
+def run_deepseek(prompt: str) -> str:
+    if not DEEPSEEK_API_KEY:
+        return "DEEPSEEK_ERROR: DEEPSEEK_API_KEY не встановлений у .env"
+
+    url = DEEPSEEK_API_BASE.rstrip("/") + "/chat/completions"
+
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "Ти AI-контент директор для Instagram/TikTok/YouTube "
+                    "експерта-регресолога/кармолога. Відповідай українською, "
+                    "структуровано, практично, з фокусом на продажі, прогрів, "
+                    "бренд і контент-стратегію."
+                )
+            },
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.75,
+        "max_tokens": 1400,
+        "stream": False
+    }
+
+    try:
+        r = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=90,
+        )
+
+        if r.status_code != 200:
+            return f"DEEPSEEK_ERROR {r.status_code}:\n{r.text}"
+
+        data = r.json()
+        return data["choices"][0]["message"]["content"].strip()
+
+    except Exception as e:
+        return f"DEEPSEEK_EXCEPTION: {e}"
+
+
+def run_local_llm(prompt: str) -> str:
+    url = os.getenv("LOCAL_LLM_URL", "http://127.0.0.1:8081/completion")
+
+    payload = {
+        "prompt": prompt,
+        "n_predict": 700,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "stream": False
+    }
+
+    try:
+        r = requests.post(url, json=payload, timeout=600)
+        if r.status_code != 200:
+            return f"LOCAL_LLM_ERROR {r.status_code}:\n{r.text}"
+
+        data = r.json()
+        return data.get("content", "").strip()
+
+    except Exception as e:
+        return f"LOCAL_LLM_EXCEPTION: {e}"
+
+def run_llm(prompt: str) -> str:
+    cloud = run_deepseek(prompt)
+
+    if not (
+        cloud.startswith("DEEPSEEK_ERROR")
+        or cloud.startswith("DEEPSEEK_EXCEPTION")
+    ):
+        return cloud
+
+    local = run_local_llm(prompt)
+
+    return (
+        "⚠️ DeepSeek API не спрацював, увімкнувся fallback.\n\n"
+        f"{cloud}\n\n"
+        "=== LOCAL FALLBACK RESULT ===\n"
+        f"{local}"
+    )
+
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "regresolog-content-ai"}
+
+
+@app.get("/llm/status")
+def llm_status():
+    return {
+        "deepseek_key_exists": bool(DEEPSEEK_API_KEY),
+        "deepseek_model": DEEPSEEK_MODEL,
+        "deepseek_api_base": DEEPSEEK_API_BASE,
+        "local_llama_cli": find_llama_cli(),
+        "local_model_path": MODEL_PATH,
+        "local_model_exists": os.path.exists(MODEL_PATH),
+    }
+
+
+@app.post("/analyze")
+def analyze(text: str):
+    prompt = f"""
+Проаналізуй ролик для експерта-регресолога.
+
+Опис / текст ролика:
+{text}
+
+Дай відповідь:
+1. Тема ролика
+2. Головний біль аудиторії
+3. Сила хуку
+4. Формат ролика
+5. Емоція
+6. CTA
+7. Чому може зайти / не зайти
+8. Що покращити
+9. Наступна ідея ролика
+"""
+    return {"result": run_llm(prompt)}
+
+
+@app.post("/posts/add")
+def add_post(
+    platform: str,
+    url: str = "",
+    text: str = "",
+    views: int = 0,
+    likes: int = 0,
+    comments: int = 0,
+    saves: int = 0,
+    shares: int = 0,
+    analyze_ai: bool = True,
+):
+    score = calc_score(views, likes, comments, saves, shares)
+
+    if analyze_ai and text.strip():
+        prompt = f"""
+Ти AI-контент директор для експерта-регресолога/кармолога.
+
+Проаналізуй конкретний ролик.
+
+Платформа: {platform}
+URL: {url}
+
+Опис / текст ролика:
+{text}
+
+Метрики:
+views={views}
+likes={likes}
+comments={comments}
+saves={saves}
+shares={shares}
+score={score}
+
+Дай відповідь українською:
+
+1. Тип контенту
+2. Головний біль аудиторії
+3. Хук: сильний чи слабкий
+4. Чому ролик міг спрацювати або не спрацювати
+5. Що покращити
+6. Який CTA додати
+7. Як цей ролик використати у воронці
+8. 3 нові ідеї роликів на основі цього
+"""
+        analysis = run_llm(prompt)
+    else:
+        analysis = "AI analysis не запускався: немає тексту/опису або analyze_ai=false."
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO posts (
+            created_at, platform, url, text,
+            views, likes, comments, saves, shares,
+            analysis, score
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        platform, url, text,
+        views, likes, comments, saves, shares,
+        analysis, score,
+    ))
+    post_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "post_id": post_id,
+        "score": score,
+        "analysis": analysis,
+    }
+
+
+@app.get("/posts/list")
+def list_posts():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM posts ORDER BY id DESC LIMIT 200").fetchall()
+    con.close()
+    return {"posts": [dict(r) for r in rows]}
+
+
+@app.get("/posts/stats")
+def posts_stats():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    total_posts = cur.execute("SELECT COUNT(*) AS n FROM posts").fetchone()["n"]
+    total_views = cur.execute("SELECT COALESCE(SUM(views),0) AS n FROM posts").fetchone()["n"]
+    avg_score = cur.execute("SELECT COALESCE(AVG(score),0) AS n FROM posts").fetchone()["n"]
+
+    top_posts = cur.execute("""
+        SELECT id, platform, url, text, views, likes, comments, saves, shares, score
+        FROM posts
+        ORDER BY score DESC, views DESC
+        LIMIT 5
+    """).fetchall()
+
+    con.close()
+
+    return {
+        "total_posts": total_posts,
+        "total_views": total_views,
+        "avg_score": round(avg_score, 2),
+        "top_posts": [dict(r) for r in top_posts],
+    }
+
+
+@app.post("/generate")
+def generate(insight: str):
+    prompt = f"""
+Ти AI-креативний директор для експерта-регресолога.
+
+На основі інсайту:
+{insight}
+
+Згенеруй 10 ідей Reels українською.
+
+Для кожної:
+1. Назва
+2. Хук першої секунди
+3. Біль глядача
+4. Сценарій 20-40 секунд
+5. CTA
+6. Ціль: охоплення / довіра / прогрів / продаж
+"""
+    return {"result": run_llm(prompt)}
+
+
+
+
+@app.get("/login/instagram")
+def login_instagram():
+    app_id = os.getenv("META_APP_ID", "").strip()
+    redirect_uri = os.getenv("META_REDIRECT_URI", "http://127.0.0.1:8000/callback/instagram").strip()
+
+    if not app_id:
+        return {"status": "error", "message": "META_APP_ID не встановлений у .env"}
+
+    scope = "pages_show_list"
+
+    url = (
+        "https://www.facebook.com/v19.0/dialog/oauth"
+        f"?client_id={app_id}"
+        f"&redirect_uri={redirect_uri}"
+        f"&scope={scope}"
+        f"&response_type=code"
+    )
+
+    return RedirectResponse(url)
+
+
+@app.get("/callback/instagram")
+def callback_instagram(code: str = "", error: str = "", error_description: str = ""):
+    if error:
+        return {
+            "status": "error",
+            "error": error,
+            "error_description": error_description,
+        }
+
+    app_id = os.getenv("META_APP_ID", "").strip()
+    app_secret = os.getenv("META_APP_SECRET", "").strip()
+    redirect_uri = os.getenv("META_REDIRECT_URI", "http://127.0.0.1:8000/callback/instagram").strip()
+
+    if not app_id or not app_secret:
+        return {"status": "error", "message": "META_APP_ID або META_APP_SECRET не встановлені у .env"}
+
+    token_url = "https://graph.facebook.com/v19.0/oauth/access_token"
+
+    r = requests.get(token_url, params={
+        "client_id": app_id,
+        "client_secret": app_secret,
+        "redirect_uri": redirect_uri,
+        "code": code,
+    }, timeout=30)
+
+    data = r.json()
+
+    if "access_token" not in data:
+        return {
+            "status": "error",
+            "step": "exchange_code_for_token",
+            "response": data,
+        }
+
+    access_token = data["access_token"]
+
+    # save token locally
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS integrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform TEXT,
+        access_token TEXT,
+        raw_json TEXT,
+        created_at TEXT
+    )
+    """)
+    cur.execute(
+        "INSERT INTO integrations (platform, access_token, raw_json, created_at) VALUES (?, ?, ?, ?)",
+        ("instagram", access_token, str(data), datetime.now().isoformat(timespec="seconds"))
+    )
+    con.commit()
+    con.close()
+
+    return {
+        "status": "connected",
+        "platform": "instagram",
+        "message": "Instagram/Facebook токен отримано і збережено локально.",
+        "next": "Відкрий /instagram/status для перевірки.",
+    }
+
+
+@app.get("/instagram/status")
+def instagram_status():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS integrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform TEXT,
+        access_token TEXT,
+        raw_json TEXT,
+        created_at TEXT
+    )
+    """)
+
+    row = cur.execute("""
+        SELECT id, platform, created_at
+        FROM integrations
+        WHERE platform='instagram'
+        ORDER BY id DESC
+        LIMIT 1
+    """).fetchone()
+
+    con.close()
+
+    return {
+        "connected": bool(row),
+        "latest": dict(row) if row else None,
+    }
+
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/ui")
+def ui():
+    return FileResponse("static/index.html")
+
+def init_drafts_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS drafts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        title TEXT DEFAULT '',
+        caption TEXT DEFAULT '',
+        video_path TEXT DEFAULT '',
+        platforms TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft',
+        ai_adapted TEXT DEFAULT ''
+    )
+    """)
+    con.commit()
+    con.close()
+
+init_drafts_db()
+
+
+@app.post("/drafts/add")
+def add_draft(
+    title: str = "",
+    caption: str = "",
+    video_path: str = "",
+    platforms: str = "Instagram,TikTok,YouTube",
+    adapt_ai: bool = True,
+):
+    ai_adapted = ""
+
+    if adapt_ai and caption.strip():
+        prompt = f"""
+Ти AI-контент директор для експерта-регресолога/кармолога.
+
+Є базовий caption:
+{caption}
+
+Платформи: {platforms}
+
+Адаптуй цей текст окремо під:
+1. Instagram Reels
+2. TikTok
+3. YouTube Shorts
+
+Для кожної платформи дай:
+- caption
+- перший рядок-хук
+- hashtags
+- CTA
+- що краще сказати в описі
+"""
+        ai_adapted = run_llm(prompt)
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+    cur.execute("""
+        INSERT INTO drafts (
+            created_at, title, caption, video_path, platforms, status, ai_adapted
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        title, caption, video_path, platforms, "draft", ai_adapted
+    ))
+    draft_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "draft_id": draft_id,
+        "ai_adapted": ai_adapted
+    }
+
+
+@app.get("/drafts/list")
+def list_drafts():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("SELECT * FROM drafts ORDER BY id DESC LIMIT 100").fetchall()
+    con.close()
+    return {"drafts": [dict(r) for r in rows]}
+
+def youtube_get_access_token():
+    client_id = os.getenv("YOUTUBE_CLIENT_ID", "").strip()
+    client_secret = os.getenv("YOUTUBE_CLIENT_SECRET", "").strip()
+    refresh_token = os.getenv("YOUTUBE_REFRESH_TOKEN", "").strip()
+    token_uri = os.getenv("YOUTUBE_TOKEN_URI", "https://oauth2.googleapis.com/token").strip()
+
+    if not client_id or not client_secret or not refresh_token:
+        return None, "YOUTUBE env vars missing"
+
+    r = requests.post(token_uri, data={
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }, timeout=30)
+
+    if r.status_code != 200:
+        return None, r.text
+
+    return r.json().get("access_token"), None
+
+
+@app.get("/youtube/status")
+def youtube_status():
+    token, err = youtube_get_access_token()
+    return {
+        "connected": bool(token),
+        "error": err,
+    }
+
+
+@app.get("/youtube/channel")
+def youtube_channel():
+    token, err = youtube_get_access_token()
+    if err:
+        return {"status": "error", "error": err}
+
+    r = requests.get(
+        "https://www.googleapis.com/youtube/v3/channels",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "snippet,statistics,contentDetails",
+            "mine": "true",
+        },
+        timeout=30,
+    )
+
+    return r.json()
+
+
+@app.get("/youtube/videos")
+def youtube_videos(max_results: int = 10):
+    token, err = youtube_get_access_token()
+    if err:
+        return {"status": "error", "error": err}
+
+    # 1) get uploads playlist
+    ch = requests.get(
+        "https://www.googleapis.com/youtube/v3/channels",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "contentDetails",
+            "mine": "true",
+        },
+        timeout=30,
+    ).json()
+
+    items = ch.get("items", [])
+    if not items:
+        return {"status": "error", "error": "No channel found", "raw": ch}
+
+    uploads_playlist = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
+
+    # 2) get videos from uploads playlist
+    pl = requests.get(
+        "https://www.googleapis.com/youtube/v3/playlistItems",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "snippet,contentDetails",
+            "playlistId": uploads_playlist,
+            "maxResults": max_results,
+        },
+        timeout=30,
+    ).json()
+
+    video_ids = [
+        x["contentDetails"]["videoId"]
+        for x in pl.get("items", [])
+        if "contentDetails" in x and "videoId" in x["contentDetails"]
+    ]
+
+    if not video_ids:
+        return {"status": "ok", "videos": []}
+
+    stats = requests.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        headers={"Authorization": f"Bearer {token}"},
+        params={
+            "part": "snippet,statistics",
+            "id": ",".join(video_ids),
+        },
+        timeout=30,
+    ).json()
+
+    return {"status": "ok", "videos": stats.get("items", [])}
+
+@app.get("/youtube/public/videos")
+def youtube_public_videos(max_results: int = 10):
+    api_key = os.getenv("YOUTUBE_API_KEY", "").strip()
+    channel_id = os.getenv("YOUTUBE_CHANNEL_ID", "").strip()
+
+    if not api_key or not channel_id:
+        return {"status": "error", "error": "YOUTUBE_API_KEY або YOUTUBE_CHANNEL_ID не встановлені у .env"}
+
+    search = requests.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        params={
+            "key": api_key,
+            "channelId": channel_id,
+            "part": "snippet,id",
+            "order": "date",
+            "maxResults": max_results,
+            "type": "video",
+        },
+        timeout=30,
+    ).json()
+
+    video_ids = [
+        item["id"]["videoId"]
+        for item in search.get("items", [])
+        if item.get("id", {}).get("videoId")
+    ]
+
+    if not video_ids:
+        return {"status": "ok", "videos": []}
+
+    stats = requests.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        params={
+            "key": api_key,
+            "id": ",".join(video_ids),
+            "part": "snippet,statistics",
+        },
+        timeout=30,
+    ).json()
+
+    return {"status": "ok", "videos": stats.get("items", [])}
+
+
+@app.post("/youtube/public/sync")
+def youtube_public_sync(max_results: int = 10):
+    data = youtube_public_videos(max_results=max_results)
+
+    if data.get("status") != "ok":
+        return data
+
+    videos = data.get("videos", [])
+    saved = 0
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    for v in videos:
+        video_id = v["id"]
+        snippet = v.get("snippet", {})
+        statistics = v.get("statistics", {})
+
+        title = snippet.get("title", "")
+        description = snippet.get("description", "")
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
+        views = int(statistics.get("viewCount", 0))
+        likes = int(statistics.get("likeCount", 0)) if "likeCount" in statistics else 0
+        comments = int(statistics.get("commentCount", 0)) if "commentCount" in statistics else 0
+
+        text = f"{title}\n\n{description}".strip()
+        score = calc_score(views, likes, comments, 0, 0)
+
+        analysis = run_llm(f"""
+Проаналізуй YouTube відео для експерта-регресолога/кармолога.
+
+Назва:
+{title}
+
+Опис:
+{description}
+
+Метрики:
+views={views}
+likes={likes}
+comments={comments}
+score={score}
+
+Дай:
+1. Тема
+2. Біль аудиторії
+3. Сила заголовка
+4. Що покращити
+5. 3 ідеї наступних Shorts/Reels
+""")
+
+        cur.execute("""
+            INSERT INTO posts (
+                created_at, platform, url, text,
+                views, likes, comments, saves, shares,
+                analysis, score
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            "YouTube",
+            url,
+            text,
+            views,
+            likes,
+            comments,
+            0,
+            0,
+            analysis,
+            score,
+        ))
+
+        saved += 1
+
+    con.commit()
+    con.close()
+
+    return {"status": "ok", "saved": saved}
+
+# =============================================================================
+# PLATFORM HUB PATCH V1
+# YouTube public stats + content versions + scheduler/calendar foundation
+# =============================================================================
+
+def init_platform_hub_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        platform TEXT NOT NULL,
+        account_id TEXT DEFAULT '',
+        account_name TEXT DEFAULT '',
+        access_token TEXT DEFAULT '',
+        refresh_token TEXT DEFAULT '',
+        expires_at TEXT DEFAULT '',
+        raw_json TEXT DEFAULT '',
+        created_at TEXT,
+        updated_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS content_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        title TEXT DEFAULT '',
+        base_caption TEXT DEFAULT '',
+        video_path TEXT DEFAULT '',
+        image_path TEXT DEFAULT '',
+        source_platform TEXT DEFAULT '',
+        source_url TEXT DEFAULT '',
+        status TEXT DEFAULT 'draft'
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS platform_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        content_id INTEGER,
+        platform TEXT,
+        caption TEXT DEFAULT '',
+        hashtags TEXT DEFAULT '',
+        location TEXT DEFAULT '',
+        privacy_status TEXT DEFAULT 'private',
+        scheduled_at TEXT DEFAULT '',
+        publish_status TEXT DEFAULT 'draft',
+        external_post_id TEXT DEFAULT '',
+        external_url TEXT DEFAULT '',
+        error TEXT DEFAULT ''
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS post_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        collected_at TEXT,
+        platform TEXT,
+        external_post_id TEXT,
+        external_url TEXT DEFAULT '',
+        title TEXT DEFAULT '',
+        views INTEGER DEFAULT 0,
+        likes INTEGER DEFAULT 0,
+        comments INTEGER DEFAULT 0,
+        shares INTEGER DEFAULT 0,
+        saves INTEGER DEFAULT 0,
+        watch_time REAL DEFAULT 0,
+        avg_view_duration REAL DEFAULT 0,
+        raw_json TEXT DEFAULT ''
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scheduled_posts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT,
+        content_id INTEGER,
+        platform_version_id INTEGER,
+        platform TEXT,
+        scheduled_at TEXT,
+        status TEXT DEFAULT 'scheduled',
+        error TEXT DEFAULT ''
+    )
+    """)
+
+    con.commit()
+    con.close()
+
+
+init_platform_hub_db()
+
+
+def youtube_api_key():
+    return os.getenv("YOUTUBE_API_KEY", "").strip()
+
+
+def get_youtube_public_videos(channel_id: str, max_results: int = 10):
+    key = youtube_api_key()
+    if not key:
+        return {"status": "error", "error": "YOUTUBE_API_KEY не встановлений у .env"}
+
+    search = requests.get(
+        "https://www.googleapis.com/youtube/v3/search",
+        params={
+            "key": key,
+            "channelId": channel_id,
+            "part": "snippet,id",
+            "order": "date",
+            "maxResults": max_results,
+            "type": "video",
+        },
+        timeout=30,
+    ).json()
+
+    if "error" in search:
+        return {"status": "error", "step": "search", "response": search}
+
+    video_ids = [
+        item["id"]["videoId"]
+        for item in search.get("items", [])
+        if item.get("id", {}).get("kind") == "youtube#video"
+    ]
+
+    if not video_ids:
+        return {"status": "ok", "videos": []}
+
+    stats = requests.get(
+        "https://www.googleapis.com/youtube/v3/videos",
+        params={
+            "key": key,
+            "id": ",".join(video_ids),
+            "part": "snippet,statistics,contentDetails",
+        },
+        timeout=30,
+    ).json()
+
+    if "error" in stats:
+        return {"status": "error", "step": "videos", "response": stats}
+
+    return {"status": "ok", "videos": stats.get("items", [])}
+
+
+@app.get("/hub/status")
+def hub_status():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    tables = {}
+    for table in [
+        "platform_accounts",
+        "content_items",
+        "platform_versions",
+        "post_metrics",
+        "scheduled_posts",
+    ]:
+        tables[table] = cur.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
+
+    con.close()
+
+    return {
+        "status": "ok",
+        "db_path": DB_PATH,
+        "youtube_api_key_exists": bool(youtube_api_key()),
+        "tables": tables,
+    }
+
+
+@app.get("/youtube/public/videos")
+def youtube_public_videos(channel_id: str, max_results: int = 10):
+    return get_youtube_public_videos(channel_id, max_results)
+
+
+@app.post("/youtube/sync_public")
+def youtube_sync_public(channel_id: str, max_results: int = 10):
+    data = get_youtube_public_videos(channel_id, max_results)
+
+    if data.get("status") != "ok":
+        return data
+
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    saved = 0
+
+    for v in data.get("videos", []):
+        video_id = v.get("id", "")
+        snippet = v.get("snippet", {})
+        statistics = v.get("statistics", {})
+
+        title = snippet.get("title", "")
+        description = snippet.get("description", "")
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
+        views = int(statistics.get("viewCount", 0) or 0)
+        likes = int(statistics.get("likeCount", 0) or 0)
+        comments = int(statistics.get("commentCount", 0) or 0)
+
+        cur.execute("""
+            INSERT INTO post_metrics (
+                collected_at, platform, external_post_id, external_url,
+                title, views, likes, comments, raw_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            "youtube",
+            video_id,
+            url,
+            title,
+            views,
+            likes,
+            comments,
+            str(v),
+        ))
+
+        cur.execute("""
+            INSERT INTO posts (
+                created_at, platform, url, text,
+                views, likes, comments, saves, shares,
+                analysis, score
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            "YouTube",
+            url,
+            f"{title}\n\n{description}".strip(),
+            views,
+            likes,
+            comments,
+            0,
+            0,
+            "Imported from YouTube API. AI analysis not generated yet.",
+            calc_score(views, likes, comments, 0, 0),
+        ))
+
+        saved += 1
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "saved": saved,
+        "message": "YouTube відео + метрики збережено в posts і post_metrics.",
+    }
+
+
+@app.post("/content/items/add")
+def content_item_add(
+    title: str = "",
+    base_caption: str = "",
+    video_path: str = "",
+    image_path: str = "",
+    source_platform: str = "",
+    source_url: str = "",
+):
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO content_items (
+            created_at, title, base_caption, video_path,
+            image_path, source_platform, source_url, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        title,
+        base_caption,
+        video_path,
+        image_path,
+        source_platform,
+        source_url,
+        "draft",
+    ))
+
+    content_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {"status": "ok", "content_id": content_id}
+
+
+@app.get("/content/items/list")
+def content_items_list():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("""
+        SELECT *
+        FROM content_items
+        ORDER BY id DESC
+        LIMIT 200
+    """).fetchall()
+    con.close()
+
+    return {"items": [dict(r) for r in rows]}
+
+
+@app.post("/content/adapt")
+def content_adapt(content_id: int, platforms: str = "Instagram,TikTok,YouTube,Facebook"):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    item = cur.execute("""
+        SELECT *
+        FROM content_items
+        WHERE id=?
+    """, (content_id,)).fetchone()
+
+    if not item:
+        con.close()
+        return {"status": "error", "error": "content_id not found"}
+
+    prompt = f"""
+Ти AI-контент директор.
+
+Є один базовий контент:
+
+Назва:
+{item["title"]}
+
+Базовий caption:
+{item["base_caption"]}
+
+Платформи:
+{platforms}
+
+Зроби адаптацію окремо під кожну платформу:
+- Instagram Reels
+- TikTok
+- YouTube Shorts
+- Facebook Reels
+
+Для кожної платформи дай:
+1. caption
+2. хук першого рядка
+3. hashtags
+4. CTA
+5. місцеположення/гео, якщо доречно
+6. privacy/status рекомендацію
+7. що НЕ писати на цій платформі
+
+Відповідь зроби структуровано українською.
+"""
+
+    ai_result = run_llm(prompt)
+
+    for platform in [p.strip() for p in platforms.split(",") if p.strip()]:
+        cur.execute("""
+            INSERT INTO platform_versions (
+                created_at, content_id, platform, caption,
+                hashtags, location, privacy_status, publish_status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            content_id,
+            platform,
+            ai_result,
+            "",
+            "",
+            "private" if platform.lower() in ("youtube", "facebook") else "",
+            "draft",
+        ))
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "content_id": content_id,
+        "platforms": platforms,
+        "ai_adaptation": ai_result,
+    }
+
+
+@app.get("/platform_versions/list")
+def platform_versions_list(content_id: int = 0):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    if content_id:
+        rows = con.execute("""
+            SELECT *
+            FROM platform_versions
+            WHERE content_id=?
+            ORDER BY id DESC
+        """, (content_id,)).fetchall()
+    else:
+        rows = con.execute("""
+            SELECT *
+            FROM platform_versions
+            ORDER BY id DESC
+            LIMIT 300
+        """).fetchall()
+
+    con.close()
+    return {"versions": [dict(r) for r in rows]}
+
+
+@app.post("/schedule/add")
+def schedule_add(
+    platform_version_id: int,
+    scheduled_at: str,
+):
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    pv = cur.execute("""
+        SELECT *
+        FROM platform_versions
+        WHERE id=?
+    """, (platform_version_id,)).fetchone()
+
+    if not pv:
+        con.close()
+        return {"status": "error", "error": "platform_version_id not found"}
+
+    cur.execute("""
+        INSERT INTO scheduled_posts (
+            created_at, content_id, platform_version_id,
+            platform, scheduled_at, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(timespec="seconds"),
+        pv["content_id"],
+        platform_version_id,
+        pv["platform"],
+        scheduled_at,
+        "scheduled",
+    ))
+
+    cur.execute("""
+        UPDATE platform_versions
+        SET scheduled_at=?, publish_status='scheduled'
+        WHERE id=?
+    """, (scheduled_at, platform_version_id))
+
+    schedule_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    return {"status": "ok", "schedule_id": schedule_id}
+
+
+@app.get("/calendar/events")
+def calendar_events():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    rows = con.execute("""
+        SELECT
+            s.id,
+            s.platform,
+            s.scheduled_at,
+            s.status,
+            c.title,
+            pv.caption
+        FROM scheduled_posts s
+        LEFT JOIN content_items c ON c.id = s.content_id
+        LEFT JOIN platform_versions pv ON pv.id = s.platform_version_id
+        ORDER BY s.scheduled_at ASC
+        LIMIT 500
+    """).fetchall()
+
+    con.close()
+
+    events = []
+    for r in rows:
+        events.append({
+            "id": r["id"],
+            "title": f'{r["platform"]}: {r["title"] or "content"}',
+            "start": r["scheduled_at"],
+            "status": r["status"],
+            "platform": r["platform"],
+            "caption": r["caption"],
+        })
+
+    return {"events": events}
+
+
+@app.post("/scheduler/run_once")
+def scheduler_run_once():
+    """
+    Поки що це безпечний dry-run.
+    Він знаходить усе, що вже треба публікувати, але НЕ пушить у соцмережі.
+    Реальний publish підключимо окремими OAuth-патчами.
+    """
+    now = datetime.now().isoformat(timespec="seconds")
+
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    due = cur.execute("""
+        SELECT *
+        FROM scheduled_posts
+        WHERE status='scheduled'
+          AND scheduled_at <= ?
+        ORDER BY scheduled_at ASC
+        LIMIT 50
+    """, (now,)).fetchall()
+
+    con.close()
+
+    return {
+        "status": "ok",
+        "mode": "dry_run",
+        "due_count": len(due),
+        "due": [dict(r) for r in due],
+        "next": "Наступний патч: реальний publisher для YouTube/Meta/TikTok.",
+    }
+
+# =============================================================================
+# END PLATFORM HUB PATCH V1
+# =============================================================================
+
+# =============================================================================
+# PLATFORM HUB PATCH V2
+# Safe YouTube sync without duplicates + calendar helper endpoints
+# =============================================================================
+
+def init_platform_hub_v2_db():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_post_metrics_platform_external_collected
+        ON post_metrics(platform, external_post_id, collected_at)
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS ix_post_metrics_platform_external
+        ON post_metrics(platform, external_post_id)
+    """)
+
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS ix_scheduled_posts_status_time
+        ON scheduled_posts(status, scheduled_at)
+    """)
+
+    con.commit()
+    con.close()
+
+
+init_platform_hub_v2_db()
+
+
+@app.post("/youtube/sync_public_safe")
+def youtube_sync_public_safe(channel_id: str, max_results: int = 10):
+    data = get_youtube_public_videos(channel_id, max_results)
+
+    if data.get("status") != "ok":
+        return data
+
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    saved_metrics = 0
+    saved_posts = 0
+    skipped_posts = 0
+
+    for v in data.get("videos", []):
+        video_id = v.get("id", "")
+        if not video_id:
+            continue
+
+        snippet = v.get("snippet", {})
+        statistics = v.get("statistics", {})
+
+        title = snippet.get("title", "")
+        description = snippet.get("description", "")
+        url = f"https://www.youtube.com/watch?v={video_id}"
+
+        views = int(statistics.get("viewCount", 0) or 0)
+        likes = int(statistics.get("likeCount", 0) or 0)
+        comments = int(statistics.get("commentCount", 0) or 0)
+
+        existing_post = cur.execute("""
+            SELECT id
+            FROM posts
+            WHERE platform='YouTube'
+              AND url=?
+            LIMIT 1
+        """, (url,)).fetchone()
+
+        cur.execute("""
+            INSERT INTO post_metrics (
+                collected_at, platform, external_post_id, external_url,
+                title, views, likes, comments, raw_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            datetime.now().isoformat(timespec="seconds"),
+            "youtube",
+            video_id,
+            url,
+            title,
+            views,
+            likes,
+            comments,
+            str(v),
+        ))
+        saved_metrics += 1
+
+        if existing_post:
+            cur.execute("""
+                UPDATE posts
+                SET views=?,
+                    likes=?,
+                    comments=?,
+                    score=?,
+                    analysis=CASE
+                        WHEN analysis IS NULL OR analysis='' OR analysis LIKE 'Imported from YouTube API%'
+                        THEN ?
+                        ELSE analysis
+                    END
+                WHERE id=?
+            """, (
+                views,
+                likes,
+                comments,
+                calc_score(views, likes, comments, 0, 0),
+                "Imported from YouTube API. Updated by safe sync.",
+                existing_post["id"],
+            ))
+            skipped_posts += 1
+        else:
+            cur.execute("""
+                INSERT INTO posts (
+                    created_at, platform, url, text,
+                    views, likes, comments, saves, shares,
+                    analysis, score
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now().isoformat(timespec="seconds"),
+                "YouTube",
+                url,
+                f"{title}\n\n{description}".strip(),
+                views,
+                likes,
+                comments,
+                0,
+                0,
+                "Imported from YouTube API. AI analysis not generated yet.",
+                calc_score(views, likes, comments, 0, 0),
+            ))
+            saved_posts += 1
+
+    con.commit()
+    con.close()
+
+    return {
+        "status": "ok",
+        "saved_posts": saved_posts,
+        "updated_existing_posts": skipped_posts,
+        "saved_metrics_snapshots": saved_metrics,
+    }
+
+
+@app.get("/analytics/platform_summary")
+def analytics_platform_summary():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+
+    rows = con.execute("""
+        SELECT
+            platform,
+            COUNT(*) AS posts,
+            SUM(views) AS views,
+            SUM(likes) AS likes,
+            SUM(comments) AS comments,
+            SUM(saves) AS saves,
+            SUM(shares) AS shares,
+            ROUND(AVG(score), 2) AS avg_score
+        FROM posts
+        GROUP BY platform
+        ORDER BY views DESC
+    """).fetchall()
+
+    con.close()
+    return {"summary": [dict(r) for r in rows]}
+
+
+@app.get("/calendar/feed")
+def calendar_feed():
+    data = calendar_events()
+    return data.get("events", [])
+
+# =============================================================================
+# END PLATFORM HUB PATCH V2
+# =============================================================================

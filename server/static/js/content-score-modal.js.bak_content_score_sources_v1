@@ -1,0 +1,190 @@
+/**
+ * Content Score Modal — Hook / Retention / Caption scoring
+ */
+const ContentScoreModal = (function() {
+  let modalElement = null;
+
+  function escapeHtmlLocal(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>]/g, function(m) {
+      if (m === '&') return '&amp;';
+      if (m === '<') return '&lt;';
+      if (m === '>') return '&gt;';
+      return m;
+    });
+  }
+
+  function getTemplate() {
+    return `
+      <div id="contentScoreModalOverlay" class="modal-overlay">
+        <div class="modal-container" style="max-width: 1050px;">
+          <div class="modal-header">
+            <h3><span>🎯</span> Hook / Retention Score</h3>
+            <button class="modal-close" onclick="ContentScoreModal.close()">×</button>
+          </div>
+          <div class="modal-body">
+            <div id="contentScoreBody">
+              <label>Платформа</label>
+              <select id="cs_platform">
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+                <option value="Facebook">Facebook</option>
+              </select>
+
+              <label>Title / перший рядок</label>
+              <input id="cs_title" placeholder="Наприклад: Я не могла схуднути 8 років..." />
+
+              <label>Caption / transcript / текст ролика</label>
+              <textarea id="cs_text" rows="8" placeholder="Встав текст, caption або транскрипт..."></textarea>
+
+              <div class="toolbar">
+                <button class="btn primary" onclick="ContentScoreModal.scoreManual()">🎯 Оцінити по критеріях</button>
+                <button class="btn" onclick="ContentScoreModal.loadHistory()">📚 Історія score</button>
+              </div>
+
+              <div id="contentScoreResult" class="muted">Готово до оцінки.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn" onclick="ContentScoreModal.close()">Закрити</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function ensure() {
+    if (!modalElement) {
+      document.body.insertAdjacentHTML('beforeend', getTemplate());
+      modalElement = document.getElementById('contentScoreModalOverlay');
+    }
+  }
+
+  function open(prefill = {}) {
+    ensure();
+    modalElement.classList.add('active');
+    if (prefill.platform) document.getElementById('cs_platform').value = prefill.platform;
+    if (prefill.title) document.getElementById('cs_title').value = prefill.title;
+    if (prefill.text) document.getElementById('cs_text').value = prefill.text;
+  }
+
+  function close() {
+    if (modalElement) modalElement.classList.remove('active');
+  }
+
+  function renderScore(data) {
+    const box = document.getElementById('contentScoreResult');
+    const s = data.scores || {};
+    const f = s.features || {};
+    const analysis = data.analysis || data.result || '';
+
+    box.innerHTML = `
+      <div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin: 12px 0;">
+        <div class="card"><div class="metric-label">Overall</div><div class="metric">${s.overall_score ?? '—'}</div></div>
+        <div class="card"><div class="metric-label">Hook</div><div class="metric">${s.hook_score ?? '—'}</div></div>
+        <div class="card"><div class="metric-label">Caption</div><div class="metric">${s.caption_score ?? '—'}</div></div>
+        <div class="card"><div class="metric-label">Retention risk</div><div class="metric">${s.retention_risk ?? '—'}</div></div>
+      </div>
+
+      <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
+        <strong>Rule features:</strong>
+        <pre>${escapeHtmlLocal(JSON.stringify(f, null, 2))}</pre>
+      </div>
+
+      <div class="card" style="box-shadow:none; border:1px solid #e5e7eb;">
+        <strong>AI diagnosis:</strong>
+        <pre style="background:#f9fafb; color:#111827; border:1px solid #e5e7eb; max-height:55vh;">${escapeHtmlLocal(analysis)}</pre>
+      </div>
+    `;
+  }
+
+  async function scorePayload(payload) {
+    ensure();
+    const box = document.getElementById('contentScoreResult');
+    if (box) box.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><span>Рахую Hook / Retention / Caption score...</span></div>`;
+
+    const res = await fetch('/ai/content-score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (!res.ok || data.status === 'error') {
+      throw new Error(data.error || `HTTP ${res.status}`);
+    }
+
+    renderScore(data);
+    return data;
+  }
+
+  async function scoreManual() {
+    try {
+      await scorePayload({
+        platform: document.getElementById('cs_platform').value,
+        title: document.getElementById('cs_title').value,
+        text: document.getElementById('cs_text').value,
+        metrics: {}
+      });
+    } catch (e) {
+      alert('❌ Score error: ' + e.message);
+    }
+  }
+
+  async function scorePost(postId, platform, title, content, metrics, url = '') {
+    open({ platform, title, text: content });
+    try {
+      await scorePayload({
+        platform,
+        external_id: postId,
+        title,
+        text: content,
+        url,
+        metrics: metrics || {}
+      });
+    } catch (e) {
+      alert('❌ Score error: ' + e.message);
+    }
+  }
+
+  async function loadHistory() {
+    ensure();
+    const box = document.getElementById('contentScoreResult');
+    box.innerHTML = `<div class="loading-spinner"><div class="spinner"></div><span>Завантажую історію...</span></div>`;
+    const res = await fetch('/ai/content-score/history?limit=50');
+    const data = await res.json();
+    const rows = data.items || [];
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty-state">Історія score поки порожня.</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Дата</th><th>Платформа</th><th>Overall</th><th>Hook</th><th>Caption</th><th>Risk</th><th>Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td>${escapeHtmlLocal(r.created_at || '')}</td>
+                <td>${escapeHtmlLocal(r.platform || '')}</td>
+                <td><strong>${r.overall_score}</strong></td>
+                <td>${r.hook_score}</td>
+                <td>${r.caption_score}</td>
+                <td>${r.retention_risk}</td>
+                <td>${escapeHtmlLocal(r.verdict || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  return { open, close, scoreManual, scorePost, loadHistory };
+})();
+
+window.ContentScoreModal = ContentScoreModal;
