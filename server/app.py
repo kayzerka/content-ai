@@ -6117,6 +6117,21 @@ def instagram_reaction_webhook_ingest(payload: dict):
     }
 
 
+
+
+@app.get("/api/debug/env")
+def debug_env():
+    return {
+        "FB_PAGE_ID_exists": bool(os.getenv("FB_PAGE_ID", "").strip()),
+        "FB_PAGE_ID_len": len(os.getenv("FB_PAGE_ID", "").strip()),
+        "FB_PAGE_ACCESS_TOKEN_exists": bool(os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
+        "FB_PAGE_ACCESS_TOKEN_len": len(os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()),
+        "IG_ACCESS_TOKEN_exists": bool(os.getenv("IG_ACCESS_TOKEN", "").strip()),
+        "IG_USER_ID_exists": bool(os.getenv("IG_USER_ID", "").strip()),
+        "CONTENT_AI_DB_PATH": os.getenv("CONTENT_AI_DB_PATH", ""),
+    }
+
+
 @app.get("/api/instagram/reactions/status")
 def instagram_reactions_status():
     con = sqlite3.connect(DB_PATH)
