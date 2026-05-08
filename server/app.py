@@ -5944,6 +5944,12 @@ def ig_process_reaction(reaction_id: int, force: bool = False):
         mode = "DIALOG"
     profile["selected_prompt_mode"] = mode
 
+    # FORCE_DM_CHANNEL_DIRECT_V1:
+    # Instagram webhook DM/messaging events must be treated as direct, not comment.
+    ev_type = str(reaction_d.get("event_type") or "").lower().strip()
+    if ev_type in ("message", "dm_message", "messaging"):
+        profile["channel"] = "direct"
+
     matched_plan = ig_match_funnel_plan(reaction_d)
     selected_plan = matched_plan.get("plan") or {}
     content_context = matched_plan.get("content_context") or {}
