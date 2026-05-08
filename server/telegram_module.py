@@ -35,6 +35,17 @@ def init_telegram_db():
     )
     """)
 
+    # TELEGRAM_CHATS_TOPIC_COLUMNS_MIGRATION_V1
+    for col, ddl in [
+        ("thread_id", "ALTER TABLE telegram_chats ADD COLUMN thread_id TEXT"),
+        ("parent_chat_id", "ALTER TABLE telegram_chats ADD COLUMN parent_chat_id TEXT"),
+        ("is_topic", "ALTER TABLE telegram_chats ADD COLUMN is_topic INTEGER DEFAULT 0"),
+    ]:
+        try:
+            cur.execute(ddl)
+        except Exception:
+            pass
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS telegram_posts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
