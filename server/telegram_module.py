@@ -1162,3 +1162,57 @@ def telegram_chat_manual_upsert(payload: dict = {}):
         "parent_chat_id": parent_chat_id,
         "is_topic": is_topic,
     }
+
+# MANUAL_TELEGRAM_CHAT_UPSERT_RENDER_FIX_V3_DEBUG
+@router.post("/chats/upsert_v2")
+def telegram_chat_manual_upsert_v2(payload: dict = {}):
+    import sqlite3, traceback
+    try:
+        init_telegram_db()
+        con = sqlite3.connect(TELEGRAM_DB)
+        cur = con.cursor()
+
+        for ddl in [
+            "ALTER TABLE telegram_chats ADD COLUMN thread_id TEXT",
+            "ALTER TABLE telegram_chats ADD COLUMN parent_chat_id TEXT",
+            "ALTER TABLE telegram_chats ADD COLUMN is_topic INTEGER DEFAULT 0",
+        ]:
+            try:
+                cur.execute(ddl)
+            except Exception:
+                pass
+
+        chat_id = str(payload.get("chat_id") or "").strip()
+        if not chat_id:
+            return {"ok": False, "error": "chat_id_required"}
+
+        cur.execute("DELETE FROM telegram_chats WHERE chat_id=?", (chat_id,))
+        cur.execute("""
+            INSERT INTO telegram_chats
+            (chat_id, type, title, username, first_name, last_name, enabled, role, created_at, updated_at, thread_id, parent_chat_id, is_topic)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+        """, (
+            chat_id,
+            payload.get("type") or "supergroup",
+            payload.get("title"),
+            payload.get("username"),
+            payload.get("first_name"),
+            payload.get("last_name"),
+            int(payload.get("enabled", 1)),
+            payload.get("role") or "client_group",
+            payload.get("thread_id"),
+            payload.get("parent_chat_id"),
+            int(payload.get("is_topic", 0)),
+        ))
+
+        con.commit()
+        con.close()
+        return {"ok": True, "chat_id": chat_id}
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": "upsert_v2_failed",
+            "detail": repr(e),
+            "trace": traceback.format_exc()[-1200:],
+        }
