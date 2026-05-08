@@ -1091,3 +1091,63 @@ def _telegram_call_ai(prompt: str):
         }
 
 # === /TELEGRAM AI DEEPSEEK CALL FIX V1 ===
+
+# MANUAL_TELEGRAM_CHAT_UPSERT_RENDER_FIX_V2
+@router.post("/chats/upsert")
+def telegram_chat_manual_upsert(payload: dict = {}):
+    init_telegram_db()
+
+    chat_id = str(payload.get("chat_id") or "").strip()
+    if not chat_id:
+        return {"ok": False, "error": "chat_id_required"}
+
+    chat_type = str(payload.get("type") or "supergroup").strip()
+    title = payload.get("title")
+    username = payload.get("username")
+    first_name = payload.get("first_name")
+    last_name = payload.get("last_name")
+    enabled = int(payload.get("enabled", 1))
+    role = str(payload.get("role") or "client_group").strip()
+    thread_id = payload.get("thread_id")
+    parent_chat_id = payload.get("parent_chat_id")
+    is_topic = int(payload.get("is_topic", 0))
+
+    import sqlite3
+    con = sqlite3.connect(TELEGRAM_DB)
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO telegram_chats
+        (chat_id, type, title, username, first_name, last_name, enabled, role, created_at, updated_at, thread_id, parent_chat_id, is_topic)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), ?, ?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET
+            type=excluded.type,
+            title=excluded.title,
+            username=excluded.username,
+            first_name=excluded.first_name,
+            last_name=excluded.last_name,
+            enabled=excluded.enabled,
+            role=excluded.role,
+            updated_at=datetime('now'),
+            thread_id=excluded.thread_id,
+            parent_chat_id=excluded.parent_chat_id,
+            is_topic=excluded.is_topic
+    """, (
+        chat_id, chat_type, title, username, first_name, last_name,
+        enabled, role, thread_id, parent_chat_id, is_topic
+    ))
+
+    con.commit()
+    con.close()
+
+    return {
+        "ok": True,
+        "chat_id": chat_id,
+        "type": chat_type,
+        "title": title,
+        "enabled": enabled,
+        "role": role,
+        "thread_id": thread_id,
+        "parent_chat_id": parent_chat_id,
+        "is_topic": is_topic,
+    }
