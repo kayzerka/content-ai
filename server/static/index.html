@@ -1725,7 +1725,7 @@ async function restoreFunnelsSeedData() {
   }
 
   try {
-    const res = await fetch("/api/funnels/restore/push_local_to_render", {
+    const res = await fetch("/api/funnels/restore/from_static_backup", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({source: "constructor_restore_button"})
