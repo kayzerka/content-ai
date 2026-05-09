@@ -312,76 +312,27 @@
       </div>
     `;
   }
+
   function backupHtml(){ return ""; }
+
   async function exportBackup(){
-    const res = await api("/api/funnels/backup/export");
-    show(res);
-    const el = document.getElementById("fu-backup-json");
-    if (el) el.value = JSON.stringify(res, null, 2);
-    try {
-      localStorage.setItem("funnels_last_backup_json", JSON.stringify(res));
-      localStorage.setItem("funnels_last_backup_at", new Date().toISOString());
-    } catch(e){}
-    return res;
+    return show({ok:true, skipped:true, reason:"backup_ui_disabled"});
   }
 
   async function downloadBackup(){
-    const res = await exportBackup();
-    const blob = new Blob([JSON.stringify(res, null, 2)], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const ts = new Date().toISOString().replace(/[:.]/g,"-");
-    a.href = url;
-    a.download = `funnels-backup-${ts}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    return show({ok:true, skipped:true, reason:"backup_download_disabled"});
   }
 
-  async function snapshotBackup(reason){ return show({ok:true, skipped:true, reason:"telegram_snapshot_disabled"}); });
-    show(res);
-    return res;
+  async function snapshotBackup(reason){
+    return show({ok:true, skipped:true, reason:"telegram_snapshot_disabled"});
   }
 
-  async function autoBackupFunnels(reason){
-    try {
-      const res = await api("/api/funnels/backup/snapshot", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({reason: reason || "auto"})
-      });
-      console.log("[funnels auto backup]", reason, res);
-      return res;
-    } catch(e) {
-      console.warn("[funnels auto backup failed]", reason, e);
-      return {ok:false, error:String(e)};
-    }
+  async function autoSnapshotBackup(reason){
+    return {ok:true, skipped:true, reason:"auto_backup_disabled"};
   }
 
   async function importBackup(){
-    const raw = document.getElementById("fu-backup-json")?.value || "";
-    if (!raw.trim()) return show({ok:false, error:"backup JSON is empty"});
-
-    let payload;
-    try { payload = JSON.parse(raw); }
-    catch(e){ return show({ok:false, error:"invalid JSON", details:String(e)}); }
-
-    const res = await api("/api/funnels/backup/import", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
-
-    show(res);
-    await autoBackupFunnels("after_import_restore");
-    state.view = "list";
-    await render();
-  }
-
-
-  function show(x){
-    state.last = x;
-    const el = document.getElementById("fu-output");
-    if (el) el.textContent = JSON.stringify(x, null, 2);
+    return show({ok:true, skipped:true, reason:"manual_import_disabled"});
   }
 
   async function saveConfig(){

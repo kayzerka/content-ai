@@ -2267,14 +2267,33 @@ def force_comment_lead_insert(item: dict):
 # === /FORCE COMMENT LEAD INSERT V1 ===
 
 
-# === FUNNELS SEED FROM REACTION PLANS V1 ===
+
+
+# === FUNNELS SEED FROM REACTION PLANS SAFE V2 ===
 @router.post("/backup/seed_from_reaction_plans")
-def funnels_seed_from_reaction_plans_v1():
+def funnels_seed_from_reaction_plans_safe_v2():
     con = db()
     con.row_factory = sqlite3.Row
     imported = 0
     try:
-        ensure_schema()
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            funnel_key TEXT UNIQUE,
+            name TEXT,
+            active INTEGER DEFAULT 1,
+            trigger_type TEXT DEFAULT 'keyword',
+            trigger_value TEXT DEFAULT '',
+            telegram_bot_username TEXT DEFAULT '',
+            telegram_channel_url TEXT DEFAULT '',
+            target_url TEXT DEFAULT '',
+            dm_template TEXT DEFAULT '',
+            ai_prompt TEXT DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
         plans = con.execute("""
             SELECT *
             FROM ig_reaction_funnel_plans
@@ -2287,39 +2306,33 @@ def funnels_seed_from_reaction_plans_v1():
             if not key:
                 continue
 
-            name = str(p["plan_name"] or key).strip()
-            trigger_keywords = str(p["trigger_keywords"] or "").strip()
-            public_cta = str(p["public_cta"] or "").strip()
-            direct_cta = str(p["direct_cta"] or "").strip()
-            goal = str(p["plan_goal"] or "").strip()
-            notes = str(p["notes"] or "").strip()
-
             con.execute("""
-                INSERT INTO funnel_configs
-                (funnel_key, name, active, trigger_type, trigger_value,
-                 telegram_bot_username, telegram_channel_url, target_url,
-                 dm_template, ai_prompt, created_at, updated_at)
-                VALUES (?, ?, 1, 'keyword', ?, '', '', '',
-                        ?, ?, datetime('now'), datetime('now'))
-                ON CONFLICT(funnel_key) DO UPDATE SET
-                    name=excluded.name,
-                    active=1,
-                    trigger_type='keyword',
-                    trigger_value=excluded.trigger_value,
-                    dm_template=excluded.dm_template,
-                    ai_prompt=excluded.ai_prompt,
-                    updated_at=datetime('now')
+            INSERT INTO funnel_configs
+            (funnel_key, name, active, trigger_type, trigger_value,
+             telegram_bot_username, telegram_channel_url, target_url,
+             dm_template, ai_prompt, created_at, updated_at)
+            VALUES (?, ?, 1, 'keyword', ?, '', '', '', ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(funnel_key) DO UPDATE SET
+              name=excluded.name,
+              active=1,
+              trigger_type='keyword',
+              trigger_value=excluded.trigger_value,
+              dm_template=excluded.dm_template,
+              ai_prompt=excluded.ai_prompt,
+              updated_at=datetime('now')
             """, (
                 key,
-                name,
-                trigger_keywords,
-                direct_cta or public_cta or ("Напиши в direct слово " + key.upper()),
-                (goal + "\\n\\n" + notes).strip()
+                str(p["plan_name"] or key),
+                str(p["trigger_keywords"] or ""),
+                str(p["direct_cta"] or p["public_cta"] or ""),
+                (str(p["plan_goal"] or "") + "\\n\\n" + str(p["notes"] or "")).strip()
             ))
             imported += 1
 
         con.commit()
         return {"ok": True, "status": "ok", "imported": imported}
+    except Exception as e:
+        return {"ok": False, "status": "error", "error": repr(e)}
     finally:
         con.close()
-# === /FUNNELS SEED FROM REACTION PLANS V1 ===
+# === /FUNNELS SEED FROM REACTION PLANS SAFE V2 ===
