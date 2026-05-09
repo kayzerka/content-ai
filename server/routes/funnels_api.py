@@ -3034,3 +3034,52 @@ def auto_save_all_system_backups_v1():
     except Exception as e:
         return {"ok": False, "status": "error", "where": "auto_save_all", "error": repr(e)}
 # === /AUTO BACKUP ALL SYSTEM DATA V1 ===
+
+
+# === IMPORT LEGACY FUNNEL EVENTS PAYLOAD V1 ===
+@router.post("/restore/import_legacy_payload")
+def import_legacy_funnel_payload_v1(payload: Dict[str, Any]):
+    import json, sqlite3
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    try:
+        tables = payload.get("tables") or {}
+
+        legacy_tables = ["funnel_events", "funnel_contacts", "funnel_jobs", "funnel_leads"]
+        imported = {}
+
+        for table_name in legacy_tables:
+            rows = tables.get(table_name) or []
+            imported[table_name] = 0
+            if not rows:
+                continue
+
+            cols = list(rows[0].keys())
+            defs = []
+            for c in cols:
+                if c == "id":
+                    defs.append('"id" INTEGER PRIMARY KEY')
+                else:
+                    defs.append(f'"{c}" TEXT')
+            con.execute(f'CREATE TABLE IF NOT EXISTS "{table_name}" ({", ".join(defs)})')
+
+            for r in rows:
+                keys = list(r.keys())
+                cols_sql = ",".join([f'"{k}"' for k in keys])
+                placeholders = ",".join(["?"] * len(keys))
+                vals = [r.get(k) for k in keys]
+
+                # id-based upsert fallback
+                if "id" in r:
+                    con.execute(f'DELETE FROM "{table_name}" WHERE id=?', (r.get("id"),))
+
+                con.execute(f'INSERT INTO "{table_name}" ({cols_sql}) VALUES ({placeholders})', vals)
+                imported[table_name] += 1
+
+        con.commit()
+        return {"ok": True, "status": "ok", "imported": imported}
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "import_legacy_payload", "error": repr(e)}
+    finally:
+        con.close()
+# === /IMPORT LEGACY FUNNEL EVENTS PAYLOAD V1 ===
