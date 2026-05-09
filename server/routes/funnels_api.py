@@ -2878,3 +2878,89 @@ def push_latest_local_funnels_backup_to_render_v1():
     except Exception as e:
         return {"ok": False, "status": "error", "where": "push_latest_local_to_render", "error": repr(e)}
 # === /PUSH LATEST LOCAL FUNNELS BACKUP TO RENDER V1 ===
+
+
+# === FIXED LOCAL FUNNELS BACKUP FILE V1 ===
+@router.post("/backup/save_render_to_local")
+def save_render_funnels_backup_to_local_v1():
+    try:
+        import json, os, urllib.request
+        from pathlib import Path
+
+        render_url = os.getenv("RENDER_API", "https://content-ai-ps1k.onrender.com").rstrip("/")
+        backup_path = Path(os.getenv("FUNNELS_LOCAL_BACKUP_PATH", "backups/funnels-latest.json"))
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with urllib.request.urlopen(render_url + "/api/funnels/backup/export", timeout=60) as resp:
+            body = resp.read().decode("utf-8")
+
+        data = json.loads(body)
+
+        # Telegram backup окремий
+        data.pop("telegram_db", None)
+        data.pop("telegram_bundle", None)
+
+        backup_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "saved_to": str(backup_path),
+            "render_url": render_url,
+            "backup_type": data.get("backup_type"),
+            "tables": {k: len(v or []) for k, v in (data.get("tables") or {}).items()}
+        }
+
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "save_render_to_local", "error": repr(e)}
+
+
+@router.post("/restore/push_local_to_render")
+def push_fixed_local_funnels_backup_to_render_v1():
+    try:
+        import json, os, urllib.request
+        from pathlib import Path
+
+        render_url = os.getenv("RENDER_API", "https://content-ai-ps1k.onrender.com").rstrip("/")
+        backup_path = Path(os.getenv("FUNNELS_LOCAL_BACKUP_PATH", "backups/funnels-latest.json"))
+
+        if not backup_path.exists():
+            return {
+                "ok": False,
+                "status": "error",
+                "error": "fixed local backup file not found",
+                "path": str(backup_path)
+            }
+
+        data = json.loads(backup_path.read_text(encoding="utf-8"))
+
+        # Telegram backup окремий
+        data.pop("telegram_db", None)
+        data.pop("telegram_bundle", None)
+
+        req = urllib.request.Request(
+            render_url + "/api/funnels/backup/import",
+            data=json.dumps(data).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode("utf-8")
+
+        try:
+            render_response = json.loads(body)
+        except Exception:
+            render_response = {"raw": body}
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "pushed_from": str(backup_path),
+            "render_url": render_url,
+            "render_response": render_response
+        }
+
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "push_local_to_render", "error": repr(e)}
+# === /FIXED LOCAL FUNNELS BACKUP FILE V1 ===
