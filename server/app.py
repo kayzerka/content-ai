@@ -8466,7 +8466,9 @@ def telegram_backup_seed_defaults_v1():
                 "title": "🌿 Легке Тіло БВ | Простір відновлення",
                 "username": "",
                 "enabled": 1,
-                "role": "client_channel"
+                "role": "client_channel",
+                "thread_id": None,
+                "parent_chat_id": None
             },
             {
                 "chat_id": "-5294626884",
@@ -8474,7 +8476,79 @@ def telegram_backup_seed_defaults_v1():
                 "title": "БВ Переднавчання",
                 "username": "",
                 "enabled": 1,
-                "role": "client_group"
+                "role": "client_group",
+                "thread_id": None,
+                "parent_chat_id": None
+            },
+            {
+                "chat_id": "-1003977054867",
+                "type": "supergroup",
+                "title": "Легке Тіло БВ",
+                "username": "",
+                "enabled": 1,
+                "role": "client_group",
+                "thread_id": None,
+                "parent_chat_id": None
+            },
+            {
+                "chat_id": "-1003457886364",
+                "type": "supergroup",
+                "title": "𝒦𝓋𝒶𝓃𝓉𝑜𝓋𝒶_𝓎𝒶 ✨ / Коментарі",
+                "username": "",
+                "enabled": 1,
+                "role": "topic",
+                "thread_id": None,
+                "parent_chat_id": "-1003340506793"
+            },
+            {
+                "chat_id": "-1003570931644",
+                "type": "supergroup",
+                "title": "БВ 🔬 Лабораторія Чистої Карми🕊️",
+                "username": "",
+                "enabled": 1,
+                "role": "client_group",
+                "thread_id": None,
+                "parent_chat_id": None
+            },
+            {
+                "chat_id": "-1003340506793",
+                "type": "channel",
+                "title": "𝒦𝓋𝒶𝓃𝓉𝑜𝓋𝒶_𝓎𝒶 ✨",
+                "username": "",
+                "enabled": 1,
+                "role": "client_channel",
+                "thread_id": None,
+                "parent_chat_id": None
+            },
+            {
+                "chat_id": "-1003570931644:6",
+                "type": "supergroup",
+                "title": "БВ 🔬 Лабораторія / Балакалка",
+                "username": "",
+                "enabled": 1,
+                "role": "topic",
+                "thread_id": "6",
+                "parent_chat_id": "-1003570931644"
+            },
+            {
+                "chat_id": "330800472",
+                "type": "private",
+                "title": "",
+                "username": "Alex_Poberezhniy",
+                "enabled": 0,
+                "role": "internal_planner",
+                "thread_id": None,
+                "parent_chat_id": None
+            },
+            {
+                "chat_id": "697587340",
+                "type": "private",
+                "title": "",
+                "username": "Poberezhna_Dasha",
+                "enabled": 0,
+                "role": "internal_planner",
+                "thread_id": None,
+                "parent_chat_id": None
             }
         ]
     }
