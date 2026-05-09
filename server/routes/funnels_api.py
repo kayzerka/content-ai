@@ -1026,6 +1026,126 @@ def funnels_backup_import_full(payload: Dict[str, Any]):
     
         for table in import_order:
             rows = tables.get(table) or []
+
+            # IMPORT_DYNAMIC_MERGE_ONLY_V1
+            # Dynamic funnels are user-created state. Restore must MERGE by natural keys,
+            # not INSERT OR REPLACE by legacy id, otherwise new UI funnels disappear.
+            if table == "funnel_configs":
+                n = 0
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+
+                    key = dyn_slug(r.get("funnel_key") or r.get("plan_key") or "")
+                    if not key:
+                        continue
+
+                    cur = con.cursor()
+                    now = dyn_now()
+
+                    cur.execute("""
+                        INSERT INTO funnel_configs (
+                            created_at, updated_at, funnel_key, funnel_name, active, priority,
+                            source_platform, trigger_keywords, content_keywords,
+                            telegram_bot_username, telegram_channel_url, target_url,
+                            next_funnel_key, dm_template, start_payload_template,
+                            intro_text, notes, settings_json
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(funnel_key) DO UPDATE SET
+                            updated_at=excluded.updated_at,
+                            funnel_name=excluded.funnel_name,
+                            active=excluded.active,
+                            priority=excluded.priority,
+                            source_platform=excluded.source_platform,
+                            trigger_keywords=excluded.trigger_keywords,
+                            content_keywords=excluded.content_keywords,
+                            telegram_bot_username=excluded.telegram_bot_username,
+                            telegram_channel_url=excluded.telegram_channel_url,
+                            target_url=excluded.target_url,
+                            next_funnel_key=excluded.next_funnel_key,
+                            dm_template=excluded.dm_template,
+                            start_payload_template=excluded.start_payload_template,
+                            intro_text=excluded.intro_text,
+                            notes=excluded.notes,
+                            settings_json=excluded.settings_json
+                    """, (
+                        r.get("created_at") or now,
+                        now,
+                        key,
+                        str(r.get("funnel_name") or r.get("name") or key),
+                        int(r.get("active") if r.get("active") is not None else 1),
+                        int(r.get("priority") or 100),
+                        str(r.get("source_platform") or "instagram"),
+                        str(r.get("trigger_keywords") or r.get("trigger_value") or ""),
+                        str(r.get("content_keywords") or ""),
+                        str(r.get("telegram_bot_username") or ""),
+                        str(r.get("telegram_channel_url") or ""),
+                        str(r.get("target_url") or ""),
+                        str(r.get("next_funnel_key") or ""),
+                        str(r.get("dm_template") or ""),
+                        str(r.get("start_payload_template") or ""),
+                        str(r.get("intro_text") or ""),
+                        str(r.get("notes") or ""),
+                        r.get("settings_json") if isinstance(r.get("settings_json"), str) else json.dumps(r.get("settings_json") or {}, ensure_ascii=False),
+                    ))
+                    n += 1
+
+                imported[table] = n
+                continue
+
+            if table == "funnel_steps_dynamic":
+                n = 0
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+
+                    key = dyn_slug(r.get("funnel_key") or "")
+                    step_key = dyn_slug(r.get("step_key") or "")
+                    if not key or not step_key:
+                        continue
+
+                    cur = con.cursor()
+                    now = dyn_now()
+
+                    cur.execute("""
+                        INSERT INTO funnel_steps_dynamic (
+                            created_at, updated_at, funnel_key, step_key, step_order, active,
+                            trigger_stage, next_stage, message_text, button_text, button_url,
+                            delay_minutes, settings_json
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(funnel_key, step_key) DO UPDATE SET
+                            updated_at=excluded.updated_at,
+                            step_order=excluded.step_order,
+                            active=excluded.active,
+                            trigger_stage=excluded.trigger_stage,
+                            next_stage=excluded.next_stage,
+                            message_text=excluded.message_text,
+                            button_text=excluded.button_text,
+                            button_url=excluded.button_url,
+                            delay_minutes=excluded.delay_minutes,
+                            settings_json=excluded.settings_json
+                    """, (
+                        r.get("created_at") or now,
+                        now,
+                        key,
+                        step_key,
+                        int(r.get("step_order") or 100),
+                        int(r.get("active") if r.get("active") is not None else 1),
+                        str(r.get("trigger_stage") or ""),
+                        str(r.get("next_stage") or ""),
+                        str(r.get("message_text") or ""),
+                        str(r.get("button_text") or ""),
+                        str(r.get("button_url") or ""),
+                        int(r.get("delay_minutes") or 0),
+                        r.get("settings_json") if isinstance(r.get("settings_json"), str) else json.dumps(r.get("settings_json") or {}, ensure_ascii=False),
+                    ))
+                    n += 1
+
+                imported[table] = n
+                continue
+
             imported[table] = _insert_or_replace_rows(con, table, rows, preserve_id=True)
     
         con.commit()
