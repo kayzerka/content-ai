@@ -971,6 +971,7 @@ def funnels_backup_export_full():
             **content_tables,
             "instagram_webhook_messages": ig_webhook_rows,
         },
+        "telegram_db": _dump_sqlite_db_generic(TELEGRAM_DB_PATH),
         "counts": {
             **{k: len(v) for k, v in content_tables.items()},
             "instagram_webhook_messages": len(ig_webhook_rows),
@@ -1058,6 +1059,12 @@ def funnels_backup_import_full(payload: Dict[str, Any]):
             imported["instagram_webhook_messages_error"] = str(e)
 
     imported["instagram_webhook_messages"] = imported_ig_webhook
+
+    if backup_type == "funnels_full_v2" and payload.get("telegram_db"):
+        imported["telegram_db"] = _restore_sqlite_db_generic(
+            TELEGRAM_DB_PATH,
+            payload.get("telegram_db")
+        )
 
     return {
         "ok": True,
@@ -1543,3 +1550,91 @@ def funnels_backup_snapshot(payload: Dict[str, Any] = None):
     }
 
 # === /FUNNEL AUTO SNAPSHOT V1 ===
+
+
+
+
+# === TELEGRAM DB BACKUP EXTENSION V1 ===
+TELEGRAM_DB_PATH = os.getenv("TELEGRAM_DB_PATH", os.path.join(os.getcwd(), "db", "telegram.sqlite"))
+
+def _dump_sqlite_db_generic(db_path: str):
+    out = {"db_path": db_path, "tables": {}, "schema": {}}
+    try:
+        if not Path(db_path).exists():
+            out["missing"] = True
+            return out
+
+        con = sqlite3.connect(db_path)
+        con.row_factory = sqlite3.Row
+
+        tables = con.execute("""
+            SELECT name, sql
+            FROM sqlite_master
+            WHERE type='table'
+              AND name NOT LIKE 'sqlite_%'
+            ORDER BY name
+        """).fetchall()
+
+        for t in tables:
+            name = t["name"]
+            out["schema"][name] = t["sql"]
+            rows = con.execute(f"SELECT * FROM {name}").fetchall()
+            out["tables"][name] = [dict(r) for r in rows]
+
+        con.close()
+        return out
+    except Exception as e:
+        out["error"] = str(e)
+        return out
+
+def _restore_sqlite_db_generic(db_path: str, dump: dict):
+    if not dump or not isinstance(dump, dict):
+        return {"ok": False, "error": "empty dump"}
+
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+
+    con = sqlite3.connect(db_path)
+    cur = con.cursor()
+
+    restored = {}
+
+    schema = dump.get("schema") or {}
+    tables = dump.get("tables") or {}
+
+    for table, create_sql in schema.items():
+        if create_sql:
+            cur.execute(create_sql)
+
+    for table, rows in tables.items():
+        if not rows:
+            restored[table] = 0
+            continue
+
+        cols_existing = [r[1] for r in cur.execute(f"PRAGMA table_info({table})").fetchall()]
+        n = 0
+
+        for row in rows:
+            clean = {k: v for k, v in row.items() if k in cols_existing}
+            if not clean:
+                continue
+
+            cols = list(clean.keys())
+            placeholders = ",".join(["?"] * len(cols))
+            col_sql = ",".join(cols)
+
+            if "id" in clean:
+                sql = f"INSERT OR REPLACE INTO {table} ({col_sql}) VALUES ({placeholders})"
+            else:
+                sql = f"INSERT INTO {table} ({col_sql}) VALUES ({placeholders})"
+
+            cur.execute(sql, [clean[c] for c in cols])
+            n += 1
+
+        restored[table] = n
+
+    con.commit()
+    con.close()
+
+    return {"ok": True, "restored": restored}
+
+# === /TELEGRAM DB BACKUP EXTENSION V1 ===

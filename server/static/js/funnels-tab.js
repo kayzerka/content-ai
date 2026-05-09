@@ -553,7 +553,7 @@
     document.getElementById("fu-leads").onclick = async () => { state.view = "leads"; await render(); };
     document.getElementById("fu-sessions").onclick = async () => { state.view = "sessions"; await render(); };
     document.getElementById("fu-status").onclick = async () => show(await api("/api/funnels/runtime/status"));
-    const ingestLeadsBtn = document.getElementById("fu-ingest-leads");
+    var ingestLeadsBtn = document.getElementById("fu-ingest-leads");
     if (ingestLeadsBtn) ingestLeadsBtn.onclick = async () => {
       const res = await api("/api/funnels/leads/ingest", {
         method:"POST",
@@ -563,29 +563,29 @@
       show(res);
       await render();
     };
-    const backupBtn = document.getElementById("fu-backup");
+    var backupBtn = document.getElementById("fu-backup");
     if (backupBtn) backupBtn.onclick = async () => { state.view = "backup"; await render(); };
 
-    const exportBtn = document.getElementById("fu-export-backup");
+    var exportBtn = document.getElementById("fu-export-backup");
     if (exportBtn) exportBtn.onclick = exportBackup;
 
-    const downloadBtn = document.getElementById("fu-download-backup");
+    var downloadBtn = document.getElementById("fu-download-backup");
     if (downloadBtn) downloadBtn.onclick = downloadBackup;
 
-    const snapshotBtn = document.getElementById("fu-snapshot-backup");
+    var snapshotBtn = document.getElementById("fu-snapshot-backup");
     if (snapshotBtn) snapshotBtn.onclick = () => snapshotBackup("manual_button");
 
-    const importBtn = document.getElementById("fu-import-backup");
+    var importBtn = document.getElementById("fu-import-backup");
     if (importBtn) importBtn.onclick = importBackup;
     document.getElementById("fu-backup").onclick = async () => { state.view = "backup"; await render(); };
 
-    const exportBtn = document.getElementById("fu-export-backup");
+    var exportBtn = document.getElementById("fu-export-backup");
     if (exportBtn) exportBtn.onclick = exportBackup;
 
-    const downloadBtn = document.getElementById("fu-download-backup");
+    var downloadBtn = document.getElementById("fu-download-backup");
     if (downloadBtn) downloadBtn.onclick = downloadBackup;
 
-    const importBtn = document.getElementById("fu-import-backup");
+    var importBtn = document.getElementById("fu-import-backup");
     if (importBtn) importBtn.onclick = importBackup;
 
     document.querySelectorAll("[data-edit]").forEach(b => {
