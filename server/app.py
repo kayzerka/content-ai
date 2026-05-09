@@ -8347,3 +8347,174 @@ def debug_meta_env():
         "META_GRAPH_VERSION": os.getenv("META_GRAPH_VERSION", ""),
         "has_platform_instagram_hint": True,
     }
+
+
+# ===== TELEGRAM BACKUP / RESTORE API V1 =====
+import json as _tg_json
+import sqlite3 as _tg_sqlite3
+from pathlib import Path as _tg_Path
+from fastapi import Body as _tg_Body, UploadFile as _tg_UploadFile, File as _tg_File
+
+def _telegram_db_path_v1():
+    return str(_tg_Path("db/telegram.sqlite"))
+
+def _telegram_backup_conn_v1():
+    db_path = _telegram_db_path_v1()
+    _tg_Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    con = _tg_sqlite3.connect(db_path)
+    con.row_factory = _tg_sqlite3.Row
+    return con
+
+def _telegram_backup_ensure_schema_v1():
+    con = _telegram_backup_conn_v1()
+    try:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_chats (
+          chat_id TEXT PRIMARY KEY,
+          type TEXT,
+          title TEXT,
+          username TEXT,
+          first_name TEXT,
+          last_name TEXT,
+          enabled INTEGER DEFAULT 1,
+          role TEXT DEFAULT 'client_group',
+          thread_id TEXT,
+          parent_chat_id TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+        con.commit()
+    finally:
+        con.close()
+
+@app.get("/api/telegram/backup/export")
+def telegram_backup_export_v1():
+    _telegram_backup_ensure_schema_v1()
+    con = _telegram_backup_conn_v1()
+    try:
+        chats = [dict(r) for r in con.execute("SELECT * FROM telegram_chats ORDER BY updated_at DESC, title ASC").fetchall()]
+        return {
+            "ok": True,
+            "type": "telegram_backup_v1",
+            "count": len(chats),
+            "chats": chats,
+        }
+    finally:
+        con.close()
+
+@app.post("/api/telegram/backup/import")
+async def telegram_backup_import_v1(payload: dict = _tg_Body(...)):
+    _telegram_backup_ensure_schema_v1()
+    chats = payload.get("chats") or payload.get("items") or []
+    if isinstance(chats, dict) and isinstance(chats.get("chats"), list):
+        chats = chats["chats"]
+    if not isinstance(chats, list):
+        return {"ok": False, "error": "backup must contain chats list"}
+
+    con = _telegram_backup_conn_v1()
+    imported = 0
+    try:
+        for c in chats:
+            if not isinstance(c, dict): 
+                continue
+            chat_id = str(c.get("chat_id") or "").strip()
+            if not chat_id:
+                continue
+            con.execute("""
+            INSERT INTO telegram_chats
+            (chat_id,type,title,username,first_name,last_name,enabled,role,thread_id,parent_chat_id,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP),CURRENT_TIMESTAMP)
+            ON CONFLICT(chat_id) DO UPDATE SET
+              type=excluded.type,
+              title=excluded.title,
+              username=excluded.username,
+              first_name=excluded.first_name,
+              last_name=excluded.last_name,
+              enabled=excluded.enabled,
+              role=excluded.role,
+              thread_id=excluded.thread_id,
+              parent_chat_id=excluded.parent_chat_id,
+              updated_at=CURRENT_TIMESTAMP
+            """, (
+                chat_id,
+                c.get("type") or "supergroup",
+                c.get("title") or "",
+                c.get("username") or "",
+                c.get("first_name"),
+                c.get("last_name"),
+                int(c.get("enabled", 1)),
+                c.get("role") or "client_group",
+                c.get("thread_id"),
+                c.get("parent_chat_id"),
+                c.get("created_at"),
+            ))
+            imported += 1
+        con.commit()
+        return {"ok": True, "imported": imported}
+    finally:
+        con.close()
+
+@app.post("/api/telegram/backup/seed_defaults")
+def telegram_backup_seed_defaults_v1():
+    payload = {
+        "chats": [
+            {
+                "chat_id": "-1003978692875",
+                "type": "channel",
+                "title": "🌿 Легке Тіло БВ | Простір відновлення",
+                "username": "",
+                "enabled": 1,
+                "role": "client_channel"
+            },
+            {
+                "chat_id": "-5294626884",
+                "type": "supergroup",
+                "title": "БВ Переднавчання",
+                "username": "",
+                "enabled": 1,
+                "role": "client_group"
+            }
+        ]
+    }
+    return telegram_backup_import_v1_sync(payload)
+
+def telegram_backup_import_v1_sync(payload: dict):
+    _telegram_backup_ensure_schema_v1()
+    chats = payload.get("chats") or []
+    con = _telegram_backup_conn_v1()
+    imported = 0
+    try:
+        for c in chats:
+            chat_id = str(c.get("chat_id") or "").strip()
+            if not chat_id:
+                continue
+            con.execute("""
+            INSERT INTO telegram_chats
+            (chat_id,type,title,username,first_name,last_name,enabled,role,thread_id,parent_chat_id,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+            ON CONFLICT(chat_id) DO UPDATE SET
+              type=excluded.type,
+              title=excluded.title,
+              username=excluded.username,
+              enabled=excluded.enabled,
+              role=excluded.role,
+              updated_at=CURRENT_TIMESTAMP
+            """, (
+                chat_id,
+                c.get("type") or "supergroup",
+                c.get("title") or "",
+                c.get("username") or "",
+                c.get("first_name"),
+                c.get("last_name"),
+                int(c.get("enabled", 1)),
+                c.get("role") or "client_group",
+                c.get("thread_id"),
+                c.get("parent_chat_id"),
+            ))
+            imported += 1
+        con.commit()
+        return {"ok": True, "imported": imported}
+    finally:
+        con.close()
+# ===== /TELEGRAM BACKUP / RESTORE API V1 =====
