@@ -3157,3 +3157,38 @@ def convert_ig_reactions_to_funnel_leads_v1():
     finally:
         con.close()
 # === /CONVERT IG REACTIONS TO FUNNEL LEADS V1 ===
+
+# === SAFE FUNNEL LEADS LIST OVERRIDE V1 ===
+@router.get("/leads/list_safe")
+def funnels_leads_list_safe_v1(limit: int = 50):
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            source TEXT DEFAULT 'instagram',
+            platform TEXT DEFAULT 'instagram',
+            external_user_id TEXT DEFAULT '',
+            username TEXT DEFAULT '',
+            source_message TEXT DEFAULT '',
+            source_event_id TEXT DEFAULT '',
+            matched_plan_key TEXT DEFAULT '',
+            lead_status TEXT DEFAULT 'new',
+            raw_json TEXT DEFAULT ''
+        )
+        """)
+        rows = con.execute("""
+            SELECT *
+            FROM funnel_leads
+            ORDER BY id DESC
+            LIMIT ?
+        """, (int(limit or 50),)).fetchall()
+        return {"ok": True, "status": "ok", "items": [dict(r) for r in rows]}
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "leads_list_safe", "error": repr(e)}
+    finally:
+        con.close()
+# === /SAFE FUNNEL LEADS LIST OVERRIDE V1 ===
