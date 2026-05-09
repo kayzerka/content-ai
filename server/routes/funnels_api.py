@@ -2462,7 +2462,7 @@ def convert_legacy_funnel_events_to_dynamic_v1():
     created_steps = 0
 
     try:
-        ensure_schema()
+        dyn_ensure_schema()
 
         # знайти funnel_id з legacy events
         rows = con.execute("""
