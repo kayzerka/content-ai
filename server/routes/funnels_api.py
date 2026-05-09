@@ -864,175 +864,252 @@ def funnels_telegram_webhook(update: Dict[str, Any]):
 
 
 
-# === FUNNEL BACKUP RESTORE V1 ===
+
+
+# === FUNNEL BACKUP RESTORE V2 ===
+def _table_exists(con, table):
+    try:
+        row = con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            (table,)
+        ).fetchone()
+        return bool(row)
+    except Exception:
+        return False
+
+def _dump_table(con, table, order_by="id ASC"):
+    if not _table_exists(con, table):
+        return []
+    try:
+        rows = con.execute(f"SELECT * FROM {table} ORDER BY {order_by}").fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        rows = con.execute(f"SELECT * FROM {table}").fetchall()
+        return [dict(r) for r in rows]
+
+def _table_columns(con, table):
+    try:
+        return [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
+    except Exception:
+        return []
+
+def _insert_or_replace_rows(con, table, rows, preserve_id=True):
+    if not rows:
+        return 0
+
+    if not _table_exists(con, table):
+        return 0
+
+    cols_existing = _table_columns(con, table)
+    imported = 0
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        clean = {}
+        for k, v in row.items():
+            if k in cols_existing:
+                clean[k] = v
+
+        if not clean:
+            continue
+
+        if not preserve_id and "id" in clean:
+            clean.pop("id", None)
+
+        cols = list(clean.keys())
+        placeholders = ",".join(["?"] * len(cols))
+        col_sql = ",".join(cols)
+
+        if "id" in clean:
+            sql = f"INSERT OR REPLACE INTO {table} ({col_sql}) VALUES ({placeholders})"
+        else:
+            sql = f"INSERT INTO {table} ({col_sql}) VALUES ({placeholders})"
+
+        con.execute(sql, [clean[c] for c in cols])
+        imported += 1
+
+    return imported
+
 @router.get("/backup/export")
-def funnels_backup_export():
+def funnels_backup_export_full():
     dyn_init()
+
     con = dyn_con()
     con.row_factory = sqlite3.Row
 
-    funnels = con.execute("""
-        SELECT *
-        FROM funnel_configs
-        ORDER BY priority ASC, id ASC
-    """).fetchall()
-
-    steps = con.execute("""
-        SELECT *
-        FROM funnel_steps_dynamic
-        ORDER BY funnel_key ASC, step_order ASC, id ASC
-    """).fetchall()
+    content_tables = {
+        "funnel_configs": _dump_table(con, "funnel_configs", "priority ASC, id ASC"),
+        "funnel_steps_dynamic": _dump_table(con, "funnel_steps_dynamic", "funnel_key ASC, step_order ASC, id ASC"),
+        "funnel_sessions_dynamic": _dump_table(con, "funnel_sessions_dynamic", "id ASC"),
+        "ig_reaction_funnel_plans": _dump_table(con, "ig_reaction_funnel_plans", "priority ASC, id ASC"),
+        "ig_reactions": _dump_table(con, "ig_reactions", "id ASC"),
+        "ig_ai_reply_drafts": _dump_table(con, "ig_ai_reply_drafts", "id ASC"),
+    }
 
     con.close()
+
+    ig_webhook_rows = []
+    try:
+        if Path(IG_WEBHOOK_DB_PATH).exists():
+            con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
+            con_ig.row_factory = sqlite3.Row
+            ig_webhook_rows = _dump_table(con_ig, "instagram_webhook_messages", "id ASC")
+            con_ig.close()
+    except Exception as e:
+        ig_webhook_rows = [{"_backup_error": str(e)}]
 
     return {
         "ok": True,
         "status": "ok",
-        "backup_type": "funnels_dynamic_v1",
+        "backup_type": "funnels_full_v2",
         "exported_at": dyn_now(),
-        "funnels": [dict(r) for r in funnels],
-        "steps": [dict(r) for r in steps],
+        "content_db": CONTENT_DB_PATH,
+        "ig_webhook_db": IG_WEBHOOK_DB_PATH,
+        "tables": {
+            **content_tables,
+            "instagram_webhook_messages": ig_webhook_rows,
+        },
+        "counts": {
+            **{k: len(v) for k, v in content_tables.items()},
+            "instagram_webhook_messages": len(ig_webhook_rows),
+        }
     }
 
-
 @router.post("/backup/import")
-def funnels_backup_import(payload: Dict[str, Any]):
+def funnels_backup_import_full(payload: Dict[str, Any]):
     dyn_init()
 
-    if payload.get("backup_type") != "funnels_dynamic_v1":
+    backup_type = payload.get("backup_type")
+    if backup_type not in ("funnels_full_v2", "funnels_dynamic_v1"):
         return {
             "ok": False,
             "status": "error",
             "error": "invalid backup_type",
-            "expected": "funnels_dynamic_v1",
+            "expected": "funnels_full_v2",
         }
 
-    funnels = payload.get("funnels") or []
-    steps = payload.get("steps") or []
+    # Backward compatibility with old format
+    if backup_type == "funnels_dynamic_v1":
+        tables = {
+            "funnel_configs": payload.get("funnels") or [],
+            "funnel_steps_dynamic": payload.get("steps") or [],
+        }
+    else:
+        tables = payload.get("tables") or {}
 
-    now = dyn_now()
     con = dyn_con()
-    cur = con.cursor()
+    con.row_factory = sqlite3.Row
 
-    imported_funnels = 0
-    imported_steps = 0
+    imported = {}
 
-    for f in funnels:
-        key = dyn_slug(f.get("funnel_key") or "")
-        if not key:
-            continue
+    import_order = [
+        "funnel_configs",
+        "funnel_steps_dynamic",
+        "funnel_sessions_dynamic",
+        "ig_reaction_funnel_plans",
+        "ig_reactions",
+        "ig_ai_reply_drafts",
+    ]
 
-        cur.execute("""
-            INSERT INTO funnel_configs (
-                created_at, updated_at, funnel_key, funnel_name, active, priority,
-                source_platform, trigger_keywords, content_keywords,
-                telegram_bot_username, telegram_channel_url, target_url, next_funnel_key,
-                dm_template, start_payload_template, intro_text, notes, settings_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(funnel_key) DO UPDATE SET
-                updated_at=excluded.updated_at,
-                funnel_name=excluded.funnel_name,
-                active=excluded.active,
-                priority=excluded.priority,
-                source_platform=excluded.source_platform,
-                trigger_keywords=excluded.trigger_keywords,
-                content_keywords=excluded.content_keywords,
-                telegram_bot_username=excluded.telegram_bot_username,
-                telegram_channel_url=excluded.telegram_channel_url,
-                target_url=excluded.target_url,
-                next_funnel_key=excluded.next_funnel_key,
-                dm_template=excluded.dm_template,
-                start_payload_template=excluded.start_payload_template,
-                intro_text=excluded.intro_text,
-                notes=excluded.notes,
-                settings_json=excluded.settings_json
-        """, (
-            f.get("created_at") or now,
-            now,
-            key,
-            str(f.get("funnel_name") or key),
-            int(f.get("active", 1)),
-            int(f.get("priority", 100)),
-            str(f.get("source_platform") or "instagram"),
-            str(f.get("trigger_keywords") or ""),
-            str(f.get("content_keywords") or ""),
-            str(f.get("telegram_bot_username") or ""),
-            str(f.get("telegram_channel_url") or ""),
-            str(f.get("target_url") or ""),
-            dyn_slug(f.get("next_funnel_key") or ""),
-            str(f.get("dm_template") or ""),
-            str(f.get("start_payload_template") or ""),
-            str(f.get("intro_text") or ""),
-            str(f.get("notes") or ""),
-            str(f.get("settings_json") or "{}"),
-        ))
-
-        imported_funnels += 1
-
-        try:
-            dyn_bridge_to_ig_plan({
-                "funnel_key": key,
-                "funnel_name": f.get("funnel_name") or key,
-                "active": f.get("active", 1),
-                "priority": f.get("priority", 100),
-                "trigger_keywords": f.get("trigger_keywords") or "",
-                "content_keywords": f.get("content_keywords") or "",
-                "notes": f.get("notes") or "",
-            })
-        except Exception as e:
-            print("[FUNNEL_BACKUP_BRIDGE_ERROR]", repr(e), flush=True)
-
-    for st in steps:
-        key = dyn_slug(st.get("funnel_key") or "")
-        step_key = dyn_slug(st.get("step_key") or "")
-        if not key or not step_key:
-            continue
-
-        cur.execute("""
-            INSERT INTO funnel_steps_dynamic (
-                created_at, updated_at, funnel_key, step_key, step_order, active,
-                trigger_stage, next_stage, message_text, button_text, button_url,
-                delay_minutes, settings_json
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(funnel_key, step_key) DO UPDATE SET
-                updated_at=excluded.updated_at,
-                step_order=excluded.step_order,
-                active=excluded.active,
-                trigger_stage=excluded.trigger_stage,
-                next_stage=excluded.next_stage,
-                message_text=excluded.message_text,
-                button_text=excluded.button_text,
-                button_url=excluded.button_url,
-                delay_minutes=excluded.delay_minutes,
-                settings_json=excluded.settings_json
-        """, (
-            st.get("created_at") or now,
-            now,
-            key,
-            step_key,
-            int(st.get("step_order", 100)),
-            int(st.get("active", 1)),
-            str(st.get("trigger_stage") or ""),
-            str(st.get("next_stage") or ""),
-            str(st.get("message_text") or ""),
-            str(st.get("button_text") or ""),
-            str(st.get("button_url") or ""),
-            int(st.get("delay_minutes", 0)),
-            str(st.get("settings_json") or "{}"),
-        ))
-
-        imported_steps += 1
+    for table in import_order:
+        rows = tables.get(table) or []
+        imported[table] = _insert_or_replace_rows(con, table, rows, preserve_id=True)
 
     con.commit()
     con.close()
 
+    # Restore IG webhook DB separately
+    imported_ig_webhook = 0
+    ig_rows = tables.get("instagram_webhook_messages") or []
+    if ig_rows:
+        try:
+            Path(IG_WEBHOOK_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+            con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
+            con_ig.row_factory = sqlite3.Row
+
+            con_ig.execute("""
+                CREATE TABLE IF NOT EXISTS instagram_webhook_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    object TEXT,
+                    entry_id TEXT,
+                    event_time INTEGER,
+                    sender_id TEXT,
+                    recipient_id TEXT,
+                    timestamp INTEGER,
+                    mid TEXT UNIQUE,
+                    text TEXT,
+                    raw_json TEXT
+                )
+            """)
+
+            imported_ig_webhook = _insert_or_replace_rows(
+                con_ig,
+                "instagram_webhook_messages",
+                ig_rows,
+                preserve_id=True
+            )
+
+            con_ig.commit()
+            con_ig.close()
+        except Exception as e:
+            imported["instagram_webhook_messages_error"] = str(e)
+
+    imported["instagram_webhook_messages"] = imported_ig_webhook
+
     return {
         "ok": True,
         "status": "ok",
-        "imported_funnels": imported_funnels,
-        "imported_steps": imported_steps,
+        "backup_type": backup_type,
+        "imported": imported,
     }
 
-# === /FUNNEL BACKUP RESTORE V1 ===
+@router.get("/backup/counts")
+def funnels_backup_counts():
+    dyn_init()
+
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    tables = [
+        "funnel_configs",
+        "funnel_steps_dynamic",
+        "funnel_sessions_dynamic",
+        "ig_reaction_funnel_plans",
+        "ig_reactions",
+        "ig_ai_reply_drafts",
+    ]
+
+    counts = {}
+    for t in tables:
+        try:
+            counts[t] = con.execute(f"SELECT COUNT(*) AS n FROM {t}").fetchone()["n"]
+        except Exception:
+            counts[t] = None
+
+    con.close()
+
+    try:
+        if Path(IG_WEBHOOK_DB_PATH).exists():
+            con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
+            counts["instagram_webhook_messages"] = con_ig.execute(
+                "SELECT COUNT(*) AS n FROM instagram_webhook_messages"
+            ).fetchone()[0]
+            con_ig.close()
+        else:
+            counts["instagram_webhook_messages"] = 0
+    except Exception:
+        counts["instagram_webhook_messages"] = None
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "counts": counts,
+        "content_db": CONTENT_DB_PATH,
+        "ig_webhook_db": IG_WEBHOOK_DB_PATH,
+    }
+
+# === /FUNNEL BACKUP RESTORE V2 ===
+
