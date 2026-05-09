@@ -860,3 +860,179 @@ def funnels_telegram_webhook(update: Dict[str, Any]):
             "ok": False,
             "error": str(e)
         }
+
+
+
+
+# === FUNNEL BACKUP RESTORE V1 ===
+@router.get("/backup/export")
+def funnels_backup_export():
+    dyn_init()
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    funnels = con.execute("""
+        SELECT *
+        FROM funnel_configs
+        ORDER BY priority ASC, id ASC
+    """).fetchall()
+
+    steps = con.execute("""
+        SELECT *
+        FROM funnel_steps_dynamic
+        ORDER BY funnel_key ASC, step_order ASC, id ASC
+    """).fetchall()
+
+    con.close()
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "backup_type": "funnels_dynamic_v1",
+        "exported_at": dyn_now(),
+        "funnels": [dict(r) for r in funnels],
+        "steps": [dict(r) for r in steps],
+    }
+
+
+@router.post("/backup/import")
+def funnels_backup_import(payload: Dict[str, Any]):
+    dyn_init()
+
+    if payload.get("backup_type") != "funnels_dynamic_v1":
+        return {
+            "ok": False,
+            "status": "error",
+            "error": "invalid backup_type",
+            "expected": "funnels_dynamic_v1",
+        }
+
+    funnels = payload.get("funnels") or []
+    steps = payload.get("steps") or []
+
+    now = dyn_now()
+    con = dyn_con()
+    cur = con.cursor()
+
+    imported_funnels = 0
+    imported_steps = 0
+
+    for f in funnels:
+        key = dyn_slug(f.get("funnel_key") or "")
+        if not key:
+            continue
+
+        cur.execute("""
+            INSERT INTO funnel_configs (
+                created_at, updated_at, funnel_key, funnel_name, active, priority,
+                source_platform, trigger_keywords, content_keywords,
+                telegram_bot_username, telegram_channel_url, target_url, next_funnel_key,
+                dm_template, start_payload_template, intro_text, notes, settings_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(funnel_key) DO UPDATE SET
+                updated_at=excluded.updated_at,
+                funnel_name=excluded.funnel_name,
+                active=excluded.active,
+                priority=excluded.priority,
+                source_platform=excluded.source_platform,
+                trigger_keywords=excluded.trigger_keywords,
+                content_keywords=excluded.content_keywords,
+                telegram_bot_username=excluded.telegram_bot_username,
+                telegram_channel_url=excluded.telegram_channel_url,
+                target_url=excluded.target_url,
+                next_funnel_key=excluded.next_funnel_key,
+                dm_template=excluded.dm_template,
+                start_payload_template=excluded.start_payload_template,
+                intro_text=excluded.intro_text,
+                notes=excluded.notes,
+                settings_json=excluded.settings_json
+        """, (
+            f.get("created_at") or now,
+            now,
+            key,
+            str(f.get("funnel_name") or key),
+            int(f.get("active", 1)),
+            int(f.get("priority", 100)),
+            str(f.get("source_platform") or "instagram"),
+            str(f.get("trigger_keywords") or ""),
+            str(f.get("content_keywords") or ""),
+            str(f.get("telegram_bot_username") or ""),
+            str(f.get("telegram_channel_url") or ""),
+            str(f.get("target_url") or ""),
+            dyn_slug(f.get("next_funnel_key") or ""),
+            str(f.get("dm_template") or ""),
+            str(f.get("start_payload_template") or ""),
+            str(f.get("intro_text") or ""),
+            str(f.get("notes") or ""),
+            str(f.get("settings_json") or "{}"),
+        ))
+
+        imported_funnels += 1
+
+        try:
+            dyn_bridge_to_ig_plan({
+                "funnel_key": key,
+                "funnel_name": f.get("funnel_name") or key,
+                "active": f.get("active", 1),
+                "priority": f.get("priority", 100),
+                "trigger_keywords": f.get("trigger_keywords") or "",
+                "content_keywords": f.get("content_keywords") or "",
+                "notes": f.get("notes") or "",
+            })
+        except Exception as e:
+            print("[FUNNEL_BACKUP_BRIDGE_ERROR]", repr(e), flush=True)
+
+    for st in steps:
+        key = dyn_slug(st.get("funnel_key") or "")
+        step_key = dyn_slug(st.get("step_key") or "")
+        if not key or not step_key:
+            continue
+
+        cur.execute("""
+            INSERT INTO funnel_steps_dynamic (
+                created_at, updated_at, funnel_key, step_key, step_order, active,
+                trigger_stage, next_stage, message_text, button_text, button_url,
+                delay_minutes, settings_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(funnel_key, step_key) DO UPDATE SET
+                updated_at=excluded.updated_at,
+                step_order=excluded.step_order,
+                active=excluded.active,
+                trigger_stage=excluded.trigger_stage,
+                next_stage=excluded.next_stage,
+                message_text=excluded.message_text,
+                button_text=excluded.button_text,
+                button_url=excluded.button_url,
+                delay_minutes=excluded.delay_minutes,
+                settings_json=excluded.settings_json
+        """, (
+            st.get("created_at") or now,
+            now,
+            key,
+            step_key,
+            int(st.get("step_order", 100)),
+            int(st.get("active", 1)),
+            str(st.get("trigger_stage") or ""),
+            str(st.get("next_stage") or ""),
+            str(st.get("message_text") or ""),
+            str(st.get("button_text") or ""),
+            str(st.get("button_url") or ""),
+            int(st.get("delay_minutes", 0)),
+            str(st.get("settings_json") or "{}"),
+        ))
+
+        imported_steps += 1
+
+    con.commit()
+    con.close()
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "imported_funnels": imported_funnels,
+        "imported_steps": imported_steps,
+    }
+
+# === /FUNNEL BACKUP RESTORE V1 ===
