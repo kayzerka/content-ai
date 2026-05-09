@@ -1799,5 +1799,19 @@ window.restoreFunnelsSeedData = restoreFunnelsSeedData;
 
 <script src="/static/js/funnels-tab.js?v=native_tab_v1"></script>
 
+
+<script>
+window.addEventListener("load", async () => {
+  try {
+    await fetch("/api/funnels/backup/auto_save_all", {
+      method: "POST"
+    });
+    console.log("[AUTO BACKUP ALL] done");
+  } catch(e) {
+    console.warn("[AUTO BACKUP ALL FAILED]", e);
+  }
+});
+</script>
+
 </body>
 </html>
