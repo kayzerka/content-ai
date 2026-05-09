@@ -2819,3 +2819,62 @@ def convert_legacy_funnel_events_from_db_v1():
     finally:
         con.close()
 # === /CONVERT LEGACY FUNNEL EVENTS FROM DB V1 ===
+
+
+# === PUSH LATEST LOCAL FUNNELS BACKUP TO RENDER V1 ===
+@router.post("/restore/push_latest_local_to_render")
+def push_latest_local_funnels_backup_to_render_v1():
+    try:
+        import json, os, urllib.request
+        from pathlib import Path
+
+        candidates = []
+        search_dirs = [
+            Path.home() / "Downloads",
+            Path("/tmp"),
+            Path.cwd()
+        ]
+
+        for d in search_dirs:
+            if not d.exists():
+                continue
+            candidates += list(d.glob("funnels-autobackup*.json"))
+            candidates += list(d.glob("funnels-local-merged*.json"))
+            candidates += list(d.glob("funnels-backup*.json"))
+
+        if not candidates:
+            return {"ok": False, "status": "error", "error": "no local funnels backup json found"}
+
+        latest = max(candidates, key=lambda x: x.stat().st_mtime)
+        payload = json.loads(latest.read_text(encoding="utf-8"))
+
+        payload.pop("telegram_db", None)
+        payload.pop("telegram_bundle", None)
+
+        render_url = os.getenv("RENDER_API", "https://content-ai-ps1k.onrender.com").rstrip("/")
+        req = urllib.request.Request(
+            render_url + "/api/funnels/backup/import",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode("utf-8")
+
+        try:
+            data = json.loads(body)
+        except Exception:
+            data = {"raw": body}
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "local_file": str(latest),
+            "render_url": render_url,
+            "render_response": data
+        }
+
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "push_latest_local_to_render", "error": repr(e)}
+# === /PUSH LATEST LOCAL FUNNELS BACKUP TO RENDER V1 ===
