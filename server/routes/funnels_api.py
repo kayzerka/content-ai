@@ -3083,3 +3083,77 @@ def import_legacy_funnel_payload_v1(payload: Dict[str, Any]):
     finally:
         con.close()
 # === /IMPORT LEGACY FUNNEL EVENTS PAYLOAD V1 ===
+
+
+# === CONVERT IG REACTIONS TO FUNNEL LEADS V1 ===
+@router.post("/restore/convert_ig_reactions_to_leads")
+def convert_ig_reactions_to_funnel_leads_v1():
+    import sqlite3, json
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    imported = 0
+    skipped = 0
+
+    try:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            source TEXT DEFAULT 'instagram',
+            platform TEXT DEFAULT 'instagram',
+            external_user_id TEXT,
+            username TEXT DEFAULT '',
+            source_message TEXT DEFAULT '',
+            source_event_id TEXT DEFAULT '',
+            matched_plan_key TEXT DEFAULT '',
+            lead_status TEXT DEFAULT 'new',
+            raw_json TEXT DEFAULT ''
+        )
+        """)
+
+        rows = con.execute("SELECT * FROM ig_reactions ORDER BY id ASC").fetchall()
+
+        for r in rows:
+            uid = str(r["external_user_id"] or "").strip() if "external_user_id" in r.keys() else ""
+            msg = str(r["reaction_text"] or "").strip() if "reaction_text" in r.keys() else ""
+            eid = str(r["external_event_id"] or "").strip() if "external_event_id" in r.keys() else ""
+
+            if not uid and not msg:
+                skipped += 1
+                continue
+
+            exists = con.execute("""
+                SELECT id FROM funnel_leads
+                WHERE COALESCE(source_event_id,'') = ?
+                   OR (COALESCE(external_user_id,'') = ? AND COALESCE(source_message,'') = ?)
+                LIMIT 1
+            """, (eid, uid, msg)).fetchone()
+
+            if exists:
+                skipped += 1
+                continue
+
+            con.execute("""
+                INSERT INTO funnel_leads
+                (created_at, updated_at, source, platform, external_user_id, username,
+                 source_message, source_event_id, matched_plan_key, lead_status, raw_json)
+                VALUES (?, CURRENT_TIMESTAMP, 'instagram', 'instagram', ?, ?, ?, ?, ?, 'new', ?)
+            """, (
+                r["created_at"] if "created_at" in r.keys() else None,
+                uid,
+                r["username"] if "username" in r.keys() else "",
+                msg,
+                eid,
+                r["matched_plan_key"] if "matched_plan_key" in r.keys() else "",
+                json.dumps(dict(r), ensure_ascii=False),
+            ))
+            imported += 1
+
+        con.commit()
+        return {"ok": True, "status": "ok", "imported": imported, "skipped": skipped, "source_rows": len(rows)}
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "convert_ig_reactions_to_leads", "error": repr(e)}
+    finally:
+        con.close()
+# === /CONVERT IG REACTIONS TO FUNNEL LEADS V1 ===
