@@ -3,6 +3,8 @@ from typing import Optional, Dict, Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+import ssl
+
 from funnel_core import (
     init_funnel_db,
     create_default_funnel,
@@ -112,6 +114,7 @@ def funnels_list():
 
 # === DYNAMIC KEY FUNNELS RUNTIME V1 ===
 import os
+import time
 import sqlite3
 import json
 import re
@@ -2859,7 +2862,7 @@ def push_latest_local_funnels_backup_to_render_v1():
             method="POST"
         )
 
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60, context=ssl._create_unverified_context()) as resp:
             body = resp.read().decode("utf-8")
 
         try:
@@ -2891,7 +2894,7 @@ def save_render_funnels_backup_to_local_v1():
         backup_path = Path(os.getenv("FUNNELS_LOCAL_BACKUP_PATH", "backups/funnels-latest.json"))
         backup_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with urllib.request.urlopen(render_url + "/api/funnels/backup/export", timeout=60) as resp:
+        with urllib.request.urlopen(render_url + "/api/funnels/backup/export", timeout=60, context=ssl._create_unverified_context()) as resp:
             body = resp.read().decode("utf-8")
 
         data = json.loads(body)
@@ -2945,7 +2948,7 @@ def push_fixed_local_funnels_backup_to_render_v1():
             method="POST"
         )
 
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=60, context=ssl._create_unverified_context()) as resp:
             body = resp.read().decode("utf-8")
 
         try:
@@ -2982,7 +2985,7 @@ def auto_save_all_system_backups_v1():
 
         # FUNNELS
         try:
-            with urllib.request.urlopen(render_url + "/api/funnels/backup/export", timeout=60) as resp:
+            with urllib.request.urlopen(render_url + "/api/funnels/backup/export", timeout=60, context=ssl._create_unverified_context()) as resp:
                 funnels = json.loads(resp.read().decode("utf-8"))
 
             funnels.pop("telegram_db", None)
@@ -3000,7 +3003,7 @@ def auto_save_all_system_backups_v1():
 
         # TELEGRAM
         try:
-            with urllib.request.urlopen(render_url + "/api/telegram/backup/export", timeout=60) as resp:
+            with urllib.request.urlopen(render_url + "/api/telegram/backup/export", timeout=60, context=ssl._create_unverified_context()) as resp:
                 tg = json.loads(resp.read().decode("utf-8"))
 
             tg_path = backup_dir / "telegram-latest.json"
@@ -3246,7 +3249,7 @@ def restore_full_funnels_from_local_backup_v1():
                 headers={"Content-Type": "application/json"},
                 method="POST"
             )
-            with urllib.request.urlopen(req, timeout=90) as resp:
+            with urllib.request.urlopen(req, timeout=90, context=ssl._create_unverified_context()) as resp:
                 raw = resp.read().decode("utf-8")
             try:
                 return json.loads(raw)
@@ -3307,3 +3310,121 @@ def restore_funnels_from_static_backup_v1():
     except Exception as e:
         return {"ok": False, "status": "error", "where": "restore_from_static_backup", "error": repr(e)}
 # === /ONE CLICK RESTORE FROM STATIC BACKUP V1 ===
+
+# === FUNNEL STEPS API V1 ===
+@router.get("/steps/list")
+def funnel_steps_list(funnel_key: str = ""):
+    dyn_init()
+    key = dyn_slug(funnel_key or "")
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    if key:
+        rows = con.execute("""
+            SELECT *
+            FROM funnel_steps_dynamic
+            WHERE funnel_key=?
+            ORDER BY step_order ASC, id ASC
+        """, (key,)).fetchall()
+    else:
+        rows = con.execute("""
+            SELECT *
+            FROM funnel_steps_dynamic
+            ORDER BY funnel_key ASC, step_order ASC, id ASC
+        """).fetchall()
+
+    con.close()
+    return {"ok": True, "status": "ok", "items": [dict(r) for r in rows]}
+
+
+@router.post("/steps/upsert")
+def funnel_steps_upsert(payload: Dict[str, Any]):
+    dyn_init()
+
+    funnel_key = dyn_slug(payload.get("funnel_key") or "")
+    step_key = dyn_slug(payload.get("step_key") or "")
+
+    if not funnel_key:
+        return {"ok": False, "status": "error", "error": "funnel_key required"}
+    if not step_key:
+        return {"ok": False, "status": "error", "error": "step_key required"}
+
+    now = dyn_now()
+
+    con = dyn_con()
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO funnel_steps_dynamic (
+            created_at, updated_at,
+            funnel_key, step_key, step_order, active,
+            trigger_stage, next_stage,
+            message_text, button_text, button_url,
+            delay_minutes, settings_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(funnel_key, step_key) DO UPDATE SET
+            updated_at=excluded.updated_at,
+            step_order=excluded.step_order,
+            active=excluded.active,
+            trigger_stage=excluded.trigger_stage,
+            next_stage=excluded.next_stage,
+            message_text=excluded.message_text,
+            button_text=excluded.button_text,
+            button_url=excluded.button_url,
+            delay_minutes=excluded.delay_minutes,
+            settings_json=excluded.settings_json
+    """, (
+        now,
+        now,
+        funnel_key,
+        step_key,
+        int(payload.get("step_order", payload.get("order", 100)) or 100),
+        int(payload.get("active", 1)),
+        str(payload.get("trigger_stage") or ""),
+        str(payload.get("next_stage") or ""),
+        str(payload.get("message_text") or ""),
+        str(payload.get("button_text") or ""),
+        str(payload.get("button_url") or ""),
+        int(payload.get("delay_minutes", 0) or 0),
+        str(payload.get("settings_json") or "{}"),
+    ))
+
+    con.commit()
+
+    row = con.execute("""
+        SELECT *
+        FROM funnel_steps_dynamic
+        WHERE funnel_key=? AND step_key=?
+        LIMIT 1
+    """, (funnel_key, step_key)).fetchone()
+
+    con.close()
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "item": dict(row) if row else None,
+    }
+
+
+@router.post("/steps/delete")
+def funnel_steps_delete(payload: Dict[str, Any]):
+    dyn_init()
+
+    funnel_key = dyn_slug(payload.get("funnel_key") or "")
+    step_key = dyn_slug(payload.get("step_key") or "")
+
+    con = dyn_con()
+    cur = con.cursor()
+    cur.execute("""
+        DELETE FROM funnel_steps_dynamic
+        WHERE funnel_key=? AND step_key=?
+    """, (funnel_key, step_key))
+    deleted = cur.rowcount
+    con.commit()
+    con.close()
+
+    return {"ok": True, "status": "ok", "deleted": deleted}
+
+# === /FUNNEL STEPS API V1 ===
