@@ -542,3 +542,219 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
   else boot();
 })();
+
+// === FUNNEL STEPS BUILDER UI V1 ===
+(function(){
+  if (window.__FUNNEL_STEPS_BUILDER_UI_V1__) return;
+  window.__FUNNEL_STEPS_BUILDER_UI_V1__ = true;
+
+  function apiJson(url, opts){
+    return fetch(url, opts || {}).then(async r => {
+      const t = await r.text();
+      try { return JSON.parse(t); } catch(e){ return {ok:false, raw:t, status:r.status}; }
+    });
+  }
+
+  function esc(s){
+    return String(s == null ? "" : s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;");
+  }
+
+  function getFunnelKeyFromStepsButton(btn){
+    const tr = btn.closest("tr");
+    if (tr) {
+      const txt = tr.innerText || "";
+      const m = txt.match(/[a-z0-9_]+_bv|[a-z0-9_]{3,}/i);
+      if (m) return m[0];
+    }
+
+    const row = btn.closest("[data-funnel-key]");
+    if (row) return row.getAttribute("data-funnel-key");
+
+    const selected = document.querySelector("[name='funnel_key'], #funnel_key, input[placeholder*='funnel']");
+    if (selected && selected.value) return selected.value.trim();
+
+    return prompt("Введи funnel_key", "shudnennia_bv") || "";
+  }
+
+  async function openStepsBuilder(funnelKey){
+    funnelKey = String(funnelKey || "").trim();
+    if (!funnelKey) return;
+
+    let res = await apiJson(`/api/funnels/steps/list?funnel_key=${encodeURIComponent(funnelKey)}`);
+    let items = res.items || res.steps || [];
+
+    const old = document.getElementById("funnel-steps-builder-modal");
+    if (old) old.remove();
+
+    const modal = document.createElement("div");
+    modal.id = "funnel-steps-builder-modal";
+    modal.style.cssText = `
+      position:fixed; inset:0; z-index:99999; background:rgba(0,0,0,.45);
+      display:flex; align-items:flex-start; justify-content:center; overflow:auto; padding:40px 16px;
+    `;
+
+    modal.innerHTML = `
+      <div style="background:#fff;width:min(980px,96vw);border-radius:18px;padding:20px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0;font-size:22px;">🧩 Кроки воронки</h2>
+            <div style="color:#667085;font-size:13px;">funnel_key: <b>${esc(funnelKey)}</b></div>
+          </div>
+          <button id="fsb-close" style="border:1px solid #ddd;border-radius:10px;padding:8px 12px;background:#fff;cursor:pointer;">×</button>
+        </div>
+
+        <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:14px;margin-bottom:16px;">
+          <h3 style="margin:0 0 10px;">Створити / редагувати крок</h3>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <label><b>step_key</b><input id="fsb-step-key" value="start" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;"></label>
+            <label><b>Тип кроку</b>
+              <select id="fsb-step-type" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;">
+                <option value="send_message">send_message</option>
+                <option value="send_free_gift">send_free_gift</option>
+                <option value="send_ai_message">send_ai_message</option>
+                <option value="wait_delay">wait_delay</option>
+              </select>
+            </label>
+            <label><b>Порядок</b><input id="fsb-step-order" value="1" type="number" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;"></label>
+
+            <label><b>Активний</b>
+              <select id="fsb-active" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;">
+                <option value="1">1</option>
+                <option value="0">0</option>
+              </select>
+            </label>
+            <label><b>trigger_stage</b><input id="fsb-trigger-stage" value="tg_started" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;"></label>
+            <label><b>next_stage</b><input id="fsb-next-stage" value="intro_video_sent" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;"></label>
+          </div>
+
+          <label style="display:block;margin-top:12px;"><b>message_text</b>
+            <textarea id="fsb-message-text" style="width:100%;min-height:120px;padding:10px;border:1px solid #ddd;border-radius:10px;">🌿 Вітаю тебе у просторі «Схуднення БВ».
+
+Перед тим як перейти до сеансу — подивись коротке пояснення методу БВ.</textarea>
+          </label>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr 140px;gap:12px;margin-top:12px;">
+            <label><b>button_text</b><input id="fsb-button-text" value="🎥 Дивитися пояснення" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;"></label>
+            <label><b>button_url</b><input id="fsb-button-url" placeholder="https://t.me/..." style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;"></label>
+            <label><b>delay_minutes</b><input id="fsb-delay" value="0" type="number" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:10px;"></label>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:14px;">
+            <button id="fsb-save" style="background:#111;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer;">💾 Зберегти крок</button>
+            <button id="fsb-preset-1" style="border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;cursor:pointer;">Preset STEP 1</button>
+            <button id="fsb-preset-2" style="border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;cursor:pointer;">Preset STEP 2</button>
+            <button id="fsb-preset-3" style="border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;cursor:pointer;">Preset STEP 3</button>
+          </div>
+        </div>
+
+        <h3>Існуючі кроки</h3>
+        <div id="fsb-list">
+          ${items.length ? items.map(x => `
+            <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px;margin-bottom:8px;">
+              <b>${esc(x.step_order)}. ${esc(x.step_key)}</b>
+              <span style="color:#667085;">trigger: ${esc(x.trigger_stage)} → next: ${esc(x.next_stage)}</span>
+              <div style="white-space:pre-wrap;margin-top:6px;">${esc((x.message_text || "").slice(0,300))}</div>
+            </div>
+          `).join("") : `<div style="color:#667085;">Кроків ще нема.</div>`}
+        </div>
+
+        <pre id="fsb-output" style="background:#f8fafc;border-radius:12px;padding:12px;max-height:220px;overflow:auto;margin-top:14px;">{}</pre>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    modal.querySelector("#fsb-close").onclick = () => modal.remove();
+
+    function fillPreset(n){
+      if (n === 1) {
+        modal.querySelector("#fsb-step-key").value = "start";
+        modal.querySelector("#fsb-step-type").value = "send_message";
+        modal.querySelector("#fsb-step-order").value = "1";
+        modal.querySelector("#fsb-trigger-stage").value = "tg_started";
+        modal.querySelector("#fsb-next-stage").value = "intro_video_sent";
+        modal.querySelector("#fsb-message-text").value = "🌿 Вітаю тебе у просторі «Схуднення БВ».\n\nПеред тим як перейти до сеансу — подивись коротке пояснення методу БВ.\n\nУ цьому відео ти зрозумієш:\n• чому тіло може тримати вагу\n• як нервова система впливає на вагу\n• чому проблема може бути глибшою за їжу";
+        modal.querySelector("#fsb-button-text").value = "🎥 Дивитися пояснення";
+        modal.querySelector("#fsb-button-url").value = "";
+        modal.querySelector("#fsb-delay").value = "0";
+      }
+      if (n === 2) {
+        modal.querySelector("#fsb-step-key").value = "free_session";
+        modal.querySelector("#fsb-step-type").value = "send_free_gift";
+        modal.querySelector("#fsb-step-order").value = "2";
+        modal.querySelector("#fsb-trigger-stage").value = "intro_video_sent";
+        modal.querySelector("#fsb-next-stage").value = "free_session_sent";
+        modal.querySelector("#fsb-message-text").value = "🌿 Тепер переходь до безкоштовного ознайомчого сеансу БВ.\n\nПід час перегляду просто спостерігай за тілом:\n• що відгукується\n• де є напруга\n• які думки або емоції піднімаються";
+        modal.querySelector("#fsb-button-text").value = "🌿 Перейти до сеансу";
+        modal.querySelector("#fsb-button-url").value = "";
+        modal.querySelector("#fsb-delay").value = "0";
+      }
+      if (n === 3) {
+        modal.querySelector("#fsb-step-key").value = "prelearning";
+        modal.querySelector("#fsb-step-type").value = "send_message";
+        modal.querySelector("#fsb-step-order").value = "3";
+        modal.querySelector("#fsb-trigger-stage").value = "free_session_sent";
+        modal.querySelector("#fsb-next-stage").value = "prelearning_sent";
+        modal.querySelector("#fsb-message-text").value = "🌿 Якщо тобі відгукнувся цей шлях — я запрошую тебе в простір переднавчання БВ.\n\nТам ми глибше працюємо з тілом, реакціями нервової системи і внутрішніми причинами ваги.\n\n👇 Переходь у переднавчання БВ";
+        modal.querySelector("#fsb-button-text").value = "🔓 Перейти в переднавчання";
+        modal.querySelector("#fsb-button-url").value = "";
+        modal.querySelector("#fsb-delay").value = "0";
+      }
+    }
+
+    modal.querySelector("#fsb-preset-1").onclick = () => fillPreset(1);
+    modal.querySelector("#fsb-preset-2").onclick = () => fillPreset(2);
+    modal.querySelector("#fsb-preset-3").onclick = () => fillPreset(3);
+
+    modal.querySelector("#fsb-save").onclick = async () => {
+      const stepType = modal.querySelector("#fsb-step-type").value;
+      const payload = {
+        funnel_key: funnelKey,
+        step_key: modal.querySelector("#fsb-step-key").value.trim(),
+        step_order: Number(modal.querySelector("#fsb-step-order").value || 1),
+        active: Number(modal.querySelector("#fsb-active").value || 1),
+        trigger_stage: modal.querySelector("#fsb-trigger-stage").value.trim(),
+        next_stage: modal.querySelector("#fsb-next-stage").value.trim(),
+        message_text: modal.querySelector("#fsb-message-text").value,
+        button_text: modal.querySelector("#fsb-button-text").value,
+        button_url: modal.querySelector("#fsb-button-url").value,
+        delay_minutes: Number(modal.querySelector("#fsb-delay").value || 0),
+        settings_json: JSON.stringify({step_type: stepType})
+      };
+
+      const save = await apiJson("/api/funnels/steps/upsert", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(payload)
+      });
+
+      modal.querySelector("#fsb-output").textContent = JSON.stringify(save, null, 2);
+
+      if (save.ok) {
+        setTimeout(() => openStepsBuilder(funnelKey), 400);
+      }
+    };
+
+    fillPreset(1);
+  }
+
+  document.addEventListener("click", function(e){
+    const btn = e.target.closest("button");
+    if (!btn) return;
+    const txt = (btn.textContent || "").trim().toLowerCase();
+
+    if (txt === "кроки" || txt.includes("кроки")) {
+      e.preventDefault();
+      e.stopPropagation();
+      const key = getFunnelKeyFromStepsButton(btn);
+      openStepsBuilder(key);
+    }
+  }, true);
+
+  window.openFunnelStepsBuilderV1 = openStepsBuilder;
+})();
