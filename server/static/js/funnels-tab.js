@@ -1,5 +1,25 @@
 (function(){
   const ROOT_ID = "funnels-native-root";
+
+  // LOCAL_AUTO_BACKUP_FUNNELS_V1
+  async function autoBackupFunnels(reason){
+    try{
+      const r = await fetch("/api/funnels/backup/auto_save_all", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({reason: reason || "funnels_save"})
+      });
+
+      const j = await r.json().catch(()=>({ok:false}));
+      console.log("[funnels auto backup]", reason, j);
+      return j;
+    }catch(e){
+      console.error("[funnels auto backup failed]", e);
+      return {ok:false,error:String(e)};
+    }
+  }
+
+
   const PANEL_ID = "funnels-ui-v2-panel";
 
   let state = {
