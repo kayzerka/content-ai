@@ -2411,3 +2411,38 @@ def funnel_leads_mark_own_and_rematch(payload: Dict[str, Any] = None):
     }
 
 # === /FUNNEL LEADS CLEAN REMATCH V1 ===
+
+
+# === RESTORE LOCAL FUNNELS BUNDLE V1 ===
+@router.post("/restore/local_bundle")
+def restore_local_funnels_bundle_v1():
+    try:
+        import json
+        from pathlib import Path
+
+        bundle_path = Path("/tmp/funnels-local-merged.json")
+
+        if not bundle_path.exists():
+            return {
+                "ok": False,
+                "status": "error",
+                "error": "local bundle not found",
+                "path": str(bundle_path)
+            }
+
+        payload = json.loads(bundle_path.read_text(encoding="utf-8"))
+
+        # Telegram restore окремий
+        payload.pop("telegram_db", None)
+        payload.pop("telegram_bundle", None)
+
+        return funnels_backup_import_full(payload)
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "status": "error",
+            "where": "restore_local_bundle",
+            "error": repr(e)
+        }
+# === /RESTORE LOCAL FUNNELS BUNDLE V1 ===
