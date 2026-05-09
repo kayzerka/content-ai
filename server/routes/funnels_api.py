@@ -2339,3 +2339,75 @@ def funnels_seed_from_reaction_plans_safe_v2():
     finally:
         con.close()
 # === /FUNNELS SEED FROM REACTION PLANS SAFE V2 ===
+
+# === FUNNEL LEADS CLEAN REMATCH V1 ===
+@router.post("/leads/mark-own-and-rematch")
+def funnel_leads_mark_own_and_rematch(payload: Dict[str, Any] = None):
+    payload = payload or {}
+    own_usernames = set(str(x).strip().lower() for x in (payload.get("own_usernames") or []) if str(x).strip())
+    own_ids = set(str(x).strip() for x in (payload.get("own_ids") or []) if str(x).strip())
+
+    if not own_usernames:
+        env_names = os.getenv("IG_OWN_USERNAMES", "")
+        own_usernames |= set(x.strip().lower() for x in env_names.split(",") if x.strip())
+
+    if not own_ids:
+        env_ids = os.getenv("IG_OWN_IDS", "")
+        own_ids |= set(x.strip() for x in env_ids.split(",") if x.strip())
+
+    funnel_leads_init()
+
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    rows = con.execute("""
+        SELECT *
+        FROM funnel_leads
+        ORDER BY id DESC
+        LIMIT 5000
+    """).fetchall()
+
+    own_marked = 0
+    rematched = 0
+
+    for r in rows:
+        d = dict(r)
+        username = str(d.get("username") or "").lower().strip()
+        external_id = str(d.get("external_user_id") or "").strip()
+        text = str(d.get("text") or "")
+
+        is_own = (username and username in own_usernames) or (external_id and external_id in own_ids)
+
+        if is_own:
+            con.execute("""
+                UPDATE funnel_leads
+                SET status='own_ignored',
+                    updated_at=?
+                WHERE id=?
+            """, (dyn_now(), d["id"]))
+            own_marked += 1
+            continue
+
+        matched_key, matched_name, _kw = funnel_leads_match_funnel(text)
+        if matched_key and matched_key != (d.get("matched_funnel_key") or ""):
+            con.execute("""
+                UPDATE funnel_leads
+                SET matched_funnel_key=?,
+                    matched_funnel_name=?,
+                    updated_at=?
+                WHERE id=?
+            """, (matched_key, matched_name, dyn_now(), d["id"]))
+            rematched += 1
+
+    con.commit()
+    con.close()
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "own_marked": own_marked,
+        "rematched": rematched,
+        "own_usernames": sorted(own_usernames),
+        "own_ids": sorted(own_ids),
+    }
+
+# === /FUNNEL LEADS CLEAN REMATCH V1 ===
