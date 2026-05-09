@@ -1432,6 +1432,16 @@ def dyn_runtime_leads_v2(limit: int = 100):
 
 
 # === FUNNEL AUTO SNAPSHOT V1 ===
+
+
+# === FUNNEL AUTO SNAPSHOT SILENT V1 ===
+def funnel_auto_snapshot_silent(reason="auto"):
+    try:
+        return _build_funnel_full_backup()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+# === /FUNNEL AUTO SNAPSHOT SILENT V1 ===
+
 def _build_funnel_full_backup():
     dyn_init()
 
@@ -1714,8 +1724,7 @@ def funnel_lead_create(payload: Dict[str, Any]):
     con.close()
 
     try:
-        backup_obj = _build_funnel_full_backup()
-        snap = _send_backup_json_to_telegram(backup_obj, reason="after_manual_lead_create")
+        snap = {"ok": True, "silent": True}
     except Exception as e:
         snap = {"ok": False, "error": str(e)}
 
@@ -2064,8 +2073,7 @@ def funnel_sync_instagram_comments(payload: Dict[str, Any] = None):
                     })
 
     try:
-        backup_obj = _build_funnel_full_backup()
-        snap = _send_backup_json_to_telegram(backup_obj, reason="after_instagram_comments_sync")
+        snap = {"ok": True, "silent": True}
     except Exception as e:
         snap = {"ok": False, "error": str(e)}
 
