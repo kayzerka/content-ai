@@ -2964,3 +2964,73 @@ def push_fixed_local_funnels_backup_to_render_v1():
     except Exception as e:
         return {"ok": False, "status": "error", "where": "push_local_to_render", "error": repr(e)}
 # === /FIXED LOCAL FUNNELS BACKUP FILE V1 ===
+
+
+# === AUTO BACKUP ALL SYSTEM DATA V1 ===
+@router.post("/backup/auto_save_all")
+def auto_save_all_system_backups_v1():
+    try:
+        import json, os, urllib.request
+        from pathlib import Path
+
+        render_url = os.getenv("RENDER_API", "https://content-ai-ps1k.onrender.com").rstrip("/")
+
+        backup_dir = Path(os.getenv("SYSTEM_BACKUP_DIR", "backups"))
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        results = {}
+
+        # FUNNELS
+        try:
+            with urllib.request.urlopen(render_url + "/api/funnels/backup/export", timeout=60) as resp:
+                funnels = json.loads(resp.read().decode("utf-8"))
+
+            funnels.pop("telegram_db", None)
+            funnels.pop("telegram_bundle", None)
+
+            funnels_path = backup_dir / "funnels-latest.json"
+            funnels_path.write_text(json.dumps(funnels, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            results["funnels"] = {
+                "ok": True,
+                "path": str(funnels_path)
+            }
+        except Exception as e:
+            results["funnels"] = {"ok": False, "error": repr(e)}
+
+        # TELEGRAM
+        try:
+            with urllib.request.urlopen(render_url + "/api/telegram/backup/export", timeout=60) as resp:
+                tg = json.loads(resp.read().decode("utf-8"))
+
+            tg_path = backup_dir / "telegram-latest.json"
+            tg_path.write_text(json.dumps(tg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            results["telegram"] = {
+                "ok": True,
+                "path": str(tg_path)
+            }
+        except Exception as e:
+            results["telegram"] = {"ok": False, "error": repr(e)}
+
+        # FULL
+        full = {
+            "saved_at": time.time(),
+            "funnels": results.get("funnels"),
+            "telegram": results.get("telegram"),
+        }
+
+        full_path = backup_dir / "full-system-backup.json"
+        full_path.write_text(json.dumps(full, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "backup_dir": str(backup_dir),
+            "results": results,
+            "full_backup": str(full_path)
+        }
+
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "auto_save_all", "error": repr(e)}
+# === /AUTO BACKUP ALL SYSTEM DATA V1 ===
