@@ -1369,7 +1369,7 @@ def funnel_leads_ingest(payload: Dict[str, Any] = None):
 
     try:
         backup = _build_funnel_full_backup()
-        snap = _send_backup_json_to_telegram(backup, reason="after_leads_ingest")
+        snap = {"ok": True, "skipped": True, "reason": "after_leads_ingest_telegram_backup_disabled"}
     except Exception as e:
         snap = {"ok": False, "error": str(e)}
 
@@ -2265,3 +2265,61 @@ def force_comment_lead_insert(item: dict):
     return cnt
 
 # === /FORCE COMMENT LEAD INSERT V1 ===
+
+
+# === FUNNELS SEED FROM REACTION PLANS V1 ===
+@router.post("/backup/seed_from_reaction_plans")
+def funnels_seed_from_reaction_plans_v1():
+    con = db()
+    con.row_factory = sqlite3.Row
+    imported = 0
+    try:
+        ensure_schema()
+        plans = con.execute("""
+            SELECT *
+            FROM ig_reaction_funnel_plans
+            WHERE COALESCE(active, 1)=1
+            ORDER BY priority ASC, id ASC
+        """).fetchall()
+
+        for p in plans:
+            key = str(p["plan_key"] or "").strip()
+            if not key:
+                continue
+
+            name = str(p["plan_name"] or key).strip()
+            trigger_keywords = str(p["trigger_keywords"] or "").strip()
+            public_cta = str(p["public_cta"] or "").strip()
+            direct_cta = str(p["direct_cta"] or "").strip()
+            goal = str(p["plan_goal"] or "").strip()
+            notes = str(p["notes"] or "").strip()
+
+            con.execute("""
+                INSERT INTO funnel_configs
+                (funnel_key, name, active, trigger_type, trigger_value,
+                 telegram_bot_username, telegram_channel_url, target_url,
+                 dm_template, ai_prompt, created_at, updated_at)
+                VALUES (?, ?, 1, 'keyword', ?, '', '', '',
+                        ?, ?, datetime('now'), datetime('now'))
+                ON CONFLICT(funnel_key) DO UPDATE SET
+                    name=excluded.name,
+                    active=1,
+                    trigger_type='keyword',
+                    trigger_value=excluded.trigger_value,
+                    dm_template=excluded.dm_template,
+                    ai_prompt=excluded.ai_prompt,
+                    updated_at=datetime('now')
+            """, (
+                key,
+                name,
+                trigger_keywords,
+                direct_cta or public_cta or ("Напиши в direct слово " + key.upper()),
+                (goal + "\\n\\n" + notes).strip()
+            ))
+            imported += 1
+
+        con.commit()
+        return {"ok": True, "status": "ok", "imported": imported}
+    finally:
+        con.close()
+# === /FUNNELS SEED FROM REACTION PLANS V1 ===

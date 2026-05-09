@@ -1717,91 +1717,23 @@ window.tgSeedDefaultChats = tgSeedDefaultChats;
 <script src="/static/js/telegram-ai-scheduler-v1.js?v=1"></script>
 
 
+
 <script>
-/* FUNNELS SILENT RESTORE ONLY V1 */
-(function(){
-  window.__FUNNELS_ALLOW_BACKUP__ = false;
+/* FUNNELS RESTORE DATA BUTTON V3 */
+async function restoreFunnelsSeedData() {
+  const root = document.getElementById('funnels-native-root');
+  if (root) root.innerHTML = '<div class="muted" style="padding:12px;">🧩 Відновлюю конструктори з reaction plans...</div>';
 
-  const originalFetch = window.fetch.bind(window);
+  const res = await fetch('/api/funnels/backup/seed_from_reaction_plans', {method:'POST'});
+  const data = await res.json();
 
-  window.fetch = function(input, init) {
-    const url = String(typeof input === 'string' ? input : (input && input.url) || '');
+  if (root) root.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
 
-    if (
-      url.includes('/api/funnels/backup/') &&
-      window.__FUNNELS_ALLOW_BACKUP__ !== true
-    ) {
-      console.warn('[funnels backup blocked silently]', url);
-      return Promise.resolve(new Response(JSON.stringify({
-        ok: true,
-        skipped: true,
-        reason: 'funnels_backup_blocked_on_open',
-        url
-      }), {
-        status: 200,
-        headers: {'Content-Type':'application/json'}
-      }));
-    }
-
-    return originalFetch(input, init);
-  };
-
-  async function postJson(url, body) {
-    const res = await originalFetch(url, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(body || {})
-    });
-    const text = await res.text();
-    try { return {ok: res.ok, status: res.status, data: JSON.parse(text), url}; }
-    catch(e) { return {ok: res.ok, status: res.status, data: {raw:text}, url}; }
+  if (typeof window.renderFunnelsNativeTab === 'function') {
+    setTimeout(() => window.renderFunnelsNativeTab(), 500);
   }
-
-  async function getJson(url) {
-    const res = await originalFetch(url);
-    const text = await res.text();
-    try { return {ok: res.ok, status: res.status, data: JSON.parse(text), url}; }
-    catch(e) { return {ok: res.ok, status: res.status, data: {raw:text}, url}; }
-  }
-
-  window.restoreFunnelsSeedData = async function() {
-    const root = document.getElementById('funnels-native-root');
-    if (root) root.innerHTML = '<div class="muted" style="padding:12px;">🧩 Відновлюю дані воронок...</div>';
-
-    window.__FUNNELS_ALLOW_BACKUP__ = true;
-    let result = null;
-
-    try {
-      result = await postJson('/api/funnels/backup/snapshot', {
-        restore: true,
-        mode: 'restore_latest',
-        silent: true,
-        no_telegram: true
-      });
-
-      if (!result.ok || result.data?.ok === false || result.data?.skipped) {
-        const exported = await getJson('/api/funnels/backup/export');
-        result = exported;
-
-        if (exported.ok && exported.data) {
-          result = await postJson('/api/funnels/backup/import', {
-            ...exported.data,
-            silent: true,
-            no_telegram: true
-          });
-        }
-      }
-    } finally {
-      window.__FUNNELS_ALLOW_BACKUP__ = false;
-    }
-
-    if (root) root.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
-
-    if (typeof window.renderFunnelsNativeTab === 'function') {
-      setTimeout(() => window.renderFunnelsNativeTab(), 500);
-    }
-  };
-})();
+}
+window.restoreFunnelsSeedData = restoreFunnelsSeedData;
 </script>
 
 <script src="/static/js/funnels-tab.js?v=native_tab_v1"></script>

@@ -125,8 +125,7 @@
       ${state.view === "steps" ? stepsHtml() : ""}
       ${state.view === "leads" ? leadsHtml() : ""}
       ${state.view === "sessions" ? sessionsHtml() : ""}
-      ${state.view === "backup" ? backupHtml() : ""}
-      ${state.view === "backup" ? backupHtml() : ""}
+
       ${state.view === "list" ? listHtml() : ""}
 
       <div class="fu-card">
@@ -313,91 +312,7 @@
       </div>
     `;
   }
-
-  
-  function backupHtml(){
-    return `
-      <div class="fu-card">
-        <h4>💾 Backup / Restore воронок</h4>
-        <div class="fu-muted">
-          Export зберігає всі funnel_configs і funnel_steps_dynamic у JSON.
-          Після Render deploy можна вставити JSON сюди й відновити воронки.
-        </div>
-
-        <div class="fu-row">
-          <button class="primary" id="fu-export-backup">⬇️ Export backup</button>
-          <button id="fu-download-backup">💽 Download JSON</button>
-          <button class="good" id="fu-import-backup">⬆️ Import / Restore</button>
-        </div>
-
-        <textarea id="fu-backup-json" style="min-height:320px" placeholder="Тут буде backup JSON або встав сюди JSON для restore"></textarea>
-      </div>
-    `;
-  }
-
-  async function exportBackup(){
-    const res = await api("/api/funnels/backup/export");
-    show(res);
-    const el = document.getElementById("fu-backup-json");
-    if (el) el.value = JSON.stringify(res, null, 2);
-    return res;
-  }
-
-  async function downloadBackup(){
-    const res = await exportBackup();
-    const blob = new Blob([JSON.stringify(res, null, 2)], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const ts = new Date().toISOString().replace(/[:.]/g,"-");
-    a.href = url;
-    a.download = `funnels-backup-${ts}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  async function importBackup(){
-    const raw = document.getElementById("fu-backup-json")?.value || "";
-    if (!raw.trim()) return show({ok:false, error:"backup JSON is empty"});
-
-    let payload;
-    try { payload = JSON.parse(raw); }
-    catch(e){ return show({ok:false, error:"invalid JSON", details:String(e)}); }
-
-    const res = await api("/api/funnels/backup/import", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    });
-
-    show(res);
-    await autoBackupFunnels("after_save_funnel");
-    state.view = "list";
-    await render();
-  }
-
-
-  
-  function backupHtml(){
-    return `
-      <div class="fu-card">
-        <h4>💾 Backup / Restore</h4>
-        <div class="fu-muted">
-          Backup включає: воронки, кроки, sessions, ліди, AI drafts, webhook messages.
-          Автобекап тригериться після збереження воронки/кроку/ручного запуску ліда.
-        </div>
-
-        <div class="fu-row">
-          <button class="primary" id="fu-export-backup">⬇️ Export JSON</button>
-          <button id="fu-download-backup">💽 Download</button>
-          <button class="good" id="fu-snapshot-backup">📩 Send backup to Telegram</button>
-          <button class="good" id="fu-import-backup">⬆️ Restore from JSON</button>
-        </div>
-
-        <textarea id="fu-backup-json" style="min-height:320px" placeholder="Тут буде backup JSON або встав JSON для restore"></textarea>
-      </div>
-    `;
-  }
-
+  function backupHtml(){ return ""; }
   async function exportBackup(){
     const res = await api("/api/funnels/backup/export");
     show(res);
@@ -422,12 +337,7 @@
     URL.revokeObjectURL(url);
   }
 
-  async function snapshotBackup(reason){
-    const res = await api("/api/funnels/backup/snapshot", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({reason: reason || "manual"})
-    });
+  async function snapshotBackup(reason){ return show({ok:true, skipped:true, reason:"telegram_snapshot_disabled"}); });
     show(res);
     return res;
   }
@@ -561,30 +471,6 @@
       show(res);
       await render();
     };
-    var backupBtn = document.getElementById("fu-backup");
-    if (backupBtn) backupBtn.onclick = async () => { state.view = "backup"; await render(); };
-
-    var exportBtn = document.getElementById("fu-export-backup");
-    if (exportBtn) exportBtn.onclick = exportBackup;
-
-    var downloadBtn = document.getElementById("fu-download-backup");
-    if (downloadBtn) downloadBtn.onclick = downloadBackup;
-
-    var snapshotBtn = document.getElementById("fu-snapshot-backup");
-    if (snapshotBtn) snapshotBtn.onclick = () => snapshotBackup("manual_button");
-
-    var importBtn = document.getElementById("fu-import-backup");
-    if (importBtn) importBtn.onclick = importBackup;
-    document.getElementById("fu-backup").onclick = async () => { state.view = "backup"; await render(); };
-
-    var exportBtn = document.getElementById("fu-export-backup");
-    if (exportBtn) exportBtn.onclick = exportBackup;
-
-    var downloadBtn = document.getElementById("fu-download-backup");
-    if (downloadBtn) downloadBtn.onclick = downloadBackup;
-
-    var importBtn = document.getElementById("fu-import-backup");
-    if (importBtn) importBtn.onclick = importBackup;
 
     document.querySelectorAll("[data-edit]").forEach(b => {
       b.onclick = async () => {
