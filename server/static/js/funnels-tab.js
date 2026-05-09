@@ -363,6 +363,11 @@
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
     });
     show(res);
+
+    if (res && res.ok) {
+      await autoBackupFunnels("after_save_config");
+    }
+
     state.view = "list";
     state.current = null;
     await render();
