@@ -2452,30 +2452,73 @@ def restore_local_funnels_bundle_v1():
 # === /RESTORE LOCAL FUNNELS BUNDLE V1 ===
 
 
+
 # === CONVERT LEGACY FUNNEL EVENTS TO DYNAMIC V1 ===
 @router.post("/restore/convert_legacy_events")
 def convert_legacy_funnel_events_to_dynamic_v1():
     import json, sqlite3
+    from pathlib import Path
+
     con = dyn_con()
     con.row_factory = sqlite3.Row
     created_configs = 0
     created_steps = 0
 
     try:
-        # знайти funnel_id з legacy events
-        rows = con.execute("""
-            SELECT *
-            FROM funnel_events
-            WHERE event_type IN ('funnel_created','funnel_updated','funnel_step_upserted','step_upserted')
-            ORDER BY id ASC
-        """).fetchall()
+        # читаємо legacy events напряму з локального merged bundle
+        bundle_path = Path("/tmp/funnels-local-merged.json")
+        if not bundle_path.exists():
+            return {"ok": False, "status": "error", "error": "bundle file not found", "path": str(bundle_path)}
 
-        funnel_ids = sorted(set([str(r["funnel_id"]) for r in rows if r["funnel_id"] is not None]))
+        payload = json.loads(bundle_path.read_text(encoding="utf-8"))
+        legacy_events = (payload.get("tables") or {}).get("funnel_events") or []
+
+        if not legacy_events:
+            return {"ok": False, "status": "error", "error": "no funnel_events in bundle"}
+
+        # гарантуємо нові таблиці конструктора
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            funnel_key TEXT UNIQUE,
+            name TEXT,
+            active INTEGER DEFAULT 1,
+            trigger_type TEXT DEFAULT 'keyword',
+            trigger_value TEXT DEFAULT '',
+            telegram_bot_username TEXT DEFAULT '',
+            telegram_channel_url TEXT DEFAULT '',
+            target_url TEXT DEFAULT '',
+            dm_template TEXT DEFAULT '',
+            ai_prompt TEXT DEFAULT '',
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_steps_dynamic (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            funnel_key TEXT,
+            step_key TEXT,
+            step_order INTEGER DEFAULT 1,
+            step_type TEXT DEFAULT 'send_message',
+            name TEXT DEFAULT '',
+            message_template TEXT DEFAULT '',
+            delay_seconds INTEGER DEFAULT 0,
+            config_json TEXT DEFAULT '{}',
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(funnel_key, step_key)
+        )
+        """)
+
+        rows = [x for x in legacy_events if x.get("event_type") in ("funnel_created","funnel_updated","funnel_step_upserted","step_upserted")]
+        funnel_ids = sorted(set([str(x.get("funnel_id")) for x in rows if x.get("funnel_id") is not None]))
 
         for fid in funnel_ids:
             key = "legacy_funnel_" + str(fid)
 
-            # створити config
             exists = con.execute("SELECT id FROM funnel_configs WHERE funnel_key=? LIMIT 1", (key,)).fetchone()
             if not exists:
                 con.execute("""
@@ -2485,31 +2528,31 @@ def convert_legacy_funnel_events_to_dynamic_v1():
                      dm_template, ai_prompt, created_at, updated_at)
                     VALUES (?, ?, 1, 'keyword', 'вага', '', '', '',
                             'Напиши в direct слово ВАГА — і я підкажу наступний крок.',
-                            'Legacy funnel restored from funnel_events',
+                            'Legacy funnel restored from /tmp/funnels-local-merged.json',
                             datetime('now'), datetime('now'))
                 """, (key, "Відновлена воронка #" + str(fid)))
                 created_configs += 1
 
-            step_rows = [r for r in rows if str(r["funnel_id"]) == str(fid) and r["event_type"] in ('funnel_step_upserted','step_upserted')]
+            step_rows = [r for r in rows if str(r.get("funnel_id")) == str(fid) and r.get("event_type") in ("funnel_step_upserted","step_upserted")]
 
             for idx, r in enumerate(step_rows, start=1):
                 try:
-                    payload = json.loads(r["payload_json"] or "{}")
+                    pl = json.loads(r.get("payload_json") or "{}")
                 except Exception:
-                    payload = {}
+                    pl = {}
 
-                step_id = payload.get("step_id") or idx
-                step_order = payload.get("step_order") or idx
-                step_type = payload.get("step_type") or "send_message"
-                step_name = payload.get("step_name") or ("Крок " + str(step_order))
-                config = payload.get("config") or {}
+                step_id = pl.get("step_id") or idx
+                step_order = pl.get("step_order") or idx
+                step_type = pl.get("step_type") or "send_message"
+                step_name = pl.get("step_name") or ("Крок " + str(step_order))
+                cfg = pl.get("config") or {}
 
-                step_key = "legacy_step_" + str(step_id)
+                msg = cfg.get("text") or cfg.get("message") or cfg.get("prompt") or cfg.get("title") or ""
 
                 con.execute("""
                     INSERT INTO funnel_steps_dynamic
-                    (funnel_key, step_key, step_order, step_type, name, message_template,
-                     delay_seconds, config_json, active, created_at, updated_at)
+                    (funnel_key, step_key, step_order, step_type, name,
+                     message_template, delay_seconds, config_json, active, created_at, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
                     ON CONFLICT(funnel_key, step_key) DO UPDATE SET
                       step_order=excluded.step_order,
@@ -2522,13 +2565,13 @@ def convert_legacy_funnel_events_to_dynamic_v1():
                       updated_at=datetime('now')
                 """, (
                     key,
-                    step_key,
+                    "legacy_step_" + str(step_id),
                     int(step_order or idx),
                     str(step_type),
                     str(step_name),
-                    str(config.get("text") or config.get("message") or config.get("prompt") or ""),
-                    int(config.get("delay_seconds") or config.get("delay") or 0),
-                    json.dumps(config, ensure_ascii=False),
+                    str(msg),
+                    int(cfg.get("delay_seconds") or cfg.get("delay") or 0),
+                    json.dumps(cfg, ensure_ascii=False),
                 ))
                 created_steps += 1
 
@@ -2536,12 +2579,15 @@ def convert_legacy_funnel_events_to_dynamic_v1():
         return {
             "ok": True,
             "status": "ok",
+            "source": str(bundle_path),
+            "legacy_events": len(legacy_events),
             "legacy_funnels": len(funnel_ids),
             "created_configs": created_configs,
             "created_steps": created_steps,
         }
+
     except Exception as e:
-        return {"ok": False, "status": "error", "where": "convert_legacy_events", "error": repr(e)}
+        return {"ok": False, "status": "error", "where": "convert_legacy_events_json", "error": repr(e)}
     finally:
         con.close()
 # === /CONVERT LEGACY FUNNEL EVENTS TO DYNAMIC V1 ===
