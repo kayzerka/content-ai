@@ -670,7 +670,7 @@
           </div>
 
           <div style="display:flex;gap:10px;margin-top:14px;">
-            <button id="fsb-save" style="background:#111;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer;">💾 Зберегти крок</button>
+            <button id="fsb-save" style="background:#111;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer;">💾 Зберегти крок</button>\n            <button id="fsb-add-new" style="background:#16a34a;color:#fff;border:0;border-radius:10px;padding:10px 16px;font-weight:700;cursor:pointer;">➕ Додати крок</button>
             <button id="fsb-preset-1" style="border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;cursor:pointer;">Preset STEP 1</button>
             <button id="fsb-preset-2" style="border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;cursor:pointer;">Preset STEP 2</button>
             <button id="fsb-preset-3" style="border:1px solid #ddd;border-radius:10px;padding:10px;background:#fff;cursor:pointer;">Preset STEP 3</button>
@@ -731,6 +731,24 @@
         modal.querySelector("#fsb-delay").value = "0";
       }
     }
+
+    
+    modal.querySelector("#fsb-add-new").onclick = () => {
+      const maxOrder = Math.max(0, ...items.map(x => Number(x.step_order || 0)));
+      const nextOrder = maxOrder + 1;
+
+      modal.querySelector("#fsb-step-key").value = `step_${nextOrder}`;
+      modal.querySelector("#fsb-step-type").value = "send_message";
+      modal.querySelector("#fsb-step-order").value = String(nextOrder);
+      modal.querySelector("#fsb-active").value = "1";
+      modal.querySelector("#fsb-trigger-stage").value = nextOrder === 1 ? "tg_started" : `step_${nextOrder-1}_sent`;
+      modal.querySelector("#fsb-next-stage").value = `step_${nextOrder}_sent`;
+      modal.querySelector("#fsb-message-text").value = "";
+      modal.querySelector("#fsb-button-text").value = "";
+      modal.querySelector("#fsb-button-url").value = "";
+      modal.querySelector("#fsb-delay").value = "0";
+    };
+
 
     modal.querySelector("#fsb-preset-1").onclick = () => fillPreset(1);
     modal.querySelector("#fsb-preset-2").onclick = () => fillPreset(2);
