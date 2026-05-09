@@ -3275,3 +3275,35 @@ def restore_full_funnels_from_local_backup_v1():
             "error": repr(e)
         }
 # === /FULL FUNNELS RESTORE ORCHESTRATOR V1 ===
+
+
+# === ONE CLICK RESTORE FROM STATIC BACKUP V1 ===
+@router.post("/restore/from_static_backup")
+def restore_funnels_from_static_backup_v1():
+    import json
+    from pathlib import Path
+
+    try:
+        backup_path = Path("backups/funnels-latest.json")
+        if not backup_path.exists():
+            return {"ok": False, "status": "error", "error": "backups/funnels-latest.json not found"}
+
+        payload = json.loads(backup_path.read_text(encoding="utf-8"))
+        payload.pop("telegram_db", None)
+        payload.pop("telegram_bundle", None)
+
+        report = {}
+        report["import_legacy_payload"] = import_legacy_funnel_payload_v1(payload)
+        report["convert_legacy_events_db"] = convert_legacy_funnel_events_from_db_v1()
+        report["convert_ig_reactions_to_leads"] = convert_ig_reactions_to_funnel_leads_v1()
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "source": str(backup_path),
+            "report": report
+        }
+
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "restore_from_static_backup", "error": repr(e)}
+# === /ONE CLICK RESTORE FROM STATIC BACKUP V1 ===
