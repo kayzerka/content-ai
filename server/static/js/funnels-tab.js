@@ -119,8 +119,6 @@
         <button id="fu-leads">👥 Ліди</button>
         <button id="fu-sessions">🧾 Sessions</button>
         <button id="fu-status">Status</button>
-        <button id="fu-backup">💾 Backup</button>
-        <button id="fu-backup">💾 Backup</button>
       </div>
 
       ${state.view === "edit" ? editorHtml() : ""}

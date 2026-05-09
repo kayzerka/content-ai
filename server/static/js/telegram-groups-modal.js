@@ -1203,3 +1203,42 @@ window.escapeSafe = window.escapeSafe || function(str) {
     };
   }
 })();
+
+
+
+// TELEGRAM_BACKUP_BUTTON_V1
+(function(){
+  function findTelegramHost(){
+    return document.querySelector(
+      '#telegramGroupsModal, #telegram-groups-modal, #tgGroupsModal, #telegramGroupsRoot, #telegram-groups-root, #telegramGroupsPanel, #telegram-groups-card'
+    );
+  }
+
+  function injectTelegramBackupButton(){
+    const host = findTelegramHost();
+    if (!host) return;
+
+    if (document.getElementById('telegram-backup-funnels-btn')) return;
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'margin:10px 0;display:flex;gap:8px;flex-wrap:wrap;align-items:center;';
+
+    const btn = document.createElement('button');
+    btn.id = 'telegram-backup-funnels-btn';
+    btn.textContent = '💾 Backup / Restore';
+    btn.style.cssText = 'border:1px solid #ddd;border-radius:10px;padding:8px 10px;background:#111;color:#fff;font-weight:700;cursor:pointer;';
+    btn.onclick = function(){
+      if (window.openFunnelsBackupPanel) {
+        window.openFunnelsBackupPanel();
+      } else {
+        alert('Funnels backup panel не завантажений. Онови сторінку Cmd+Shift+R.');
+      }
+    };
+
+    wrap.appendChild(btn);
+    host.prepend(wrap);
+  }
+
+  setInterval(injectTelegramBackupButton, 1200);
+  document.addEventListener('DOMContentLoaded', injectTelegramBackupButton);
+})();

@@ -972,6 +972,7 @@ def funnels_backup_export_full():
             "instagram_webhook_messages": ig_webhook_rows,
         },
         "telegram_db": _dump_sqlite_db_generic(TELEGRAM_DB_PATH),
+        "telegram_bundle": build_telegram_backup_bundle(),
         "counts": {
             **{k: len(v) for k, v in content_tables.items()},
             "instagram_webhook_messages": len(ig_webhook_rows),
@@ -1059,6 +1060,9 @@ def funnels_backup_import_full(payload: Dict[str, Any]):
             imported["instagram_webhook_messages_error"] = str(e)
 
     imported["instagram_webhook_messages"] = imported_ig_webhook
+
+    if backup_type == "funnels_full_v2" and payload.get("telegram_bundle"):
+        imported["telegram_bundle"] = restore_telegram_backup_bundle(payload.get("telegram_bundle"))
 
     if backup_type == "funnels_full_v2" and payload.get("telegram_db"):
         imported["telegram_db"] = _restore_sqlite_db_generic(
@@ -2090,3 +2094,117 @@ def funnel_sync_instagram_comments(payload: Dict[str, Any] = None):
     }
 
 # === /INSTAGRAM COMMENTS TO FUNNEL LEADS V1 ===
+
+
+
+
+# === TELEGRAM BACKUP ALL PATHS V2 ===
+def _possible_telegram_db_paths():
+    raw = [
+        os.getenv("TELEGRAM_DB_PATH", ""),
+        os.getenv("TG_DB_PATH", ""),
+        os.getenv("TELEGRAM_SQLITE_PATH", ""),
+        os.path.join(os.getcwd(), "db", "telegram.sqlite"),
+        os.path.join(os.getcwd(), "telegram.sqlite"),
+        os.path.join(os.getcwd(), "data", "telegram.sqlite"),
+        os.path.join(os.getcwd(), "data", "content.db"),
+        CONTENT_DB_PATH,
+    ]
+    out = []
+    for x in raw:
+        x = str(x or "").strip()
+        if x and x not in out:
+            out.append(x)
+    return out
+
+def _dump_telegram_related_from_content_db():
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    out = {"tables": {}, "schema": {}}
+
+    rows = con.execute("""
+        SELECT name, sql
+        FROM sqlite_master
+        WHERE type='table'
+          AND (
+            lower(name) LIKE '%telegram%'
+            OR lower(name) LIKE '%tg_%'
+            OR lower(name) LIKE 'tg%'
+          )
+        ORDER BY name
+    """).fetchall()
+
+    for r in rows:
+        name = r["name"]
+        out["schema"][name] = r["sql"]
+        try:
+            data = con.execute(f"SELECT * FROM {name}").fetchall()
+            out["tables"][name] = [dict(x) for x in data]
+        except Exception as e:
+            out["tables"][name] = [{"_error": str(e)}]
+
+    con.close()
+    return out
+
+def build_telegram_backup_bundle():
+    bundle = {
+        "content_db_telegram_tables": _dump_telegram_related_from_content_db(),
+        "sqlite_files": {},
+        "paths_checked": _possible_telegram_db_paths(),
+    }
+
+    for path in _possible_telegram_db_paths():
+        try:
+            if Path(path).exists():
+                bundle["sqlite_files"][path] = _dump_sqlite_db_generic(path)
+        except Exception as e:
+            bundle["sqlite_files"][path] = {"error": str(e), "db_path": path}
+
+    return bundle
+
+def restore_telegram_backup_bundle(bundle: dict):
+    result = {"content_db": {}, "sqlite_files": {}}
+    if not isinstance(bundle, dict):
+        return {"ok": False, "error": "telegram backup bundle missing"}
+
+    # restore telegram-related tables into content DB
+    cdb = bundle.get("content_db_telegram_tables") or {}
+    schema = cdb.get("schema") or {}
+    tables = cdb.get("tables") or {}
+
+    con = dyn_con()
+    cur = con.cursor()
+
+    for table, create_sql in schema.items():
+        if create_sql:
+            try:
+                cur.execute(create_sql)
+            except Exception as e:
+                result["content_db"][table + "_schema_error"] = str(e)
+
+    for table, rows in tables.items():
+        try:
+            result["content_db"][table] = _insert_or_replace_rows(con, table, rows, preserve_id=True)
+        except Exception as e:
+            result["content_db"][table + "_error"] = str(e)
+
+    con.commit()
+    con.close()
+
+    # restore sqlite files only for current configured paths, not old Render absolute paths
+    files = bundle.get("sqlite_files") or {}
+    current_paths = _possible_telegram_db_paths()
+
+    for target_path in current_paths:
+        # pick first dump that has telegram-looking tables
+        chosen = None
+        for _old_path, dump in files.items():
+            if isinstance(dump, dict) and dump.get("tables"):
+                chosen = dump
+                break
+        if chosen:
+            result["sqlite_files"][target_path] = _restore_sqlite_db_generic(target_path, chosen)
+
+    return {"ok": True, "restored": result}
+
+# === /TELEGRAM BACKUP ALL PATHS V2 ===
