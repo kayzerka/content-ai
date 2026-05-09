@@ -1225,9 +1225,6 @@ window.escapeSafe = window.escapeSafe || function(str) {
 
     const btn = document.createElement('button');
     btn.id = 'telegram-backup-funnels-btn';
-    btn.textContent = '💾 Backup / Restore';
-    btn.style.cssText = 'border:1px solid #ddd;border-radius:10px;padding:8px 10px;background:#111;color:#fff;font-weight:700;cursor:pointer;';
-    btn.onclick = function(){
       if (window.openFunnelsBackupPanel) {
         window.openFunnelsBackupPanel();
       } else {
