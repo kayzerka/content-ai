@@ -2476,6 +2476,38 @@ def convert_legacy_funnel_events_to_dynamic_v1():
         if not legacy_events:
             return {"ok": False, "status": "error", "error": "no funnel_events in bundle"}
 
+        # гарантуємо/мігруємо колонки існуючих таблиць
+        def _cols(table):
+            try:
+                return [r[1] for r in con.execute(f'PRAGMA table_info("{table}")').fetchall()]
+            except Exception:
+                return []
+
+        def _add_col(table, col, ddl):
+            if col not in _cols(table):
+                try:
+                    con.execute(f'ALTER TABLE "{table}" ADD COLUMN {ddl}')
+                except Exception:
+                    pass
+
+        _add_col("funnel_configs", "name", "name TEXT DEFAULT ''")
+        _add_col("funnel_configs", "trigger_type", "trigger_type TEXT DEFAULT 'keyword'")
+        _add_col("funnel_configs", "trigger_value", "trigger_value TEXT DEFAULT ''")
+        _add_col("funnel_configs", "telegram_bot_username", "telegram_bot_username TEXT DEFAULT ''")
+        _add_col("funnel_configs", "telegram_channel_url", "telegram_channel_url TEXT DEFAULT ''")
+        _add_col("funnel_configs", "target_url", "target_url TEXT DEFAULT ''")
+        _add_col("funnel_configs", "dm_template", "dm_template TEXT DEFAULT ''")
+        _add_col("funnel_configs", "ai_prompt", "ai_prompt TEXT DEFAULT ''")
+        _add_col("funnel_configs", "created_at", "created_at TEXT DEFAULT CURRENT_TIMESTAMP")
+        _add_col("funnel_configs", "updated_at", "updated_at TEXT DEFAULT CURRENT_TIMESTAMP")
+
+        _add_col("funnel_steps_dynamic", "name", "name TEXT DEFAULT ''")
+        _add_col("funnel_steps_dynamic", "message_template", "message_template TEXT DEFAULT ''")
+        _add_col("funnel_steps_dynamic", "delay_seconds", "delay_seconds INTEGER DEFAULT 0")
+        _add_col("funnel_steps_dynamic", "config_json", "config_json TEXT DEFAULT '{}'")
+        _add_col("funnel_steps_dynamic", "created_at", "created_at TEXT DEFAULT CURRENT_TIMESTAMP")
+        _add_col("funnel_steps_dynamic", "updated_at", "updated_at TEXT DEFAULT CURRENT_TIMESTAMP")
+
         # гарантуємо нові таблиці конструктора
         con.execute("""
         CREATE TABLE IF NOT EXISTS funnel_configs (
