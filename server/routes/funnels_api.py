@@ -2450,3 +2450,100 @@ def restore_local_funnels_bundle_v1():
             "error": repr(e)
         }
 # === /RESTORE LOCAL FUNNELS BUNDLE V1 ===
+
+
+# === CONVERT LEGACY FUNNEL EVENTS TO DYNAMIC V1 ===
+@router.post("/restore/convert_legacy_events")
+def convert_legacy_funnel_events_to_dynamic_v1():
+    import json, sqlite3
+    con = db()
+    con.row_factory = sqlite3.Row
+    created_configs = 0
+    created_steps = 0
+
+    try:
+        ensure_schema()
+
+        # знайти funnel_id з legacy events
+        rows = con.execute("""
+            SELECT *
+            FROM funnel_events
+            WHERE event_type IN ('funnel_created','funnel_updated','funnel_step_upserted','step_upserted')
+            ORDER BY id ASC
+        """).fetchall()
+
+        funnel_ids = sorted(set([str(r["funnel_id"]) for r in rows if r["funnel_id"] is not None]))
+
+        for fid in funnel_ids:
+            key = "legacy_funnel_" + str(fid)
+
+            # створити config
+            exists = con.execute("SELECT id FROM funnel_configs WHERE funnel_key=? LIMIT 1", (key,)).fetchone()
+            if not exists:
+                con.execute("""
+                    INSERT INTO funnel_configs
+                    (funnel_key, name, active, trigger_type, trigger_value,
+                     telegram_bot_username, telegram_channel_url, target_url,
+                     dm_template, ai_prompt, created_at, updated_at)
+                    VALUES (?, ?, 1, 'keyword', 'вага', '', '', '',
+                            'Напиши в direct слово ВАГА — і я підкажу наступний крок.',
+                            'Legacy funnel restored from funnel_events',
+                            datetime('now'), datetime('now'))
+                """, (key, "Відновлена воронка #" + str(fid)))
+                created_configs += 1
+
+            step_rows = [r for r in rows if str(r["funnel_id"]) == str(fid) and r["event_type"] in ('funnel_step_upserted','step_upserted')]
+
+            for idx, r in enumerate(step_rows, start=1):
+                try:
+                    payload = json.loads(r["payload_json"] or "{}")
+                except Exception:
+                    payload = {}
+
+                step_id = payload.get("step_id") or idx
+                step_order = payload.get("step_order") or idx
+                step_type = payload.get("step_type") or "send_message"
+                step_name = payload.get("step_name") or ("Крок " + str(step_order))
+                config = payload.get("config") or {}
+
+                step_key = "legacy_step_" + str(step_id)
+
+                con.execute("""
+                    INSERT INTO funnel_steps_dynamic
+                    (funnel_key, step_key, step_order, step_type, name, message_template,
+                     delay_seconds, config_json, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+                    ON CONFLICT(funnel_key, step_key) DO UPDATE SET
+                      step_order=excluded.step_order,
+                      step_type=excluded.step_type,
+                      name=excluded.name,
+                      message_template=excluded.message_template,
+                      delay_seconds=excluded.delay_seconds,
+                      config_json=excluded.config_json,
+                      active=1,
+                      updated_at=datetime('now')
+                """, (
+                    key,
+                    step_key,
+                    int(step_order or idx),
+                    str(step_type),
+                    str(step_name),
+                    str(config.get("text") or config.get("message") or config.get("prompt") or ""),
+                    int(config.get("delay_seconds") or config.get("delay") or 0),
+                    json.dumps(config, ensure_ascii=False),
+                ))
+                created_steps += 1
+
+        con.commit()
+        return {
+            "ok": True,
+            "status": "ok",
+            "legacy_funnels": len(funnel_ids),
+            "created_configs": created_configs,
+            "created_steps": created_steps,
+        }
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "convert_legacy_events", "error": repr(e)}
+    finally:
+        con.close()
+# === /CONVERT LEGACY FUNNEL EVENTS TO DYNAMIC V1 ===
