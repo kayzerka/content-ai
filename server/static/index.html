@@ -1720,50 +1720,68 @@ window.tgSeedDefaultChats = tgSeedDefaultChats;
 
 async function restoreFunnelsSeedData() {
   const root = document.getElementById('funnels-native-root');
-  if (root) {
-    root.innerHTML = '<pre>⏳ Відновлюю дані з локального backup на Render...</pre>';
-  }
 
   try {
-    const res = await fetch("/api/funnels/restore/from_static_backup", {
+    if (root) {
+      root.innerHTML = `
+        <div class="muted" style="padding:12px;">
+          🔄 Відновлюю безпечно:
+          <br>• сценарії воронок з dynamic backup
+          <br>• кроки воронок
+          <br>• ліди/коментарі з Instagram sync
+        </div>
+      `;
+    }
+
+    const restoreRes = await fetch("/api/funnels/restore/push_local_to_render", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({source: "constructor_restore_button"})
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({})
     });
 
-    const text = await res.text();
-    let data = {};
-    try {
-      data = JSON.parse(text);
-    } catch(e) {
-      throw new Error("restore returned non-json: " + text.slice(0, 300));
-    }
+    const restoreData = await restoreRes.json().catch(() => ({
+      ok:false,
+      status:"error",
+      error:"restore returned non-json"
+    }));
 
-    console.log("[FUNNELS RESTORE BUTTON] result:", data);
+    const syncRes = await fetch("/api/funnels/instagram/comments/sync", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        limit_media: 20,
+        limit_comments: 50,
+        include_replies: 1
+      })
+    });
 
-    if (!data.ok) {
-      throw new Error(data.error || JSON.stringify(data));
-    }
+    const syncData = await syncRes.json().catch(() => ({
+      ok:false,
+      status:"error",
+      error:"instagram sync returned non-json"
+    }));
+
+    const result = {
+      ok: !!(restoreData.ok || restoreData.status === "blocked") && !!syncData.ok,
+      restore: restoreData,
+      instagram_sync: syncData
+    };
 
     if (root) {
-      root.innerHTML =
-        '<pre>✅ Дані відновлено на Render\n\n' +
-        JSON.stringify(data, null, 2) +
-        '</pre>';
+      root.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
     }
 
     if (window.renderFunnelsNativeTab) {
-      await window.renderFunnelsNativeTab();
+      setTimeout(() => window.renderFunnelsNativeTab(), 700);
     }
 
-    return data;
-  } catch (e) {
-    console.error("[FUNNELS RESTORE BUTTON] failed:", e);
+  } catch(err) {
+    console.error(err);
     if (root) {
-      root.innerHTML = '<pre>❌ Restore failed: ' + String(e.message || e) + '</pre>';
+      root.innerHTML = `<pre style="color:#ff8080;">❌ Restore/sync error
+
+${String(err)}</pre>`;
     }
-    alert("❌ Restore failed: " + String(e.message || e));
-    return {ok:false, error:String(e.message || e)};
   }
 }
 
