@@ -1638,3 +1638,95 @@ def _restore_sqlite_db_generic(db_path: str, dump: dict):
     return {"ok": True, "restored": restored}
 
 # === /TELEGRAM DB BACKUP EXTENSION V1 ===
+
+
+
+
+# === MANUAL FUNNEL LEAD CREATE V1 ===
+@router.post("/leads/create")
+def funnel_lead_create(payload: Dict[str, Any]):
+    funnel_leads_init()
+
+    source_platform = str(payload.get("source_platform") or "instagram").strip()
+    source_user_id = str(
+        payload.get("source_user_id")
+        or payload.get("external_user_id")
+        or ""
+    ).strip()
+    source_username = str(
+        payload.get("source_username")
+        or payload.get("username")
+        or source_user_id
+        or ""
+    ).strip()
+    source_message = str(
+        payload.get("source_message")
+        or payload.get("text")
+        or ""
+    ).strip()
+
+    if not source_user_id:
+        return {
+            "ok": False,
+            "status": "error",
+            "error": "source_user_id required",
+        }
+
+    matched_key = str(payload.get("matched_funnel_key") or "").strip()
+    matched_name = str(payload.get("matched_funnel_name") or "").strip()
+
+    if not matched_key:
+        matched_key, matched_name, _kw = funnel_leads_match_funnel(source_message)
+
+    now = dyn_now()
+    raw = dict(payload)
+    raw["manual_created"] = True
+
+    con = dyn_con()
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO funnel_leads (
+            created_at, updated_at,
+            source_platform, source_table, source_row_id,
+            external_user_id, username, text,
+            matched_funnel_key, matched_funnel_name,
+            status, raw_json
+        )
+        VALUES (?, ?, ?, 'manual', 0, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        now,
+        now,
+        source_platform,
+        source_user_id,
+        source_username,
+        source_message,
+        matched_key,
+        matched_name,
+        str(payload.get("status") or "pending"),
+        json.dumps(raw, ensure_ascii=False),
+    ))
+
+    lead_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    try:
+        backup_obj = _build_funnel_full_backup()
+        snap = _send_backup_json_to_telegram(backup_obj, reason="after_manual_lead_create")
+    except Exception as e:
+        snap = {"ok": False, "error": str(e)}
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "lead_id": lead_id,
+        "source_user_id": source_user_id,
+        "username": source_username,
+        "text": source_message,
+        "matched_funnel_key": matched_key,
+        "matched_funnel_name": matched_name,
+        "snapshot": snap,
+    }
+
+# === /MANUAL FUNNEL LEAD CREATE V1 ===
