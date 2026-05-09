@@ -725,10 +725,15 @@
       Відкрити конструктор воронок
     </button>
 
+    <button class="btn"
+            type="button"
+            style="margin-left:10px;"
+            onclick="window.restoreFunnelsSeedData && window.restoreFunnelsSeedData()">
+      🧩 Відновити дані
+    </button>
+
     <div id="funnelsBackupActions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
-      <button class="btn" type="button" onclick="event.stopPropagation(); window.backupFunnelsData && window.backupFunnelsData();">💾 Backup воронок</button>
-      <button class="btn" type="button" onclick="event.stopPropagation(); window.restoreFunnelsData && window.restoreFunnelsData();">♻️ Restore воронок</button>
-    </div>
+</div>
 
     <div id="funnels-native-root" style="margin-top:16px;"></div>
   </div>
@@ -1710,92 +1715,95 @@ window.tgSeedDefaultChats = tgSeedDefaultChats;
 <script src="/static/js/instagram-reaction-modal.js?v=1"></script>
 <script src="/static/js/telegram-ai-scheduler-v1.js?v=1"></script>
 
+
 <script>
-/* FUNNELS RESTORE ONE BUTTON V2 */
-async function restoreFunnelsSeedData() {
-  const root = document.getElementById('funnels-native-root');
-  if (root) root.innerHTML = '<div class="muted" style="padding:12px;">🧩 Відновлюю дані воронок...</div>';
+/* FUNNELS SILENT RESTORE ONLY V1 */
+(function(){
+  window.__FUNNELS_ALLOW_BACKUP__ = false;
+
+  const originalFetch = window.fetch.bind(window);
+
+  window.fetch = function(input, init) {
+    const url = String(typeof input === 'string' ? input : (input && input.url) || '');
+
+    if (
+      url.includes('/api/funnels/backup/') &&
+      window.__FUNNELS_ALLOW_BACKUP__ !== true
+    ) {
+      console.warn('[funnels backup blocked silently]', url);
+      return Promise.resolve(new Response(JSON.stringify({
+        ok: true,
+        skipped: true,
+        reason: 'funnels_backup_blocked_on_open',
+        url
+      }), {
+        status: 200,
+        headers: {'Content-Type':'application/json'}
+      }));
+    }
+
+    return originalFetch(input, init);
+  };
 
   async function postJson(url, body) {
-    const res = await fetch(url, {
+    const res = await originalFetch(url, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: body ? JSON.stringify(body) : '{}'
+      body: JSON.stringify(body || {})
     });
     const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch(e) { data = {raw:text}; }
-    return {ok: res.ok, status: res.status, url, data};
+    try { return {ok: res.ok, status: res.status, data: JSON.parse(text), url}; }
+    catch(e) { return {ok: res.ok, status: res.status, data: {raw:text}, url}; }
   }
 
   async function getJson(url) {
-    const res = await fetch(url);
+    const res = await originalFetch(url);
     const text = await res.text();
-    let data = {};
-    try { data = JSON.parse(text); } catch(e) { data = {raw:text}; }
-    return {ok: res.ok, status: res.status, url, data};
+    try { return {ok: res.ok, status: res.status, data: JSON.parse(text), url}; }
+    catch(e) { return {ok: res.ok, status: res.status, data: {raw:text}, url}; }
   }
 
-  let result = null;
+  window.restoreFunnelsSeedData = async function() {
+    const root = document.getElementById('funnels-native-root');
+    if (root) root.innerHTML = '<div class="muted" style="padding:12px;">🧩 Відновлюю дані воронок...</div>';
 
-  // 1) пробуємо штатний snapshot endpoint
-  result = await postJson('/api/funnels/backup/snapshot', {restore:true, mode:'restore_latest'}).catch(e => ({ok:false, error:e.message}));
+    window.__FUNNELS_ALLOW_BACKUP__ = true;
+    let result = null;
 
-  // 2) якщо snapshot endpoint не відновив — беремо поточний backup/export як перевірку доступності
-  if (!result.ok || result.data?.ok === false) {
-    const exported = await getJson('/api/funnels/backup/export').catch(e => ({ok:false, error:e.message}));
-    result = exported;
+    try {
+      result = await postJson('/api/funnels/backup/snapshot', {
+        restore: true,
+        mode: 'restore_latest',
+        silent: true,
+        no_telegram: true
+      });
 
-    // якщо export має backup-структуру, пробуємо імпорт назад як refresh
-    if (exported.ok && exported.data) {
-      result = await postJson('/api/funnels/backup/import', exported.data).catch(e => ({ok:false, error:e.message}));
+      if (!result.ok || result.data?.ok === false || result.data?.skipped) {
+        const exported = await getJson('/api/funnels/backup/export');
+        result = exported;
+
+        if (exported.ok && exported.data) {
+          result = await postJson('/api/funnels/backup/import', {
+            ...exported.data,
+            silent: true,
+            no_telegram: true
+          });
+        }
+      }
+    } finally {
+      window.__FUNNELS_ALLOW_BACKUP__ = false;
     }
-  }
 
-  if (root) root.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+    if (root) root.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
 
-  if (typeof window.renderFunnelsNativeTab === 'function') {
-    setTimeout(() => window.renderFunnelsNativeTab(), 500);
-  }
-}
-window.restoreFunnelsSeedData = restoreFunnelsSeedData;
-</script>
-
-<script src="/static/js/funnels-tab.js?v=native_tab_v1"></script>
-
-<script>
-/* FUNNELS BACKUP RESTORE CLEAN V1 */
-(function(){
-  async function fetchJsonSafe(url, options){
-    const res = await fetch(url, options || {});
-    const text = await res.text();
-    try { return JSON.parse(text); } catch(e) { return {ok:false, raw:text}; }
-  }
-
-  window.backupFunnelsData = async function(){
-    const payload = {
-      type: 'funnels_backup_v1',
-      exported_at: new Date().toISOString(),
-      funnels: await fetchJsonSafe('/api/funnels/list'),
-      leads: await fetchJsonSafe('/api/funnels/leads/list?limit=100'),
-      sessions: await fetchJsonSafe('/api/funnels/sessions/list?limit=100')
-    };
-
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'funnels-backup.json';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  };
-
-  window.restoreFunnelsData = function(){
-    alert('Restore воронок треба робити через backend import endpoint. Зараз кнопка Backup вже коректно зберігає файл, але Restore не буде мовчки писати в БД без окремого API.');
+    if (typeof window.renderFunnelsNativeTab === 'function') {
+      setTimeout(() => window.renderFunnelsNativeTab(), 500);
+    }
   };
 })();
 </script>
+
+<script src="/static/js/funnels-tab.js?v=native_tab_v1"></script>
 
 </body>
 </html>
