@@ -93,7 +93,7 @@
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({limit:500})
     });
-    const leads = await api("/api/funnels/leads/list?limit=100");
+    const leads = await api("/api/funnels/leads/list_safe?limit=100");
     state.leads = leads.items || [];
     const sessions = await api("/api/funnels/runtime/sessions?limit=50");
     state.sessions = sessions.items || [];
