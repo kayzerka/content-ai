@@ -140,6 +140,12 @@ async def webhook(req: Request):
 
         saved = ig_webhook_save_payload(payload)
         print(f"IG_WEBHOOK_SAVE_V1 saved={saved}")
+        try:
+            auto_res = ig_auto_funnel_dispatch_payload(payload, saved)
+            print("[IG_AUTO_FUNNEL_DISPATCH]", json.dumps(auto_res, ensure_ascii=False)[:3000], flush=True)
+        except Exception as auto_err:
+            print("[IG_AUTO_FUNNEL_DISPATCH_ERROR]", repr(auto_err), flush=True)
+
 
         # WEBHOOK_HUMAN_NOTIFY_V2
         try:
@@ -7982,3 +7988,351 @@ def telegram_funnel_status():
     }
 
 # === /TELEGRAM FUNNEL START RUNTIME V1 ===
+
+
+
+
+# === IG AUTO FUNNEL DISPATCHER V1 ===
+from urllib.parse import quote as _ig_funnel_quote
+import re as _ig_funnel_re
+
+def ig_funnel_now():
+    return datetime.now().isoformat(timespec="seconds")
+
+def ig_funnel_slug(x: str, max_len: int = 64):
+    x = str(x or "").strip().lower()
+    x = _ig_funnel_re.sub(r"[^a-z0-9а-яіїєґ_]+", "_", x, flags=_ig_funnel_re.IGNORECASE)
+    x = x.strip("_")
+    return (x[:max_len] or "")
+
+def ig_funnel_render(tpl: str, ctx: dict):
+    out = str(tpl or "")
+    for k, v in (ctx or {}).items():
+        out = out.replace("{{" + str(k) + "}}", str(v or ""))
+    return out
+
+def ig_funnel_bot_username(cfg_value=""):
+    return (
+        str(cfg_value or "").strip().lstrip("@")
+        or os.getenv("TELEGRAM_BOT_USERNAME", "").strip().lstrip("@")
+        or os.getenv("TG_BOT_USERNAME", "").strip().lstrip("@")
+        or os.getenv("BOT_USERNAME", "").strip().lstrip("@")
+    )
+
+def ig_funnel_init_tables():
+    con = sqlite3.connect(DB_PATH)
+    cur = con.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_sessions_dynamic (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            source_platform TEXT DEFAULT 'instagram',
+            source_user_id TEXT DEFAULT '',
+            source_username TEXT DEFAULT '',
+            source_message TEXT DEFAULT '',
+            source_webhook_message_id INTEGER DEFAULT 0,
+            funnel_key TEXT NOT NULL,
+            funnel_name TEXT DEFAULT '',
+            status TEXT DEFAULT 'created',
+            stage TEXT DEFAULT 'created',
+            telegram_chat_id TEXT DEFAULT '',
+            telegram_username TEXT DEFAULT '',
+            telegram_start_payload TEXT DEFAULT '',
+            telegram_deeplink TEXT DEFAULT '',
+            dm_text TEXT DEFAULT '',
+            started_by TEXT DEFAULT 'auto',
+            mode TEXT DEFAULT 'auto',
+            sent_at TEXT DEFAULT '',
+            error TEXT DEFAULT '',
+            raw_json TEXT DEFAULT ''
+        )
+    """)
+
+    con.commit()
+    con.close()
+
+def ig_funnel_get_configs():
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    rows = con.execute("""
+        SELECT *
+        FROM funnel_configs
+        WHERE active=1
+        ORDER BY priority ASC, id DESC
+    """).fetchall()
+    con.close()
+    return [dict(r) for r in rows]
+
+def ig_funnel_match_config(text: str):
+    text_norm = str(text or "").lower().strip()
+
+    configs = ig_funnel_get_configs()
+    for cfg in configs:
+        keywords = [
+            k.strip().lower()
+            for k in str(cfg.get("trigger_keywords") or "").split(",")
+            if k.strip()
+        ]
+        for kw in keywords:
+            if kw and kw in text_norm:
+                return cfg, kw
+
+    default_key = os.getenv("FUNNEL_AUTOSTART_DEFAULT_KEY", "").strip()
+    if default_key:
+        for cfg in configs:
+            if str(cfg.get("funnel_key") or "") == default_key:
+                return cfg, "__default__"
+
+    return None, ""
+
+def ig_funnel_start_payload(funnel_key: str, source_user_id: str):
+    raw = f"funnel_{funnel_key}__ig_{source_user_id}"
+    raw = _ig_funnel_re.sub(r"[^A-Za-z0-9_]+", "_", raw).strip("_")
+    return raw[:64]
+
+def ig_funnel_deeplink(cfg: dict, start_payload: str):
+    bot = ig_funnel_bot_username(cfg.get("telegram_bot_username") or "")
+    if not bot:
+        return ""
+    return f"https://t.me/{bot}?start={_ig_funnel_quote(start_payload)}"
+
+def ig_funnel_default_dm():
+    return (
+        "🌿 Я підготувала для тебе безкоштовний простір «{{funnel_name}}».\\n\\n"
+        "👇 Почни тут:\\n{{telegram_deeplink}}"
+    )
+
+def ig_send_dm_text(recipient_id: str, text: str):
+    token = (
+        os.getenv("IG_ACCESS_TOKEN", "").strip()
+        or os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("META_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("PAGE_ACCESS_TOKEN", "").strip()
+    )
+
+    if not token:
+        return {"ok": False, "error": "no IG/FB PAGE access token env"}
+
+    api_ver = os.getenv("META_GRAPH_VERSION", "v20.0").strip()
+    url = f"https://graph.facebook.com/{api_ver}/me/messages"
+
+    payload = {
+        "recipient": {"id": str(recipient_id)},
+        "message": {"text": text},
+        "messaging_type": "RESPONSE"
+    }
+
+    r = requests.post(
+        url,
+        params={"access_token": token},
+        json=payload,
+        timeout=30,
+    )
+
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text}
+
+    return {
+        "ok": r.status_code < 300 and "error" not in data,
+        "status_code": r.status_code,
+        "response": data,
+    }
+
+def ig_funnel_create_session_and_maybe_send(sender_id: str, text: str, raw_item: dict, webhook_message_id: int = 0):
+    ig_funnel_init_tables()
+
+    cfg, matched_kw = ig_funnel_match_config(text)
+    if not cfg:
+        return {
+            "ok": False,
+            "skipped": True,
+            "reason": "no_funnel_match",
+            "text": text,
+        }
+
+    funnel_key = str(cfg.get("funnel_key") or "").strip()
+    funnel_name = str(cfg.get("funnel_name") or funnel_key).strip()
+
+    start_payload = ig_funnel_start_payload(funnel_key, sender_id)
+    deeplink = ig_funnel_deeplink(cfg, start_payload)
+
+    if not deeplink:
+        return {
+            "ok": False,
+            "error": "telegram bot username missing",
+            "funnel_key": funnel_key,
+        }
+
+    ctx = {
+        "funnel_key": funnel_key,
+        "funnel_name": funnel_name,
+        "source_user_id": sender_id,
+        "source_message": text,
+        "telegram_deeplink": deeplink,
+        "telegram_channel_url": cfg.get("telegram_channel_url") or "",
+        "target_url": cfg.get("target_url") or "",
+    }
+
+    dm_template = str(cfg.get("dm_template") or "").strip() or ig_funnel_default_dm()
+    dm_text = ig_funnel_render(dm_template, ctx)
+
+    now = ig_funnel_now()
+    con = sqlite3.connect(DB_PATH)
+    con.row_factory = sqlite3.Row
+    cur = con.cursor()
+
+    existing = cur.execute("""
+        SELECT *
+        FROM funnel_sessions_dynamic
+        WHERE source_platform='instagram'
+          AND source_user_id=?
+          AND funnel_key=?
+          AND status NOT IN ('closed','cancelled','error')
+        ORDER BY id DESC
+        LIMIT 1
+    """, (sender_id, funnel_key)).fetchone()
+
+    if existing:
+        session_id = existing["id"]
+        con.close()
+        return {
+            "ok": True,
+            "reused": True,
+            "session_id": session_id,
+            "funnel_key": funnel_key,
+            "matched_kw": matched_kw,
+            "telegram_deeplink": existing["telegram_deeplink"],
+            "dm_text": existing["dm_text"],
+        }
+
+    cur.execute("""
+        INSERT INTO funnel_sessions_dynamic (
+            created_at, updated_at,
+            source_platform, source_user_id, source_message, source_webhook_message_id,
+            funnel_key, funnel_name, status, stage,
+            telegram_start_payload, telegram_deeplink,
+            dm_text, started_by, mode, raw_json
+        )
+        VALUES (?, ?, 'instagram', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'auto', 'auto', ?)
+    """, (
+        now, now,
+        sender_id, text, int(webhook_message_id or 0),
+        funnel_key, funnel_name,
+        "created", "ig_webhook_matched",
+        start_payload, deeplink,
+        dm_text,
+        json.dumps(raw_item or {}, ensure_ascii=False),
+    ))
+
+    session_id = cur.lastrowid
+    con.commit()
+    con.close()
+
+    auto_send = os.getenv("FUNNEL_AUTO_SEND_DM", "0").strip() == "1"
+    send_result = None
+
+    if auto_send:
+        send_result = ig_send_dm_text(sender_id, dm_text)
+
+        con = sqlite3.connect(DB_PATH)
+        cur = con.cursor()
+        if send_result.get("ok"):
+            cur.execute("""
+                UPDATE funnel_sessions_dynamic
+                SET status='sent',
+                    stage='ig_dm_sent',
+                    sent_at=?,
+                    updated_at=?
+                WHERE id=?
+            """, (now, now, session_id))
+        else:
+            cur.execute("""
+                UPDATE funnel_sessions_dynamic
+                SET status='send_error',
+                    error=?,
+                    updated_at=?
+                WHERE id=?
+            """, (json.dumps(send_result, ensure_ascii=False), now, session_id))
+        con.commit()
+        con.close()
+
+    try:
+        from telegram_safe_router import send_safe
+        send_safe({
+            "purpose": "planner_internal",
+            "text": (
+                "🧲 AUTO FUNNEL DISPATCH\\n"
+                f"sender={sender_id}\\n"
+                f"text={text}\\n"
+                f"funnel={funnel_key}\\n"
+                f"matched={matched_kw}\\n"
+                f"session_id={session_id}\\n"
+                f"auto_send={auto_send}\\n\\n"
+                f"{dm_text}"
+            )
+        })
+    except Exception as e:
+        print("[IG_AUTO_FUNNEL_NOTIFY_ERROR]", repr(e), flush=True)
+
+    return {
+        "ok": True,
+        "reused": False,
+        "session_id": session_id,
+        "funnel_key": funnel_key,
+        "matched_kw": matched_kw,
+        "telegram_deeplink": deeplink,
+        "dm_text": dm_text,
+        "auto_send": auto_send,
+        "send_result": send_result,
+    }
+
+def ig_auto_funnel_dispatch_payload(payload: dict, saved_count: int = 0):
+    if os.getenv("FUNNEL_AUTODISPATCH_ENABLED", "1").strip() != "1":
+        return {"ok": True, "disabled": True}
+
+    results = []
+
+    for entry in payload.get("entry") or []:
+        for m in entry.get("messaging") or []:
+            sender_id = str((m.get("sender") or {}).get("id") or "").strip()
+            msg = m.get("message") or {}
+
+            text = (
+                msg.get("text")
+                or (msg.get("quick_reply") or {}).get("payload")
+                or (msg.get("reaction") or {}).get("emoji")
+                or (m.get("reaction") or {}).get("emoji")
+                or ""
+            )
+
+            text = str(text or "").strip()
+
+            if not sender_id:
+                continue
+
+            if not text and not os.getenv("FUNNEL_AUTOSTART_DEFAULT_KEY", "").strip():
+                results.append({"ok": False, "skipped": True, "reason": "empty_text_no_default", "sender_id": sender_id})
+                continue
+
+            results.append(
+                ig_funnel_create_session_and_maybe_send(
+                    sender_id=sender_id,
+                    text=text,
+                    raw_item=m,
+                    webhook_message_id=0,
+                )
+            )
+
+    return {"ok": True, "saved_count": saved_count, "results": results}
+
+@app.post("/api/funnels/runtime/auto-dispatch-test")
+def ig_auto_dispatch_test(payload: dict = Body(default={})):
+    sender_id = str(payload.get("sender_id") or "test_auto_1")
+    text = str(payload.get("text") or "Вага")
+    return ig_funnel_create_session_and_maybe_send(sender_id, text, payload, 0)
+
+# === /IG AUTO FUNNEL DISPATCHER V1 ===
