@@ -782,8 +782,6 @@
 <button class="btn primary" onclick="tgLoadChats()">🔄 Оновити чати</button>
           <button class="btn" onclick="tgOpenGroupsModal()">📋 Перелік груп</button>
           <button class="btn" onclick="tgSeedDefaultChats()">🧩 Відновити канали</button>
-          <button class="btn" onclick="tgBackupExport()">💾 Backup Telegram</button>
-          <button class="btn" onclick="tgBackupImport()">♻️ Restore Telegram</button>
           <button class="btn" onclick="tgPullUpdates()">📥 Забрати updates</button>
           <button class="btn" onclick="tgSendTest()">📨 Тест розсилки</button>
         </div>
@@ -1702,53 +1700,7 @@ async function tgSeedDefaultChats() {
   if (typeof tgLoadChats === 'function') await tgLoadChats();
 }
 
-async function tgBackupExport() {
-  const status = document.getElementById('tgStatus');
-  if (status) status.innerText = '💾 Створюю Telegram backup...';
-  const res = await fetch('/api/telegram/backup/export');
-  const data = await res.json();
-
-  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'telegram-backup.json';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-
-  if (status) status.innerText = `✅ Backup готовий. Чатів: ${data.count || 0}`;
-}
-
-async function tgBackupImport() {
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'application/json';
-
-  input.onchange = async () => {
-    const file = input.files && input.files[0];
-    if (!file) return;
-
-    const status = document.getElementById('tgStatus');
-    if (status) status.innerText = '♻️ Імпортую Telegram backup...';
-
-    const payload = JSON.parse(await file.text());
-    const res = await fetch('/api/telegram/backup/import', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(payload)
-    });
-    const data = await res.json();
-
-    if (status) status.innerText = data.ok ? `✅ Restore готовий. Імпортовано: ${data.imported}` : `❌ ${data.error || 'restore error'}`;
-    if (typeof tgLoadChats === 'function') await tgLoadChats();
-  };
-
-  input.click();
-}
-
 window.tgSeedDefaultChats = tgSeedDefaultChats;
-window.tgBackupExport = tgBackupExport;
-window.tgBackupImport = tgBackupImport;
 </script>
 
   <script src="/static/js/telegram-groups-modal.js"></script>
