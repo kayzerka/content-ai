@@ -1718,21 +1718,77 @@ window.tgSeedDefaultChats = tgSeedDefaultChats;
 
 
 
+
 <script>
-/* FUNNELS RESTORE DATA BUTTON V3 */
+/* FUNNELS FULL RESTORE V4 */
 async function restoreFunnelsSeedData() {
   const root = document.getElementById('funnels-native-root');
-  if (root) root.innerHTML = '<div class="muted" style="padding:12px;">🧩 Відновлюю конструктори з reaction plans...</div>';
 
-  const res = await fetch('/api/funnels/backup/seed_from_reaction_plans', {method:'POST'});
-  const data = await res.json();
+  try {
+    if (root) {
+      root.innerHTML = `
+        <div class="muted" style="padding:12px;">
+          🧩 Відновлюю:
+          <br>• воронки
+          <br>• ліди
+          <br>• action plans
+          <br>• steps/sessions
+          <br>• reaction plans
+        </div>
+      `;
+    }
 
-  if (root) root.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+    // 1 export current bundle
+    const exp = await fetch('/api/funnels/backup/export');
+    const expText = await exp.text();
 
-  if (typeof window.renderFunnelsNativeTab === 'function') {
-    setTimeout(() => window.renderFunnelsNativeTab(), 500);
+    let exportData = {};
+    try {
+      exportData = JSON.parse(expText);
+    } catch(e) {
+      throw new Error("backup/export returned non-json: " + expText.slice(0,200));
+    }
+
+    // 2 import bundle back
+    const imp = await fetch('/api/funnels/backup/import', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(exportData)
+    });
+
+    const impText = await imp.text();
+
+    let importData = {};
+    try {
+      importData = JSON.parse(impText);
+    } catch(e) {
+      throw new Error("backup/import returned non-json: " + impText.slice(0,200));
+    }
+
+    if (root) {
+      root.innerHTML = `<pre>${JSON.stringify(importData, null, 2)}</pre>`;
+    }
+
+    // rerender constructor
+    if (typeof window.renderFunnelsNativeTab === 'function') {
+      setTimeout(() => window.renderFunnelsNativeTab(), 800);
+    }
+
+  } catch(err) {
+    console.error(err);
+
+    if (root) {
+      root.innerHTML = `
+        <pre style="color:#ff8080;">
+❌ Restore error
+
+${String(err)}
+        </pre>
+      `;
+    }
   }
 }
+
 window.restoreFunnelsSeedData = restoreFunnelsSeedData;
 </script>
 
