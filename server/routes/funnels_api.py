@@ -1196,6 +1196,8 @@ def funnel_leads_upsert(item: dict):
     source_row_id = int(item.get("source_row_id") or 0)
     external_user_id = str(item.get("external_user_id") or "")
     username = str(item.get("username") or "")
+    if not username:
+        username = funnel_lead_extract_username(item.get("raw") or item)
     text = str(item.get("text") or "")
 
     matched_key = str(item.get("matched_funnel_key") or "")
@@ -1730,3 +1732,111 @@ def funnel_lead_create(payload: Dict[str, Any]):
     }
 
 # === /MANUAL FUNNEL LEAD CREATE V1 ===
+
+
+
+
+# === FUNNEL LEAD NAME ENRICH V1 ===
+def funnel_lead_extract_username(raw: dict):
+    if not isinstance(raw, dict):
+        return ""
+
+    for k in ["username", "source_username", "sender_username", "name", "full_name"]:
+        v = raw.get(k)
+        if v:
+            return str(v)
+
+    frm = raw.get("from") or {}
+    if isinstance(frm, dict):
+        return str(frm.get("username") or frm.get("name") or "")
+
+    sender = raw.get("sender") or {}
+    if isinstance(sender, dict):
+        return str(sender.get("username") or sender.get("name") or "")
+
+    return ""
+
+def funnel_lead_graph_profile(user_id: str):
+    token = (
+        os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("META_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("IG_ACCESS_TOKEN", "").strip()
+    )
+    if not token or not user_id:
+        return {}
+
+    try:
+        import requests
+        ver = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
+        r = requests.get(
+            f"https://graph.facebook.com/{ver}/{user_id}",
+            params={
+                "fields": "id,username,name",
+                "access_token": token,
+            },
+            timeout=15,
+        )
+        data = r.json()
+        if isinstance(data, dict) and not data.get("error"):
+            return data
+    except Exception as e:
+        print("[FUNNEL_LEAD_GRAPH_PROFILE_ERROR]", repr(e), flush=True)
+
+    return {}
+
+@router.post("/leads/enrich")
+def funnel_leads_enrich(payload: Dict[str, Any] = None):
+    payload = payload or {}
+    limit = int(payload.get("limit") or 500)
+    limit = max(1, min(limit, 2000))
+
+    funnel_leads_init()
+
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    rows = con.execute("""
+        SELECT *
+        FROM funnel_leads
+        WHERE username='' OR username IS NULL OR username=external_user_id
+        ORDER BY id DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
+
+    updated = 0
+    checked = 0
+
+    for r in rows:
+        checked += 1
+        d = dict(r)
+        raw = {}
+        try:
+            raw = json.loads(d.get("raw_json") or "{}")
+        except Exception:
+            raw = {}
+
+        username = funnel_lead_extract_username(raw)
+
+        if not username:
+            profile = funnel_lead_graph_profile(d.get("external_user_id") or "")
+            username = profile.get("username") or profile.get("name") or ""
+
+        if username and username != d.get("username"):
+            con.execute("""
+                UPDATE funnel_leads
+                SET username=?, updated_at=?
+                WHERE id=?
+            """, (username, dyn_now(), d["id"]))
+            updated += 1
+
+    con.commit()
+    con.close()
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "checked": checked,
+        "updated": updated,
+    }
+
+# === /FUNNEL LEAD NAME ENRICH V1 ===
