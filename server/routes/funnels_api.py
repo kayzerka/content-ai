@@ -1113,3 +1113,308 @@ def funnels_backup_counts():
 
 # === /FUNNEL BACKUP RESTORE V2 ===
 
+
+
+
+
+# === FUNNEL LEAD INBOX V1 ===
+def funnel_leads_init():
+    dyn_init()
+    con = dyn_con()
+    cur = con.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+
+            source_platform TEXT DEFAULT 'instagram',
+            source_table TEXT DEFAULT '',
+            source_row_id INTEGER DEFAULT 0,
+
+            external_user_id TEXT DEFAULT '',
+            username TEXT DEFAULT '',
+            text TEXT DEFAULT '',
+
+            matched_funnel_key TEXT DEFAULT '',
+            matched_funnel_name TEXT DEFAULT '',
+            status TEXT DEFAULT 'new',
+
+            raw_json TEXT DEFAULT '',
+
+            UNIQUE(source_platform, source_table, source_row_id)
+        )
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS ix_funnel_leads_user
+        ON funnel_leads(source_platform, external_user_id)
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS ix_funnel_leads_status
+        ON funnel_leads(status, created_at)
+    """)
+    con.commit()
+    con.close()
+
+def funnel_leads_match_funnel(text: str):
+    text_norm = str(text or "").lower().strip()
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    rows = con.execute("""
+        SELECT *
+        FROM funnel_configs
+        WHERE active=1
+        ORDER BY priority ASC, id DESC
+    """).fetchall()
+    con.close()
+
+    for r in rows:
+        f = dict(r)
+        kws = [
+            k.strip().lower()
+            for k in str(f.get("trigger_keywords") or "").split(",")
+            if k.strip()
+        ]
+        for kw in kws:
+            if kw and kw in text_norm:
+                return f.get("funnel_key") or "", f.get("funnel_name") or "", kw
+
+    return "", "", ""
+
+def funnel_leads_upsert(item: dict):
+    funnel_leads_init()
+
+    source_platform = str(item.get("source_platform") or "instagram")
+    source_table = str(item.get("source_table") or "")
+    source_row_id = int(item.get("source_row_id") or 0)
+    external_user_id = str(item.get("external_user_id") or "")
+    username = str(item.get("username") or "")
+    text = str(item.get("text") or "")
+
+    matched_key = str(item.get("matched_funnel_key") or "")
+    matched_name = str(item.get("matched_funnel_name") or "")
+
+    if not matched_key:
+        matched_key, matched_name, _kw = funnel_leads_match_funnel(text)
+
+    now = dyn_now()
+
+    con = dyn_con()
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO funnel_leads (
+            created_at, updated_at,
+            source_platform, source_table, source_row_id,
+            external_user_id, username, text,
+            matched_funnel_key, matched_funnel_name,
+            status, raw_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source_platform, source_table, source_row_id) DO UPDATE SET
+            updated_at=excluded.updated_at,
+            external_user_id=excluded.external_user_id,
+            username=excluded.username,
+            text=excluded.text,
+            matched_funnel_key=CASE
+                WHEN funnel_leads.matched_funnel_key='' OR funnel_leads.matched_funnel_key IS NULL
+                THEN excluded.matched_funnel_key
+                ELSE funnel_leads.matched_funnel_key
+            END,
+            matched_funnel_name=CASE
+                WHEN funnel_leads.matched_funnel_name='' OR funnel_leads.matched_funnel_name IS NULL
+                THEN excluded.matched_funnel_name
+                ELSE funnel_leads.matched_funnel_name
+            END,
+            raw_json=excluded.raw_json
+    """, (
+        item.get("created_at") or now,
+        now,
+        source_platform,
+        source_table,
+        source_row_id,
+        external_user_id,
+        username,
+        text,
+        matched_key,
+        matched_name,
+        str(item.get("status") or "new"),
+        json.dumps(item.get("raw") or item, ensure_ascii=False),
+    ))
+
+    con.commit()
+    con.close()
+
+def funnel_leads_ingest_from_existing(limit: int = 500):
+    funnel_leads_init()
+    limit = max(1, min(int(limit or 500), 5000))
+
+    imported = {
+        "ig_reactions": 0,
+        "ig_ai_reply_drafts": 0,
+        "instagram_webhook_messages": 0,
+    }
+
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    # 1) ig_reactions
+    try:
+        rows = con.execute("""
+            SELECT *
+            FROM ig_reactions
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        for r in rows:
+            d = dict(r)
+            funnel_leads_upsert({
+                "created_at": d.get("created_at"),
+                "source_platform": d.get("platform") or "instagram",
+                "source_table": "ig_reactions",
+                "source_row_id": d.get("id"),
+                "external_user_id": d.get("external_user_id") or d.get("sender_id") or "",
+                "username": d.get("username") or "",
+                "text": d.get("reaction_text") or d.get("text") or d.get("comment_text") or "",
+                "matched_funnel_key": d.get("matched_plan_key") or d.get("selected_funnel_plan_key") or "",
+                "matched_funnel_name": d.get("matched_plan_name") or d.get("selected_funnel_plan_name") or "",
+                "raw": d,
+            })
+            imported["ig_reactions"] += 1
+    except Exception as e:
+        imported["ig_reactions_error"] = str(e)
+
+    # 2) ig_ai_reply_drafts
+    try:
+        rows = con.execute("""
+            SELECT *
+            FROM ig_ai_reply_drafts
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        for r in rows:
+            d = dict(r)
+            funnel_leads_upsert({
+                "created_at": d.get("created_at"),
+                "source_platform": "instagram",
+                "source_table": "ig_ai_reply_drafts",
+                "source_row_id": d.get("id"),
+                "external_user_id": d.get("external_user_id") or d.get("sender_id") or "",
+                "username": d.get("username") or "",
+                "text": d.get("incoming_text") or d.get("reaction_text") or d.get("direct_reply") or "",
+                "matched_funnel_key": d.get("selected_funnel_plan_key") or "",
+                "matched_funnel_name": d.get("selected_funnel_plan_name") or "",
+                "raw": d,
+            })
+            imported["ig_ai_reply_drafts"] += 1
+    except Exception as e:
+        imported["ig_ai_reply_drafts_error"] = str(e)
+
+    con.close()
+
+    # 3) instagram_webhook_messages external DB
+    try:
+        if Path(IG_WEBHOOK_DB_PATH).exists():
+            con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
+            con_ig.row_factory = sqlite3.Row
+            rows = con_ig.execute("""
+                SELECT *
+                FROM instagram_webhook_messages
+                ORDER BY id DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            con_ig.close()
+
+            for r in rows:
+                d = dict(r)
+                funnel_leads_upsert({
+                    "created_at": d.get("created_at"),
+                    "source_platform": "instagram",
+                    "source_table": "instagram_webhook_messages",
+                    "source_row_id": d.get("id"),
+                    "external_user_id": d.get("sender_id") or "",
+                    "username": "",
+                    "text": d.get("text") or "",
+                    "matched_funnel_key": "",
+                    "matched_funnel_name": "",
+                    "raw": d,
+                })
+                imported["instagram_webhook_messages"] += 1
+    except Exception as e:
+        imported["instagram_webhook_messages_error"] = str(e)
+
+    return imported
+
+@router.post("/leads/ingest")
+def funnel_leads_ingest(payload: Dict[str, Any] = None):
+    payload = payload or {}
+    limit = int(payload.get("limit") or 500)
+    imported = funnel_leads_ingest_from_existing(limit=limit)
+
+    try:
+        backup = _build_funnel_full_backup()
+        snap = _send_backup_json_to_telegram(backup, reason="after_leads_ingest")
+    except Exception as e:
+        snap = {"ok": False, "error": str(e)}
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "imported": imported,
+        "snapshot": snap,
+    }
+
+@router.get("/leads/list")
+def funnel_leads_list(limit: int = 200, status: str = ""):
+    funnel_leads_init()
+    limit = max(1, min(int(limit or 200), 1000))
+
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    if status:
+        rows = con.execute("""
+            SELECT *
+            FROM funnel_leads
+            WHERE status=?
+            ORDER BY id DESC
+            LIMIT ?
+        """, (status, limit)).fetchall()
+    else:
+        rows = con.execute("""
+            SELECT *
+            FROM funnel_leads
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+    con.close()
+    return {"ok": True, "status": "ok", "items": [dict(r) for r in rows]}
+
+@router.post("/leads/{lead_id}/mark")
+def funnel_lead_mark(lead_id: int, payload: Dict[str, Any]):
+    funnel_leads_init()
+    new_status = str(payload.get("status") or "processed").strip()
+
+    con = dyn_con()
+    cur = con.cursor()
+    cur.execute("""
+        UPDATE funnel_leads
+        SET status=?, updated_at=?
+        WHERE id=?
+    """, (new_status, dyn_now(), int(lead_id)))
+    changed = cur.rowcount
+    con.commit()
+    con.close()
+
+    return {"ok": True, "status": "ok", "updated": changed, "lead_id": lead_id}
+
+# Override runtime leads to use normalized funnel_leads inbox first
+@router.get("/runtime/leads-v2")
+def dyn_runtime_leads_v2(limit: int = 100):
+    funnel_leads_ingest_from_existing(limit=500)
+    return funnel_leads_list(limit=limit)
+
+# === /FUNNEL LEAD INBOX V1 ===

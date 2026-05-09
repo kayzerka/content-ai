@@ -80,7 +80,12 @@
   async function loadAll(){
     const funnels = await api("/api/funnels/configs/list");
     state.funnels = funnels.items || [];
-    const leads = await api("/api/funnels/runtime/leads?limit=50");
+    await api("/api/funnels/leads/ingest", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({limit:500})
+    });
+    const leads = await api("/api/funnels/leads/list?limit=100");
     state.leads = leads.items || [];
     const sessions = await api("/api/funnels/runtime/sessions?limit=50");
     state.sessions = sessions.items || [];
@@ -262,6 +267,9 @@
     return `
       <div class="fu-card">
         <h4>Ліди</h4>
+        <div class="fu-row">
+          <button class="primary" id="fu-ingest-leads">🔄 Оновити ліди з Instagram</button>
+        </div>
         <table class="fu-table">
           <thead><tr><th>Дата</th><th>Джерело</th><th>User</th><th>Текст</th><th>Matched</th><th>Запуск</th></tr></thead>
           <tbody>
@@ -269,14 +277,14 @@
               <tr>
                 <td>${esc(l.created_at || "")}</td>
                 <td>${esc(l.source_table || "")}</td>
-                <td>${esc(l.source_user_id || "")}<br><span class="fu-muted">${esc(l.username || "")}</span></td>
+                <td>${esc(l.source_user_id || l.external_user_id || "")}<br><span class="fu-muted">${esc(l.username || "")}</span></td>
                 <td>${esc((l.text || "").slice(0,140))}</td>
-                <td>${esc(l.matched_plan_key || "")}</td>
+                <td>${esc(l.matched_plan_key || l.matched_funnel_key || "")}</td>
                 <td>
-                  <select data-funnel-select="${esc(l.source_user_id || "")}">
+                  <select data-funnel-select="${esc(l.source_user_id || l.external_user_id || "")}">
                     ${state.funnels.map(f => `<option value="${esc(f.funnel_key)}" ${f.funnel_key === l.matched_plan_key ? "selected" : ""}>${esc(f.funnel_name || f.funnel_key)}</option>`).join("")}
                   </select>
-                  <button class="primary" data-start-lead="${esc(l.source_user_id || "")}" data-lead-text="${esc(l.text || "")}" data-lead-user="${esc(l.username || "")}">Запустити</button>
+                  <button class="primary" data-start-lead="${esc(l.source_user_id || l.external_user_id || "")}" data-lead-text="${esc(l.text || "")}" data-lead-user="${esc(l.username || "")}">Запустити</button>
                 </td>
               </tr>
             `).join("") || `<tr><td colspan="6" class="fu-muted">Лідів не знайдено.</td></tr>`}
@@ -545,6 +553,16 @@
     document.getElementById("fu-leads").onclick = async () => { state.view = "leads"; await render(); };
     document.getElementById("fu-sessions").onclick = async () => { state.view = "sessions"; await render(); };
     document.getElementById("fu-status").onclick = async () => show(await api("/api/funnels/runtime/status"));
+    const ingestLeadsBtn = document.getElementById("fu-ingest-leads");
+    if (ingestLeadsBtn) ingestLeadsBtn.onclick = async () => {
+      const res = await api("/api/funnels/leads/ingest", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({limit:1000})
+      });
+      show(res);
+      await render();
+    };
     const backupBtn = document.getElementById("fu-backup");
     if (backupBtn) backupBtn.onclick = async () => { state.view = "backup"; await render(); };
 
