@@ -916,6 +916,80 @@
         "created_ts": 1778167151,
         "executed_ts": 1778167155
       }
+    ],
+    "funnel_configs": [
+      {
+        "funnel_key": "reason",
+        "name": "ПРИЧИНА / пошук кореня",
+        "description": "мʼяко перевести людину в direct на діагностику запиту через слово ПРИЧИНА",
+        "trigger_type": "keyword",
+        "trigger_value": "причина,чому,корінь,звідки,повторюється,не розумію",
+        "output_type": "telegram_bot",
+        "output_target": "@content_ai_planner_bot",
+        "enabled": 1,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-05T12:04:46"
+      },
+      {
+        "funnel_key": "session",
+        "name": "СЕСІЯ / запис",
+        "description": "вести до запису або консультації",
+        "trigger_type": "keyword",
+        "trigger_value": "сесія,запис,хочу,консультація,вартість,ціна,прайс,як потрапити",
+        "output_type": "telegram_bot",
+        "output_target": "@content_ai_planner_bot",
+        "enabled": 1,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-05T12:04:46"
+      },
+      {
+        "funnel_key": "fear",
+        "name": "СТРАХ / зняття заперечення",
+        "description": "зняти страх і пояснити безпечність без обіцянок",
+        "trigger_type": "keyword",
+        "trigger_value": "страшно,боюсь,страх,небезпечно,раптом,побачу,травма,контроль",
+        "output_type": "telegram_bot",
+        "output_target": "@content_ai_planner_bot",
+        "enabled": 1,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-05T12:04:46"
+      },
+      {
+        "funnel_key": "bv",
+        "name": "БВ / пояснення методу",
+        "description": "пояснити БВ простими словами і перевести до запиту",
+        "trigger_type": "keyword",
+        "trigger_value": "бв,базові вірування,вірування,перепрошивка,система",
+        "output_type": "telegram_bot",
+        "output_target": "@content_ai_planner_bot",
+        "enabled": 1,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-05T12:04:46"
+      },
+      {
+        "funnel_key": "money",
+        "name": "ГРОШІ / блоки доходу",
+        "description": "вивести людину на повторюваний фінансовий сценарій",
+        "trigger_type": "keyword",
+        "trigger_value": "гроші,дохід,заробіток,борги,ціна,нема грошей,фінанси",
+        "output_type": "telegram_bot",
+        "output_target": "@content_ai_planner_bot",
+        "enabled": 1,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-05T12:04:46"
+      },
+      {
+        "funnel_key": "general_engagement",
+        "name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
+        "description": "мʼяко продовжити діалог і зрозуміти запит без продажу",
+        "trigger_type": "keyword",
+        "trigger_value": "відгукнулось,цікаво,дякую,клас,супер,актуально",
+        "output_type": "telegram_bot",
+        "output_target": "@content_ai_planner_bot",
+        "enabled": 1,
+        "created_at": "2026-05-05 10:10:24",
+        "updated_at": "2026-05-05 10:10:24"
+      }
     ]
   }
 }

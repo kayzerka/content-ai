@@ -1000,8 +1000,18 @@ def funnels_backup_import_full(payload: Dict[str, Any]):
         # Backward compatibility with old format
         if backup_type == "funnels_dynamic_v1":
             tables = {
-                "funnel_configs": payload.get("funnels") or [],
-                "funnel_steps_dynamic": payload.get("steps") or [],
+                "funnel_configs": (
+                    (payload.get("tables") or {}).get("funnel_configs")
+                    or payload.get("funnel_configs")
+                    or payload.get("funnels")
+                    or []
+                ),
+                "funnel_steps_dynamic": (
+                    (payload.get("tables") or {}).get("funnel_steps_dynamic")
+                    or payload.get("funnel_steps_dynamic")
+                    or payload.get("steps")
+                    or []
+                ),
             }
         else:
             tables = payload.get("tables") or {}
