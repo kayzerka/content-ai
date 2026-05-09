@@ -2649,3 +2649,173 @@ def funnel_leads_debug_list(limit: int = 50):
     }
 
 # === /FUNNEL LEADS DEBUG LIST V1 ===
+
+
+# === CONVERT LEGACY FUNNEL EVENTS FROM DB V1 ===
+@router.post("/restore/convert_legacy_events_db")
+def convert_legacy_funnel_events_from_db_v1():
+    import json, sqlite3
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+    created_configs = 0
+    created_steps = 0
+
+    try:
+        # ensure columns/tables
+        def _cols(table):
+            try:
+                return [r[1] for r in con.execute(f'PRAGMA table_info("{table}")').fetchall()]
+            except Exception:
+                return []
+
+        def _add_col(table, col, ddl):
+            if col not in _cols(table):
+                try:
+                    con.execute(f'ALTER TABLE "{table}" ADD COLUMN {ddl}')
+                except Exception:
+                    pass
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_configs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            funnel_key TEXT UNIQUE NOT NULL,
+            funnel_name TEXT DEFAULT '',
+            active INTEGER DEFAULT 1,
+            priority INTEGER DEFAULT 100,
+            source_platform TEXT DEFAULT 'instagram',
+            trigger_keywords TEXT DEFAULT '',
+            content_keywords TEXT DEFAULT '',
+            telegram_bot_username TEXT DEFAULT '',
+            telegram_channel_url TEXT DEFAULT '',
+            target_url TEXT DEFAULT '',
+            next_funnel_key TEXT DEFAULT '',
+            dm_template TEXT DEFAULT '',
+            start_payload_template TEXT DEFAULT '',
+            intro_text TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            settings_json TEXT DEFAULT ''
+        )
+        """)
+
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS funnel_steps_dynamic (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            funnel_key TEXT NOT NULL,
+            step_key TEXT NOT NULL,
+            step_order INTEGER DEFAULT 100,
+            active INTEGER DEFAULT 1,
+            trigger_stage TEXT DEFAULT '',
+            next_stage TEXT DEFAULT '',
+            message_text TEXT DEFAULT '',
+            button_text TEXT DEFAULT '',
+            button_url TEXT DEFAULT '',
+            delay_minutes INTEGER DEFAULT 0,
+            settings_json TEXT DEFAULT '',
+            UNIQUE(funnel_key, step_key)
+        )
+        """)
+
+        _add_col("funnel_configs", "name", "name TEXT DEFAULT ''")
+        _add_col("funnel_configs", "trigger_type", "trigger_type TEXT DEFAULT 'keyword'")
+        _add_col("funnel_configs", "trigger_value", "trigger_value TEXT DEFAULT ''")
+        _add_col("funnel_configs", "ai_prompt", "ai_prompt TEXT DEFAULT ''")
+
+        _add_col("funnel_steps_dynamic", "step_type", "step_type TEXT DEFAULT 'send_message'")
+        _add_col("funnel_steps_dynamic", "name", "name TEXT DEFAULT ''")
+        _add_col("funnel_steps_dynamic", "message_template", "message_template TEXT DEFAULT ''")
+        _add_col("funnel_steps_dynamic", "delay_seconds", "delay_seconds INTEGER DEFAULT 0")
+        _add_col("funnel_steps_dynamic", "config_json", "config_json TEXT DEFAULT '{}'")
+
+        # read imported legacy table from Render DB
+        try:
+            legacy_events = [dict(r) for r in con.execute('SELECT * FROM funnel_events ORDER BY id ASC').fetchall()]
+        except Exception as e:
+            return {"ok": False, "status": "error", "error": "funnel_events table missing", "details": repr(e)}
+
+        rows = [x for x in legacy_events if x.get("event_type") in ("funnel_created","funnel_updated","funnel_step_upserted","step_upserted")]
+        funnel_ids = sorted(set([str(x.get("funnel_id")) for x in rows if x.get("funnel_id") is not None]))
+
+        for fid in funnel_ids:
+            key = "legacy_funnel_" + str(fid)
+
+            exists = con.execute("SELECT id FROM funnel_configs WHERE funnel_key=? LIMIT 1", (key,)).fetchone()
+            if not exists:
+                con.execute("""
+                    INSERT INTO funnel_configs
+                    (funnel_key, funnel_name, name, active, trigger_type, trigger_value, trigger_keywords,
+                     dm_template, ai_prompt, created_at, updated_at)
+                    VALUES (?, ?, ?, 1, 'keyword', 'вага', 'вага',
+                            'Напиши в direct слово ВАГА — і я підкажу наступний крок.',
+                            'Legacy funnel restored from imported funnel_events',
+                            datetime('now'), datetime('now'))
+                """, (key, "Відновлена воронка #" + str(fid), "Відновлена воронка #" + str(fid)))
+                created_configs += 1
+
+            step_rows = [r for r in rows if str(r.get("funnel_id")) == str(fid) and r.get("event_type") in ("funnel_step_upserted","step_upserted")]
+
+            for idx, r in enumerate(step_rows, start=1):
+                try:
+                    pl = json.loads(r.get("payload_json") or "{}")
+                except Exception:
+                    pl = {}
+
+                step_id = pl.get("step_id") or idx
+                step_order = pl.get("step_order") or idx
+                step_type = pl.get("step_type") or "send_message"
+                step_name = pl.get("step_name") or ("Крок " + str(step_order))
+                cfg = pl.get("config") or {}
+
+                msg = cfg.get("text") or cfg.get("message") or cfg.get("prompt") or cfg.get("title") or ""
+
+                con.execute("""
+                    INSERT INTO funnel_steps_dynamic
+                    (funnel_key, step_key, step_order, step_type, name,
+                     message_template, message_text, delay_seconds, delay_minutes,
+                     config_json, settings_json, active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))
+                    ON CONFLICT(funnel_key, step_key) DO UPDATE SET
+                      step_order=excluded.step_order,
+                      step_type=excluded.step_type,
+                      name=excluded.name,
+                      message_template=excluded.message_template,
+                      message_text=excluded.message_text,
+                      delay_seconds=excluded.delay_seconds,
+                      delay_minutes=excluded.delay_minutes,
+                      config_json=excluded.config_json,
+                      settings_json=excluded.settings_json,
+                      active=1,
+                      updated_at=datetime('now')
+                """, (
+                    key,
+                    "legacy_step_" + str(step_id),
+                    int(step_order or idx),
+                    str(step_type),
+                    str(step_name),
+                    str(msg),
+                    str(msg),
+                    int(cfg.get("delay_seconds") or cfg.get("delay") or 0),
+                    int((cfg.get("delay_seconds") or cfg.get("delay") or 0) // 60) if isinstance((cfg.get("delay_seconds") or cfg.get("delay") or 0), int) else 0,
+                    json.dumps(cfg, ensure_ascii=False),
+                    json.dumps(cfg, ensure_ascii=False),
+                ))
+                created_steps += 1
+
+        con.commit()
+        return {
+            "ok": True,
+            "status": "ok",
+            "source": "render_db.funnel_events",
+            "legacy_events": len(legacy_events),
+            "legacy_funnels": len(funnel_ids),
+            "created_configs": created_configs,
+            "created_steps": created_steps,
+        }
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "convert_legacy_events_db", "error": repr(e)}
+    finally:
+        con.close()
+# === /CONVERT LEGACY FUNNEL EVENTS FROM DB V1 ===
