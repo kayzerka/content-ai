@@ -8356,7 +8356,8 @@ from pathlib import Path as _tg_Path
 from fastapi import Body as _tg_Body, UploadFile as _tg_UploadFile, File as _tg_File
 
 def _telegram_db_path_v1():
-    return str(_tg_Path("db/telegram.sqlite"))
+    import os as _tg_os
+    return _tg_os.getenv("TELEGRAM_DB_PATH", str(_tg_Path("data/telegram.sqlite")))
 
 def _telegram_backup_conn_v1():
     db_path = _telegram_db_path_v1()
