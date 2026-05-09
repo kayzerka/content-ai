@@ -2456,7 +2456,7 @@ def restore_local_funnels_bundle_v1():
 @router.post("/restore/convert_legacy_events")
 def convert_legacy_funnel_events_to_dynamic_v1():
     import json, sqlite3
-    con = db()
+    con = dyn_con()
     con.row_factory = sqlite3.Row
     created_configs = 0
     created_steps = 0
