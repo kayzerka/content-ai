@@ -8336,3 +8336,14 @@ def ig_auto_dispatch_test(payload: dict = Body(default={})):
     return ig_funnel_create_session_and_maybe_send(sender_id, text, payload, 0)
 
 # === /IG AUTO FUNNEL DISPATCHER V1 ===
+
+
+@app.get("/debug/meta-env")
+def debug_meta_env():
+    return {
+        "FB_PAGE_ID": os.getenv("FB_PAGE_ID", ""),
+        "IG_USER_ID": os.getenv("IG_USER_ID", ""),
+        "IG_ACCESS_TOKEN_len": len(os.getenv("IG_ACCESS_TOKEN", "")),
+        "META_GRAPH_VERSION": os.getenv("META_GRAPH_VERSION", ""),
+        "has_platform_instagram_hint": True,
+    }
