@@ -982,101 +982,104 @@ def funnels_backup_export_full():
 
 @router.post("/backup/import")
 def funnels_backup_import_full(payload: Dict[str, Any]):
-    dyn_init()
-
-    backup_type = payload.get("backup_type")
-    if backup_type not in ("funnels_full_v2", "funnels_dynamic_v1"):
-        return {
-            "ok": False,
-            "status": "error",
-            "error": "invalid backup_type",
-            "expected": "funnels_full_v2",
-        }
-
-    # Backward compatibility with old format
-    if backup_type == "funnels_dynamic_v1":
-        tables = {
-            "funnel_configs": payload.get("funnels") or [],
-            "funnel_steps_dynamic": payload.get("steps") or [],
-        }
-    else:
-        tables = payload.get("tables") or {}
-
-    con = dyn_con()
-    con.row_factory = sqlite3.Row
-
-    imported = {}
-
-    import_order = [
-        "funnel_configs",
-        "funnel_steps_dynamic",
-        "funnel_sessions_dynamic",
-        "ig_reaction_funnel_plans",
-        "ig_reactions",
-        "ig_ai_reply_drafts",
-    ]
-
-    for table in import_order:
-        rows = tables.get(table) or []
-        imported[table] = _insert_or_replace_rows(con, table, rows, preserve_id=True)
-
-    con.commit()
-    con.close()
-
-    # Restore IG webhook DB separately
-    imported_ig_webhook = 0
-    ig_rows = tables.get("instagram_webhook_messages") or []
-    if ig_rows:
-        try:
-            Path(IG_WEBHOOK_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-            con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
-            con_ig.row_factory = sqlite3.Row
-
-            con_ig.execute("""
-                CREATE TABLE IF NOT EXISTS instagram_webhook_messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    object TEXT,
-                    entry_id TEXT,
-                    event_time INTEGER,
-                    sender_id TEXT,
-                    recipient_id TEXT,
-                    timestamp INTEGER,
-                    mid TEXT UNIQUE,
-                    text TEXT,
-                    raw_json TEXT
+    try:
+        dyn_init()
+    
+        backup_type = payload.get("backup_type")
+        if backup_type not in ("funnels_full_v2", "funnels_dynamic_v1"):
+            return {
+                "ok": False,
+                "status": "error",
+                "error": "invalid backup_type",
+                "expected": "funnels_full_v2",
+            }
+    
+        # Backward compatibility with old format
+        if backup_type == "funnels_dynamic_v1":
+            tables = {
+                "funnel_configs": payload.get("funnels") or [],
+                "funnel_steps_dynamic": payload.get("steps") or [],
+            }
+        else:
+            tables = payload.get("tables") or {}
+    
+        con = dyn_con()
+        con.row_factory = sqlite3.Row
+    
+        imported = {}
+    
+        import_order = [
+            "funnel_configs",
+            "funnel_steps_dynamic",
+            "funnel_sessions_dynamic",
+            "ig_reaction_funnel_plans",
+            "ig_reactions",
+            "ig_ai_reply_drafts",
+        ]
+    
+        for table in import_order:
+            rows = tables.get(table) or []
+            imported[table] = _insert_or_replace_rows(con, table, rows, preserve_id=True)
+    
+        con.commit()
+        con.close()
+    
+        # Restore IG webhook DB separately
+        imported_ig_webhook = 0
+        ig_rows = tables.get("instagram_webhook_messages") or []
+        if ig_rows:
+            try:
+                Path(IG_WEBHOOK_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+                con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
+                con_ig.row_factory = sqlite3.Row
+    
+                con_ig.execute("""
+                    CREATE TABLE IF NOT EXISTS instagram_webhook_messages (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                        object TEXT,
+                        entry_id TEXT,
+                        event_time INTEGER,
+                        sender_id TEXT,
+                        recipient_id TEXT,
+                        timestamp INTEGER,
+                        mid TEXT UNIQUE,
+                        text TEXT,
+                        raw_json TEXT
+                    )
+                """)
+    
+                imported_ig_webhook = _insert_or_replace_rows(
+                    con_ig,
+                    "instagram_webhook_messages",
+                    ig_rows,
+                    preserve_id=True
                 )
-            """)
-
-            imported_ig_webhook = _insert_or_replace_rows(
-                con_ig,
-                "instagram_webhook_messages",
-                ig_rows,
-                preserve_id=True
+    
+                con_ig.commit()
+                con_ig.close()
+            except Exception as e:
+                imported["instagram_webhook_messages_error"] = str(e)
+    
+        imported["instagram_webhook_messages"] = imported_ig_webhook
+    
+        if backup_type == "funnels_full_v2" and payload.get("telegram_bundle"):
+            imported["telegram_bundle"] = restore_telegram_backup_bundle(payload.get("telegram_bundle"))
+    
+        if backup_type == "funnels_full_v2" and payload.get("telegram_db"):
+            imported["telegram_db"] = _restore_sqlite_db_generic(
+                TELEGRAM_DB_PATH,
+                payload.get("telegram_db")
             )
-
-            con_ig.commit()
-            con_ig.close()
-        except Exception as e:
-            imported["instagram_webhook_messages_error"] = str(e)
-
-    imported["instagram_webhook_messages"] = imported_ig_webhook
-
-    if backup_type == "funnels_full_v2" and payload.get("telegram_bundle"):
-        imported["telegram_bundle"] = restore_telegram_backup_bundle(payload.get("telegram_bundle"))
-
-    if backup_type == "funnels_full_v2" and payload.get("telegram_db"):
-        imported["telegram_db"] = _restore_sqlite_db_generic(
-            TELEGRAM_DB_PATH,
-            payload.get("telegram_db")
-        )
-
-    return {
-        "ok": True,
-        "status": "ok",
-        "backup_type": backup_type,
-        "imported": imported,
-    }
+    
+        return {
+            "ok": True,
+            "status": "ok",
+            "backup_type": backup_type,
+            "imported": imported,
+        }
+    except Exception as e:
+        return {"ok": False, "status": "error", "where": "backup_import", "error": repr(e)}
 
 @router.get("/backup/counts")
 def funnels_backup_counts():
