@@ -3215,3 +3215,63 @@ def funnels_leads_list_safe_v1(limit: int = 50):
     finally:
         con.close()
 # === /SAFE FUNNEL LEADS LIST OVERRIDE V1 ===
+
+
+# === FULL FUNNELS RESTORE ORCHESTRATOR V1 ===
+@router.post("/restore/full_from_local_backup")
+def restore_full_funnels_from_local_backup_v1():
+    import json, os, urllib.request
+    from pathlib import Path
+
+    try:
+        render_url = os.getenv("RENDER_API", "https://content-ai-ps1k.onrender.com").rstrip("/")
+        backup_path = Path(os.getenv("FUNNELS_LOCAL_BACKUP_PATH", "backups/funnels-latest.json"))
+
+        if not backup_path.exists():
+            return {
+                "ok": False,
+                "status": "error",
+                "error": "local backup file not found",
+                "path": str(backup_path)
+            }
+
+        payload = json.loads(backup_path.read_text(encoding="utf-8"))
+        payload.pop("telegram_db", None)
+        payload.pop("telegram_bundle", None)
+
+        def post(path, body=None):
+            req = urllib.request.Request(
+                render_url + path,
+                data=json.dumps(body or {}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                raw = resp.read().decode("utf-8")
+            try:
+                return json.loads(raw)
+            except Exception:
+                return {"ok": False, "raw": raw}
+
+        report = {}
+
+        report["import_legacy_payload"] = post("/api/funnels/restore/import_legacy_payload", payload)
+        report["convert_legacy_events_db"] = post("/api/funnels/restore/convert_legacy_events_db")
+        report["convert_ig_reactions_to_leads"] = post("/api/funnels/restore/convert_ig_reactions_to_leads")
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "source": str(backup_path),
+            "render_url": render_url,
+            "report": report
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "status": "error",
+            "where": "full_restore_orchestrator",
+            "error": repr(e)
+        }
+# === /FULL FUNNELS RESTORE ORCHESTRATOR V1 ===
