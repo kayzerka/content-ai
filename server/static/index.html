@@ -1749,11 +1749,16 @@ async function restoreFunnelsSeedData() {
       throw new Error("backup/export returned non-json: " + expText.slice(0,200));
     }
 
-    // 2 import bundle back
+    // 2 import only funnel/content data.
+    // Telegram restore stays separate via /api/telegram/backup/seed_defaults.
+    const funnelsOnly = JSON.parse(JSON.stringify(exportData));
+    delete funnelsOnly.telegram_db;
+    delete funnelsOnly.telegram_bundle;
+
     const imp = await fetch('/api/funnels/backup/import', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(exportData)
+      body: JSON.stringify(funnelsOnly)
     });
 
     const impText = await imp.text();
