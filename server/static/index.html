@@ -1709,6 +1709,58 @@ window.tgSeedDefaultChats = tgSeedDefaultChats;
 <script src="/static/js/instagram-reaction-tab.js?v=1"></script>
 <script src="/static/js/instagram-reaction-modal.js?v=1"></script>
 <script src="/static/js/telegram-ai-scheduler-v1.js?v=1"></script>
+
+<script>
+/* FUNNELS RESTORE ONE BUTTON V2 */
+async function restoreFunnelsSeedData() {
+  const root = document.getElementById('funnels-native-root');
+  if (root) root.innerHTML = '<div class="muted" style="padding:12px;">🧩 Відновлюю дані воронок...</div>';
+
+  async function postJson(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: body ? JSON.stringify(body) : '{}'
+    });
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch(e) { data = {raw:text}; }
+    return {ok: res.ok, status: res.status, url, data};
+  }
+
+  async function getJson(url) {
+    const res = await fetch(url);
+    const text = await res.text();
+    let data = {};
+    try { data = JSON.parse(text); } catch(e) { data = {raw:text}; }
+    return {ok: res.ok, status: res.status, url, data};
+  }
+
+  let result = null;
+
+  // 1) пробуємо штатний snapshot endpoint
+  result = await postJson('/api/funnels/backup/snapshot', {restore:true, mode:'restore_latest'}).catch(e => ({ok:false, error:e.message}));
+
+  // 2) якщо snapshot endpoint не відновив — беремо поточний backup/export як перевірку доступності
+  if (!result.ok || result.data?.ok === false) {
+    const exported = await getJson('/api/funnels/backup/export').catch(e => ({ok:false, error:e.message}));
+    result = exported;
+
+    // якщо export має backup-структуру, пробуємо імпорт назад як refresh
+    if (exported.ok && exported.data) {
+      result = await postJson('/api/funnels/backup/import', exported.data).catch(e => ({ok:false, error:e.message}));
+    }
+  }
+
+  if (root) root.innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+
+  if (typeof window.renderFunnelsNativeTab === 'function') {
+    setTimeout(() => window.renderFunnelsNativeTab(), 500);
+  }
+}
+window.restoreFunnelsSeedData = restoreFunnelsSeedData;
+</script>
+
 <script src="/static/js/funnels-tab.js?v=native_tab_v1"></script>
 
 <script>
