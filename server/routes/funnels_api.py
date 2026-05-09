@@ -1840,3 +1840,245 @@ def funnel_leads_enrich(payload: Dict[str, Any] = None):
     }
 
 # === /FUNNEL LEAD NAME ENRICH V1 ===
+
+# === INSTAGRAM COMMENTS TO FUNNEL LEADS V1 ===
+def ig_comments_token():
+    return (
+        os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("META_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("IG_ACCESS_TOKEN", "").strip()
+    )
+
+def ig_comments_graph_get(path: str, params: dict):
+    import requests
+    ver = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
+    token = ig_comments_token()
+    if not token:
+        return {"ok": False, "error": "missing graph token"}
+
+    url = f"https://graph.facebook.com/{ver}/{path.lstrip('/')}"
+    q = dict(params or {})
+    q["access_token"] = token
+
+    r = requests.get(url, params=q, timeout=45)
+    try:
+        data = r.json()
+    except Exception:
+        data = {"raw": r.text}
+
+    if r.status_code >= 300 or data.get("error"):
+        return {
+            "ok": False,
+            "status_code": r.status_code,
+            "error": data.get("error") or data,
+            "url": url,
+        }
+
+    data["ok"] = True
+    return data
+
+def ig_comment_stable_row_id(comment_id: str):
+    import zlib
+    return int(zlib.crc32(str(comment_id or "").encode("utf-8")))
+
+@router.post("/instagram/comments/sync")
+def funnel_sync_instagram_comments(payload: Dict[str, Any] = None):
+    """
+    Pull Instagram media comments -> funnel_leads.
+    Good for comments like "вага" under Reels/Post.
+    """
+    payload = payload or {}
+
+    ig_user_id = str(
+        payload.get("ig_user_id")
+        or os.getenv("IG_USER_ID", "").strip()
+    ).strip()
+
+    if not ig_user_id:
+        return {"ok": False, "status": "error", "error": "IG_USER_ID missing"}
+
+    limit_media = max(1, min(int(payload.get("limit_media") or 20), 100))
+    limit_comments = max(1, min(int(payload.get("limit_comments") or 50), 100))
+    include_replies = int(payload.get("include_replies", 1))
+    keyword = str(payload.get("keyword") or "").strip().lower()
+
+    media_res = ig_comments_graph_get(
+        f"{ig_user_id}/media",
+        {
+            "fields": "id,caption,media_type,permalink,timestamp,comments_count",
+            "limit": str(limit_media),
+        },
+    )
+
+    if not media_res.get("ok"):
+        return {"ok": False, "stage": "media", "meta": media_res}
+
+    funnel_leads_init()
+
+    imported = 0
+    matched = 0
+    skipped = 0
+    errors = []
+    items = []
+
+    for media in media_res.get("data") or []:
+        media_id = str(media.get("id") or "")
+        if not media_id:
+            continue
+
+        comments_res = ig_comments_graph_get(
+            f"{media_id}/comments",
+            {
+                "fields": "id,text,username,timestamp,like_count,from",
+                "limit": str(limit_comments),
+            },
+        )
+
+        if not comments_res.get("ok"):
+            errors.append({"media_id": media_id, "error": comments_res})
+            continue
+
+        comments = comments_res.get("data") or []
+
+        for c in comments:
+            text = str(c.get("text") or "").strip()
+            if keyword and keyword not in text.lower():
+                skipped += 1
+                continue
+
+            username = str(c.get("username") or "")
+            frm = c.get("from") or {}
+            if not username and isinstance(frm, dict):
+                username = str(frm.get("username") or frm.get("name") or "")
+
+            external_id = ""
+            if isinstance(frm, dict):
+                external_id = str(frm.get("id") or "")
+            if not external_id:
+                external_id = username or str(c.get("id") or "")
+
+            matched_key, matched_name, matched_kw = funnel_leads_match_funnel(text)
+            if matched_key:
+                matched += 1
+
+            item = {
+                "created_at": c.get("timestamp") or dyn_now(),
+                "source_platform": "instagram",
+                "source_table": "instagram_comments",
+                "source_row_id": ig_comment_stable_row_id(c.get("id")),
+                "external_user_id": external_id,
+                "username": username,
+                "text": text,
+                "matched_funnel_key": matched_key,
+                "matched_funnel_name": matched_name,
+                "status": "pending",
+                "raw": {
+                    "comment": c,
+                    "media": media,
+                    "matched_keyword": matched_kw,
+                    "source_kind": "instagram_comment",
+                },
+            }
+
+            funnel_leads_upsert(item)
+            imported += 1
+            items.append({
+                "media_id": media_id,
+                "comment_id": c.get("id"),
+                "username": username,
+                "external_user_id": external_id,
+                "text": text,
+                "matched_funnel_key": matched_key,
+                "matched_keyword": matched_kw,
+            })
+
+        if include_replies:
+            # optional lightweight replies scan for comments we already got
+            for c in comments:
+                cid = str(c.get("id") or "")
+                if not cid:
+                    continue
+
+                replies_res = ig_comments_graph_get(
+                    f"{cid}/replies",
+                    {
+                        "fields": "id,text,username,timestamp,like_count,from",
+                        "limit": "25",
+                    },
+                )
+
+                if not replies_res.get("ok"):
+                    continue
+
+                for rep in replies_res.get("data") or []:
+                    text = str(rep.get("text") or "").strip()
+                    if keyword and keyword not in text.lower():
+                        skipped += 1
+                        continue
+
+                    username = str(rep.get("username") or "")
+                    frm = rep.get("from") or {}
+                    if not username and isinstance(frm, dict):
+                        username = str(frm.get("username") or frm.get("name") or "")
+
+                    external_id = ""
+                    if isinstance(frm, dict):
+                        external_id = str(frm.get("id") or "")
+                    if not external_id:
+                        external_id = username or str(rep.get("id") or "")
+
+                    matched_key, matched_name, matched_kw = funnel_leads_match_funnel(text)
+                    if matched_key:
+                        matched += 1
+
+                    funnel_leads_upsert({
+                        "created_at": rep.get("timestamp") or dyn_now(),
+                        "source_platform": "instagram",
+                        "source_table": "instagram_comment_replies",
+                        "source_row_id": ig_comment_stable_row_id(rep.get("id")),
+                        "external_user_id": external_id,
+                        "username": username,
+                        "text": text,
+                        "matched_funnel_key": matched_key,
+                        "matched_funnel_name": matched_name,
+                        "status": "pending",
+                        "raw": {
+                            "reply": rep,
+                            "parent_comment": c,
+                            "media": media,
+                            "matched_keyword": matched_kw,
+                            "source_kind": "instagram_comment_reply",
+                        },
+                    })
+
+                    imported += 1
+                    items.append({
+                        "media_id": media_id,
+                        "comment_id": rep.get("id"),
+                        "username": username,
+                        "external_user_id": external_id,
+                        "text": text,
+                        "matched_funnel_key": matched_key,
+                        "matched_keyword": matched_kw,
+                    })
+
+    try:
+        backup_obj = _build_funnel_full_backup()
+        snap = _send_backup_json_to_telegram(backup_obj, reason="after_instagram_comments_sync")
+    except Exception as e:
+        snap = {"ok": False, "error": str(e)}
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "media_checked": len(media_res.get("data") or []),
+        "imported": imported,
+        "matched": matched,
+        "skipped": skipped,
+        "errors": errors[:5],
+        "items": items[:100],
+        "snapshot": snap,
+    }
+
+# === /INSTAGRAM COMMENTS TO FUNNEL LEADS V1 ===
