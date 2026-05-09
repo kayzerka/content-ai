@@ -538,6 +538,7 @@ def dyn_runtime_leads(limit: int = 100):
     dyn_init()
     limit = max(1, min(int(limit or 100), 500))
     items = []
+    lead_count_after = None
 
     con = dyn_con()
     con.row_factory = sqlite3.Row
@@ -1994,7 +1995,7 @@ def funnel_sync_instagram_comments(payload: Dict[str, Any] = None):
                 },
             }
 
-            funnel_leads_upsert(item)
+            lead_count_after = force_comment_lead_insert(item)
             imported += 1
             items.append({
                 "media_id": media_id,
@@ -2045,7 +2046,7 @@ def funnel_sync_instagram_comments(payload: Dict[str, Any] = None):
                     if matched_key:
                         matched += 1
 
-                    funnel_leads_upsert({
+                    lead_count_after = force_comment_lead_insert({
                         "created_at": rep.get("timestamp") or dyn_now(),
                         "source_platform": "instagram",
                         "source_table": "instagram_comment_replies",
@@ -2090,6 +2091,7 @@ def funnel_sync_instagram_comments(payload: Dict[str, Any] = None):
         "skipped": skipped,
         "errors": errors[:5],
         "items": items[:100],
+        "lead_count_after": lead_count_after,
         "snapshot": snap,
     }
 
@@ -2208,3 +2210,58 @@ def restore_telegram_backup_bundle(bundle: dict):
     return {"ok": True, "restored": result}
 
 # === /TELEGRAM BACKUP ALL PATHS V2 ===
+
+
+
+
+# === FORCE COMMENT LEAD INSERT V1 ===
+def force_comment_lead_insert(item: dict):
+    funnel_leads_init()
+
+    now = dyn_now()
+    con = dyn_con()
+    cur = con.cursor()
+
+    cur.execute("""
+        INSERT INTO funnel_leads (
+            created_at, updated_at,
+            source_platform, source_table, source_row_id,
+            external_user_id, username, text,
+            matched_funnel_key, matched_funnel_name,
+            status, raw_json
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(source_platform, source_table, source_row_id) DO UPDATE SET
+            updated_at=excluded.updated_at,
+            external_user_id=excluded.external_user_id,
+            username=excluded.username,
+            text=excluded.text,
+            matched_funnel_key=excluded.matched_funnel_key,
+            matched_funnel_name=excluded.matched_funnel_name,
+            status=CASE
+                WHEN funnel_leads.status='' OR funnel_leads.status IS NULL THEN excluded.status
+                ELSE funnel_leads.status
+            END,
+            raw_json=excluded.raw_json
+    """, (
+        item.get("created_at") or now,
+        now,
+        str(item.get("source_platform") or "instagram"),
+        str(item.get("source_table") or "instagram_comments"),
+        int(item.get("source_row_id") or 0),
+        str(item.get("external_user_id") or ""),
+        str(item.get("username") or ""),
+        str(item.get("text") or ""),
+        str(item.get("matched_funnel_key") or ""),
+        str(item.get("matched_funnel_name") or ""),
+        str(item.get("status") or "pending"),
+        json.dumps(item.get("raw") or item, ensure_ascii=False),
+    ))
+
+    con.commit()
+
+    cnt = con.execute("SELECT COUNT(*) FROM funnel_leads").fetchone()[0]
+    con.close()
+    return cnt
+
+# === /FORCE COMMENT LEAD INSERT V1 ===
