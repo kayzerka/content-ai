@@ -20,6 +20,14 @@
     catch(e){ return {ok:false, status:r.status, error:"bad_json", body:text}; }
   }
 
+
+  function show(x){
+    const el = document.getElementById("fu-raw");
+    const text = JSON.stringify(x || {}, null, 2);
+    if (el) el.textContent = text;
+    else console.log("[funnels show]", x);
+  }
+
   function esc(s){
     return String(s == null ? "" : s)
       .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
