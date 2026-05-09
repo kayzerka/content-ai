@@ -3045,7 +3045,7 @@ def import_legacy_funnel_payload_v1(payload: Dict[str, Any]):
     try:
         tables = payload.get("tables") or {}
 
-        legacy_tables = ["funnel_events", "funnel_contacts", "funnel_jobs", "funnel_leads"]
+        legacy_tables = ["funnel_events", "funnel_contacts", "funnel_jobs", "funnel_leads", "ig_reactions", "ig_ai_reply_drafts"]
         imported = {}
 
         for table_name in legacy_tables:
