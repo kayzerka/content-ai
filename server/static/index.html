@@ -1793,6 +1793,13 @@ window.restoreFunnelsSeedData = restoreFunnelsSeedData;
     if (u.includes("/backup/")) return false;
     if (u.includes("/restore/")) return false;
 
+    // Funnels: backup ONLY AFTER successful save in funnels-tab.js.
+    // Never pre-backup before save, because it can save old/empty state.
+    if (u.includes("/api/funnels/configs/upsert")) return false;
+    if (u.includes("/api/funnels/configs/") && u.includes("/steps/upsert")) return false;
+    if (u.includes("/api/funnels/configs/") && u.includes("/steps/delete")) return false;
+    if (u.includes("/api/funnels/restore/push_local_to_render")) return false;
+
     // системні read/analyze/generate можна не страхувати, але save/delete/create/upsert — так
     return (
       u.includes("/api/funnels/") ||

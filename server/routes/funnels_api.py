@@ -2941,6 +2941,19 @@ def push_fixed_local_funnels_backup_to_render_v1():
         data.pop("telegram_db", None)
         data.pop("telegram_bundle", None)
 
+        # UNSAFE_EMPTY_RESTORE_GUARD_V1
+        # Не дозволяємо restore з backup, який може затерти живі дані пустими таблицями.
+        protected_tables = ["funnel_configs", "funnel_steps_dynamic", "funnel_leads"]
+        for _table in protected_tables:
+            if _table in data and isinstance(data.get(_table), list) and len(data.get(_table) or []) == 0:
+                return {
+                    "ok": False,
+                    "status": "blocked",
+                    "where": "push_local_to_render",
+                    "error": f"unsafe restore blocked: backup table {_table} is empty",
+                    "hint": "Backup is empty/incomplete. Save real data first; backup must be created AFTER successful save."
+                }
+
         req = urllib.request.Request(
             render_url + "/api/funnels/backup/import",
             data=json.dumps(data).encode("utf-8"),
