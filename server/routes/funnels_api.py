@@ -3112,6 +3112,29 @@ def convert_ig_reactions_to_funnel_leads_v1():
         )
         """)
 
+        def _cols(table):
+            try:
+                return [r[1] for r in con.execute(f'PRAGMA table_info("{table}")').fetchall()]
+            except Exception:
+                return []
+
+        def _add_col(table, col, ddl):
+            if col not in _cols(table):
+                try:
+                    con.execute(f'ALTER TABLE "{table}" ADD COLUMN {ddl}')
+                except Exception:
+                    pass
+
+        _add_col("funnel_leads", "source", "source TEXT DEFAULT 'instagram'")
+        _add_col("funnel_leads", "platform", "platform TEXT DEFAULT 'instagram'")
+        _add_col("funnel_leads", "external_user_id", "external_user_id TEXT DEFAULT ''")
+        _add_col("funnel_leads", "username", "username TEXT DEFAULT ''")
+        _add_col("funnel_leads", "source_message", "source_message TEXT DEFAULT ''")
+        _add_col("funnel_leads", "source_event_id", "source_event_id TEXT DEFAULT ''")
+        _add_col("funnel_leads", "matched_plan_key", "matched_plan_key TEXT DEFAULT ''")
+        _add_col("funnel_leads", "lead_status", "lead_status TEXT DEFAULT 'new'")
+        _add_col("funnel_leads", "raw_json", "raw_json TEXT DEFAULT ''")
+
         rows = con.execute("SELECT * FROM ig_reactions ORDER BY id ASC").fetchall()
 
         for r in rows:
