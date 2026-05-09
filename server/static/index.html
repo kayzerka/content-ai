@@ -559,6 +559,37 @@
   <!-- Підключаємо стилі модалок окремим файлом (для зворотньої сумісності) -->
   <link rel="stylesheet" href="/static/js/modals.css">
 <link rel="stylesheet" href="/static/css/instagram-reaction-engine.css?v=1">
+
+<style>
+/* BACKUP/TG FLOATING BUTTON FIX V1 */
+#telegram, #planner { position: relative; }
+
+body:not(.tg-active) .tg-ai-floating,
+body:not(.tg-active) #tgAiFloatingBtn,
+body:not(.tg-active) [id*="tg-ai-floating"],
+body:not(.tg-active) [id*="telegram-ai-floating"],
+body:not(.tg-active) [class*="tg-ai-floating"],
+body:not(.tg-active) [class*="telegram-ai-floating"] {
+  display: none !important;
+}
+
+body:not(.planner-active) .backup-restore-floating,
+body:not(.planner-active) #backupRestoreFloatingBtn,
+body:not(.planner-active) [id*="backup"],
+body:not(.planner-active) [class*="backup"] {
+  /* не ховаємо технічні блоки повністю, тільки fixed/floating кнопки нижче через JS */
+}
+
+.telegram-local-actions,
+.planner-local-actions {
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+  margin:10px 0 14px;
+}
+</style>
+
 </head>
 <body>
   <header>
@@ -730,6 +761,10 @@
       <h2>📅 Планувальник задач · Trello + нотатки + календар</h2>
       <div class="card">
         <div class="toolbar">
+          <div class="planner-local-actions" id="plannerBackupActions">
+            <button class="btn" type="button" onclick="window.backupPlannerData && window.backupPlannerData()">💾 Backup</button>
+            <button class="btn" type="button" onclick="window.restorePlannerData && window.restorePlannerData()">♻️ Restore</button>
+          </div>
           <button class="btn primary" id="addTaskBtn" onclick="openTaskModal()">➕ Додати задачу</button>
           <button class="btn" onclick="sendTodayTasksToTelegram()">📨 Надіслати заплановані задачі в Telegram</button>
           <button class="btn" onclick="fetchAllTasks()">🔄 Оновити дошку</button>
@@ -773,7 +808,11 @@
 
       <div class="card">
         <div class="toolbar">
-          <button class="btn primary" onclick="tgLoadChats()">🔄 Оновити чати</button>
+          <div class="telegram-local-actions" id="telegramBackupActions">
+          <button class="btn" type="button" onclick="window.backupTelegramData && window.backupTelegramData()">💾 Backup</button>
+          <button class="btn" type="button" onclick="window.restoreTelegramData && window.restoreTelegramData()">♻️ Restore</button>
+        </div>
+        <button class="btn primary" onclick="tgLoadChats()">🔄 Оновити чати</button>
           <button class="btn" onclick="tgOpenGroupsModal()">📋 Перелік груп</button>
           <button class="btn" onclick="tgPullUpdates()">📥 Забрати updates</button>
           <button class="btn" onclick="tgSendTest()">📨 Тест розсилки</button>
@@ -854,6 +893,14 @@
       document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active'));
       const navBtn = document.getElementById('nav_' + id);
       if (navBtn) navBtn.classList.add('active');
+
+      document.body.classList.toggle('tg-active', id === 'telegram');
+      document.body.classList.toggle('planner-active', id === 'planner');
+
+      if (typeof window.rehomeFloatingActionButtons === 'function') {
+        setTimeout(window.rehomeFloatingActionButtons, 50);
+      }
+
       // Ініціалізація планувальника при переході на вкладку planner
       if (id === 'planner' && typeof initPlanner === 'function') initPlanner();
     }
