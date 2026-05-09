@@ -560,36 +560,6 @@
   <link rel="stylesheet" href="/static/js/modals.css">
 <link rel="stylesheet" href="/static/css/instagram-reaction-engine.css?v=1">
 
-<style>
-/* BACKUP/TG FLOATING BUTTON FIX V1 */
-#telegram, #planner { position: relative; }
-
-body:not(.tg-active) .tg-ai-floating,
-body:not(.tg-active) #tgAiFloatingBtn,
-body:not(.tg-active) [id*="tg-ai-floating"],
-body:not(.tg-active) [id*="telegram-ai-floating"],
-body:not(.tg-active) [class*="tg-ai-floating"],
-body:not(.tg-active) [class*="telegram-ai-floating"] {
-  display: none !important;
-}
-
-body:not(.planner-active) .backup-restore-floating,
-body:not(.planner-active) #backupRestoreFloatingBtn,
-body:not(.planner-active) [id*="backup"],
-body:not(.planner-active) [class*="backup"] {
-  /* не ховаємо технічні блоки повністю, тільки fixed/floating кнопки нижче через JS */
-}
-
-.telegram-local-actions,
-.planner-local-actions {
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  align-items:center;
-  margin:10px 0 14px;
-}
-</style>
-
 </head>
 <body>
   <header>
@@ -755,17 +725,18 @@ body:not(.planner-active) [class*="backup"] {
       Відкрити конструктор воронок
     </button>
 
+    <div id="funnelsBackupActions" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+      <button class="btn" type="button" onclick="event.stopPropagation(); window.backupFunnelsData && window.backupFunnelsData();">💾 Backup воронок</button>
+      <button class="btn" type="button" onclick="event.stopPropagation(); window.restoreFunnelsData && window.restoreFunnelsData();">♻️ Restore воронок</button>
+    </div>
+
     <div id="funnels-native-root" style="margin-top:16px;"></div>
   </div>
 
       <h2>📅 Планувальник задач · Trello + нотатки + календар</h2>
       <div class="card">
         <div class="toolbar">
-          <div class="planner-local-actions" id="plannerBackupActions">
-            <button class="btn" type="button" onclick="window.backupPlannerData && window.backupPlannerData()">💾 Backup</button>
-            <button class="btn" type="button" onclick="window.restorePlannerData && window.restorePlannerData()">♻️ Restore</button>
-          </div>
-          <button class="btn primary" id="addTaskBtn" onclick="openTaskModal()">➕ Додати задачу</button>
+<button class="btn primary" id="addTaskBtn" onclick="openTaskModal()">➕ Додати задачу</button>
           <button class="btn" onclick="sendTodayTasksToTelegram()">📨 Надіслати заплановані задачі в Telegram</button>
           <button class="btn" onclick="fetchAllTasks()">🔄 Оновити дошку</button>
           <div id="telegramStatusBadge" class="telegram-status">📡 Telegram: перевірка статусу...</div>
@@ -808,11 +779,7 @@ body:not(.planner-active) [class*="backup"] {
 
       <div class="card">
         <div class="toolbar">
-          <div class="telegram-local-actions" id="telegramBackupActions">
-          <button class="btn" type="button" onclick="window.backupTelegramData && window.backupTelegramData()">💾 Backup</button>
-          <button class="btn" type="button" onclick="window.restoreTelegramData && window.restoreTelegramData()">♻️ Restore</button>
-        </div>
-        <button class="btn primary" onclick="tgLoadChats()">🔄 Оновити чати</button>
+<button class="btn primary" onclick="tgLoadChats()">🔄 Оновити чати</button>
           <button class="btn" onclick="tgOpenGroupsModal()">📋 Перелік груп</button>
           <button class="btn" onclick="tgPullUpdates()">📥 Забрати updates</button>
           <button class="btn" onclick="tgSendTest()">📨 Тест розсилки</button>
@@ -896,12 +863,7 @@ body:not(.planner-active) [class*="backup"] {
 
       document.body.classList.toggle('tg-active', id === 'telegram');
       document.body.classList.toggle('planner-active', id === 'planner');
-
-      if (typeof window.rehomeFloatingActionButtons === 'function') {
-        setTimeout(window.rehomeFloatingActionButtons, 50);
-      }
-
-      // Ініціалізація планувальника при переході на вкладку planner
+// Ініціалізація планувальника при переході на вкладку planner
       if (id === 'planner' && typeof initPlanner === 'function') initPlanner();
     }
 
@@ -1732,5 +1694,40 @@ window.tgClearPost = tgClearPost;
 <script src="/static/js/instagram-reaction-modal.js?v=1"></script>
 <script src="/static/js/telegram-ai-scheduler-v1.js?v=1"></script>
 <script src="/static/js/funnels-tab.js?v=native_tab_v1"></script>
+
+<script>
+/* FUNNELS BACKUP RESTORE CLEAN V1 */
+(function(){
+  async function fetchJsonSafe(url, options){
+    const res = await fetch(url, options || {});
+    const text = await res.text();
+    try { return JSON.parse(text); } catch(e) { return {ok:false, raw:text}; }
+  }
+
+  window.backupFunnelsData = async function(){
+    const payload = {
+      type: 'funnels_backup_v1',
+      exported_at: new Date().toISOString(),
+      funnels: await fetchJsonSafe('/api/funnels/list'),
+      leads: await fetchJsonSafe('/api/funnels/leads/list?limit=100'),
+      sessions: await fetchJsonSafe('/api/funnels/sessions/list?limit=100')
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'funnels-backup.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  window.restoreFunnelsData = function(){
+    alert('Restore воронок треба робити через backend import endpoint. Зараз кнопка Backup вже коректно зберігає файл, але Restore не буде мовчки писати в БД без окремого API.');
+  };
+})();
+</script>
+
 </body>
 </html>
