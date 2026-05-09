@@ -1418,3 +1418,128 @@ def dyn_runtime_leads_v2(limit: int = 100):
     return funnel_leads_list(limit=limit)
 
 # === /FUNNEL LEAD INBOX V1 ===
+
+
+
+
+# === FUNNEL AUTO SNAPSHOT V1 ===
+def _build_funnel_full_backup():
+    dyn_init()
+
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    content_tables = {
+        "funnel_configs": _dump_table(con, "funnel_configs", "priority ASC, id ASC"),
+        "funnel_steps_dynamic": _dump_table(con, "funnel_steps_dynamic", "funnel_key ASC, step_order ASC, id ASC"),
+        "funnel_sessions_dynamic": _dump_table(con, "funnel_sessions_dynamic", "id ASC"),
+        "ig_reaction_funnel_plans": _dump_table(con, "ig_reaction_funnel_plans", "priority ASC, id ASC"),
+        "ig_reactions": _dump_table(con, "ig_reactions", "id ASC"),
+        "ig_ai_reply_drafts": _dump_table(con, "ig_ai_reply_drafts", "id ASC"),
+    }
+
+    con.close()
+
+    ig_webhook_rows = []
+    try:
+        if Path(IG_WEBHOOK_DB_PATH).exists():
+            con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
+            con_ig.row_factory = sqlite3.Row
+            ig_webhook_rows = _dump_table(con_ig, "instagram_webhook_messages", "id ASC")
+            con_ig.close()
+    except Exception as e:
+        ig_webhook_rows = [{"_backup_error": str(e)}]
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "backup_type": "funnels_full_v2",
+        "exported_at": dyn_now(),
+        "content_db": CONTENT_DB_PATH,
+        "ig_webhook_db": IG_WEBHOOK_DB_PATH,
+        "tables": {
+            **content_tables,
+            "instagram_webhook_messages": ig_webhook_rows,
+        },
+        "counts": {
+            **{k: len(v) for k, v in content_tables.items()},
+            "instagram_webhook_messages": len(ig_webhook_rows),
+        }
+    }
+
+def _send_backup_json_to_telegram(backup_obj: dict, reason: str = "manual"):
+    import tempfile
+    import requests
+
+    token = (
+        os.getenv("TELEGRAM_BACKUP_BOT_TOKEN", "").strip()
+        or os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    )
+
+    chat_id = (
+        os.getenv("TELEGRAM_BACKUP_CHAT_ID", "").strip()
+        or os.getenv("PLANNER_TELEGRAM_CHAT_ID", "").strip()
+        or os.getenv("TELEGRAM_PLANNER_CHAT_ID", "").strip()
+        or os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    )
+
+    if not token or not chat_id:
+        return {
+            "ok": False,
+            "skipped": True,
+            "reason": "TELEGRAM_BACKUP_BOT_TOKEN/TELEGRAM_BOT_TOKEN or TELEGRAM_BACKUP_CHAT_ID missing",
+        }
+
+    ts = dyn_now().replace(":", "-")
+    filename = f"funnels-backup-{reason}-{ts}.json"
+    raw = json.dumps(backup_obj, ensure_ascii=False, indent=2)
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+        f.write(raw)
+        tmp_path = f.name
+
+    try:
+        with open(tmp_path, "rb") as doc:
+            r = requests.post(
+                f"https://api.telegram.org/bot{token}/sendDocument",
+                data={
+                    "chat_id": chat_id,
+                    "caption": f"💾 Funnel backup\nreason={reason}\nexported_at={backup_obj.get('exported_at')}",
+                },
+                files={"document": (filename, doc, "application/json")},
+                timeout=60,
+            )
+
+        try:
+            data = r.json()
+        except Exception:
+            data = {"raw": r.text}
+
+        return {
+            "ok": bool(data.get("ok")),
+            "status_code": r.status_code,
+            "telegram": data,
+        }
+    finally:
+        try:
+            Path(tmp_path).unlink()
+        except Exception:
+            pass
+
+@router.post("/backup/snapshot")
+def funnels_backup_snapshot(payload: Dict[str, Any] = None):
+    payload = payload or {}
+    reason = str(payload.get("reason") or "manual").strip()[:80] or "manual"
+
+    backup_obj = _build_funnel_full_backup()
+    send_result = _send_backup_json_to_telegram(backup_obj, reason=reason)
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "reason": reason,
+        "counts": backup_obj.get("counts"),
+        "sent_to_telegram": send_result,
+    }
+
+# === /FUNNEL AUTO SNAPSHOT V1 ===
