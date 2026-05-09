@@ -3391,8 +3391,8 @@ def restore_full_funnels_from_local_backup_v1():
 
         report = {}
 
-        report["import_legacy_payload"] = post("/api/funnels/restore/import_legacy_payload", payload)
-        report["convert_legacy_events_db"] = post("/api/funnels/restore/convert_legacy_events_db")
+        report["import_legacy_payload"] = {"ok": True, "status": "skipped", "reason": "auto legacy restore disabled"}
+        report["convert_legacy_events_db"] = {"ok": True, "status": "skipped", "reason": "auto legacy restore disabled"}
         report["convert_ig_reactions_to_leads"] = post("/api/funnels/restore/convert_ig_reactions_to_leads")
 
         return {
@@ -3429,8 +3429,8 @@ def restore_funnels_from_static_backup_v1():
         payload.pop("telegram_bundle", None)
 
         report = {}
-        report["import_legacy_payload"] = import_legacy_funnel_payload_v1(payload)
-        report["convert_legacy_events_db"] = convert_legacy_funnel_events_from_db_v1()
+        report["import_legacy_payload"] = {"ok": True, "status": "skipped", "reason": "auto legacy restore disabled"}
+        report["convert_legacy_events_db"] = {"ok": True, "status": "skipped", "reason": "auto legacy restore disabled"}
         report["convert_ig_reactions_to_leads"] = convert_ig_reactions_to_funnel_leads_v1()
 
         return {
