@@ -2545,3 +2545,29 @@ def convert_legacy_funnel_events_to_dynamic_v1():
     finally:
         con.close()
 # === /CONVERT LEGACY FUNNEL EVENTS TO DYNAMIC V1 ===
+
+# === FUNNEL LEADS DEBUG LIST V1 ===
+@router.get("/leads/debug-list")
+def funnel_leads_debug_list(limit: int = 50):
+    funnel_leads_init()
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    count = con.execute("SELECT COUNT(*) AS n FROM funnel_leads").fetchone()["n"]
+    rows = con.execute("""
+        SELECT *
+        FROM funnel_leads
+        ORDER BY id DESC
+        LIMIT ?
+    """, (int(limit),)).fetchall()
+
+    con.close()
+
+    return {
+        "ok": True,
+        "count": count,
+        "items": [dict(r) for r in rows],
+        "db_path": CONTENT_DB_PATH,
+    }
+
+# === /FUNNEL LEADS DEBUG LIST V1 ===
