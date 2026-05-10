@@ -590,17 +590,24 @@
 
   function getFunnelKeyFromStepsButton(btn){
     const tr = btn.closest("tr");
+
     if (tr) {
+      const cells = Array.from(tr.querySelectorAll("td"));
+      // у таблиці: статус | назва | funnel_key | тригери | дії
+      if (cells[2]) {
+        const key = (cells[2].textContent || "").trim();
+        if (key && key !== "active") return key;
+      }
+
       const txt = tr.innerText || "";
-      const m = txt.match(/[a-z0-9_]+_bv|[a-z0-9_]{3,}/i);
-      if (m) return m[0];
+      const matches = txt.match(/\b[a-z][a-z0-9_]{2,}\b/g) || [];
+      const bad = new Set(["active","inactive","edit","status","button"]);
+      const good = matches.find(x => x.includes("_") && !bad.has(x.toLowerCase()));
+      if (good) return good;
     }
 
     const row = btn.closest("[data-funnel-key]");
     if (row) return row.getAttribute("data-funnel-key");
-
-    const selected = document.querySelector("[name='funnel_key'], #funnel_key, input[placeholder*='funnel']");
-    if (selected && selected.value) return selected.value.trim();
 
     return prompt("Введи funnel_key", "shudnennia_bv") || "";
   }
