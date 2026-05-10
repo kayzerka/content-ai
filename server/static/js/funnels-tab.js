@@ -805,7 +805,11 @@
       }
     };
 
-    fillPreset(1);
+    // Do not auto-fill preset when existing steps are loaded,
+    // because it clears saved button_url while switching/editing steps.
+    if (!items || items.length === 0) {
+      fillPreset(1);
+    }
   }
 
   document.addEventListener("click", function(e){
