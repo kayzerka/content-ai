@@ -801,7 +801,7 @@
       }
 
       if (save.ok) {
-        await refresh();
+        await openStepsBuilder(funnelKey);
       }
     };
 
