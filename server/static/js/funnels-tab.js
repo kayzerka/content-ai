@@ -87,6 +87,11 @@
       button.good{background:#eafff1;color:#087b2f;border-color:#b8e8c7}
       .fu-table{width:100%;border-collapse:collapse;font-size:13px}
       .fu-table th,.fu-table td{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}
+      .fu-active-lead{display:inline-flex;align-items:center;gap:6px;background:#eafff1;color:#087b2f;border:1px solid #b8e8c7;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800}
+      .fu-inactive-lead{display:inline-flex;align-items:center;gap:6px;background:#f3f4f6;color:#667085;border:1px solid #e5e7eb;border-radius:999px;padding:3px 9px;font-size:12px;font-weight:800}
+      .fu-apply-loading{opacity:.65;pointer-events:none}
+      .fu-spinner{display:inline-block;width:12px;height:12px;border:2px solid #ddd;border-top-color:#111;border-radius:50%;animation:fuSpin .75s linear infinite;vertical-align:-2px}
+      @keyframes fuSpin{to{transform:rotate(360deg)}}
       pre{white-space:pre-wrap;background:#f6f6f6;border-radius:12px;padding:10px;font-size:12px;max-height:220px;overflow:auto}
     `;
     document.head.appendChild(st);
@@ -294,6 +299,27 @@
     `;
   }
 
+  function leadUserId(l){
+    return String(l.source_user_id || l.external_user_id || "").trim();
+  }
+
+  function latestSessionForLead(l){
+    const uid = leadUserId(l);
+    if (!uid) return null;
+    return (state.sessions || []).find(s => String(s.source_user_id || "") === uid) || null;
+  }
+
+  function leadActiveFunnelKey(l){
+    const sess = latestSessionForLead(l);
+    return String(
+      (sess && sess.funnel_key) ||
+      l.active_funnel_key ||
+      l.matched_funnel_key ||
+      l.matched_plan_key ||
+      ""
+    ).trim();
+  }
+
   function leadsHtml(){
     return `
       <div class="fu-card">
@@ -302,23 +328,44 @@
           <button class="primary" id="fu-ingest-leads">🔄 Оновити ліди з Instagram</button>
         </div>
         <table class="fu-table">
-          <thead><tr><th>Дата</th><th>Джерело</th><th>User</th><th>Текст</th><th>Matched</th><th>Запуск</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Дата</th>
+              <th>Джерело</th>
+              <th>User</th>
+              <th>Текст</th>
+              <th>Matched / активна</th>
+              <th>Запуск</th>
+            </tr>
+          </thead>
           <tbody>
-            ${state.leads.map(l => `
+            ${state.leads.map(l => {
+              const uid = leadUserId(l);
+              const activeKey = leadActiveFunnelKey(l);
+              const sess = latestSessionForLead(l);
+
+              return `
               <tr>
                 <td>${esc(l.created_at || "")}</td>
                 <td>${esc(l.source_table || "")}</td>
-                <td>${esc(l.source_user_id || l.external_user_id || "")}<br><span class="fu-muted">${esc(l.username || "")}</span></td>
+                <td>${esc(uid)}<br><span class="fu-muted">${esc(l.username || "")}</span></td>
                 <td>${esc((l.text || "").slice(0,140))}</td>
-                <td>${esc(l.matched_plan_key || l.matched_funnel_key || "")}</td>
                 <td>
-                  <select data-funnel-select="${esc(l.source_user_id || l.external_user_id || "")}">
-                    ${state.funnels.map(f => `<option value="${esc(f.funnel_key)}" ${f.funnel_key === l.matched_plan_key ? "selected" : ""}>${esc(f.funnel_name || f.funnel_key)}</option>`).join("")}
-                  </select>
-                  <button class="primary" data-start-lead="${esc(l.source_user_id || l.external_user_id || "")}" data-lead-text="${esc(l.text || "")}" data-lead-user="${esc(l.username || "")}">Запустити</button>
+                  <b>${esc(activeKey || "—")}</b><br>
+                  ${activeKey ? `<span class="fu-active-lead">✅ Активна</span>` : `<span class="fu-inactive-lead">○ Не вибрано</span>`}
+                  ${sess ? `<div class="fu-muted">session #${esc(sess.id || "")} · ${esc(sess.stage || sess.status || "")}</div>` : ""}
                 </td>
-              </tr>
-            `).join("") || `<tr><td colspan="6" class="fu-muted">Лідів не знайдено.</td></tr>`}
+                <td>
+                  <select data-funnel-select="${esc(uid)}">
+                    ${state.funnels.map(f => `<option value="${esc(f.funnel_key)}" ${f.funnel_key === activeKey ? "selected" : ""}>${f.funnel_key === activeKey ? "✅ " : ""}${esc(f.funnel_name || f.funnel_key)}</option>`).join("")}
+                  </select>
+                  <button class="primary" data-start-lead="${esc(uid)}" data-lead-text="${esc(l.text || "")}" data-lead-user="${esc(l.username || "")}">
+                    ▶️ ${activeKey ? "Застосувати іншу" : "Застосувати"}
+                  </button>
+                  <div class="fu-muted" data-start-status="${esc(uid)}"></div>
+                </td>
+              </tr>`;
+            }).join("") || `<tr><td colspan="6" class="fu-muted">Лідів не знайдено.</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -523,22 +570,44 @@
       b.onclick = async () => {
         const user = b.getAttribute("data-start-lead");
         const select = document.querySelector(`[data-funnel-select="${CSS.escape(user)}"]`);
+        const statusEl = document.querySelector(`[data-start-status="${CSS.escape(user)}"]`);
         const funnel_key = select?.value || "";
-        const res = await api("/api/funnels/runtime/manual-start", {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            funnel_key,
-            source_platform:"instagram",
-            source_user_id:user,
-            source_username:b.getAttribute("data-lead-user") || "",
-            source_message:b.getAttribute("data-lead-text") || "",
-            mode:"draft"
-          })
-        });
-        show(res);
-        await autoBackupFunnels("after_manual_start_lead");
-        state.view = "sessions";
-        await render();
+
+        const oldText = b.innerHTML;
+        b.classList.add("fu-apply-loading");
+        b.innerHTML = `<span class="fu-spinner"></span> Застосовується...`;
+        if (statusEl) statusEl.textContent = "Створюю session і застосовую воронку...";
+
+        try {
+          const res = await api("/api/funnels/runtime/manual-start", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              funnel_key,
+              source_platform:"instagram",
+              source_user_id:user,
+              source_username:b.getAttribute("data-lead-user") || "",
+              source_message:b.getAttribute("data-lead-text") || "",
+              mode:"draft"
+            })
+          });
+
+          show(res);
+
+          if (res && res.ok) {
+            if (statusEl) statusEl.textContent = `✅ Застосовано: ${funnel_key}`;
+            await autoBackupFunnels("after_manual_start_lead");
+            state.view = "leads";
+            await render();
+          } else {
+            if (statusEl) statusEl.textContent = `❌ Помилка: ${(res && (res.error || res.status)) || "unknown"}`;
+            b.innerHTML = oldText;
+            b.classList.remove("fu-apply-loading");
+          }
+        } catch(e) {
+          if (statusEl) statusEl.textContent = "❌ " + String(e);
+          b.innerHTML = oldText;
+          b.classList.remove("fu-apply-loading");
+        }
       };
     });
 
