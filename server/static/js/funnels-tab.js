@@ -801,7 +801,7 @@
       }
 
       if (save.ok) {
-        setTimeout(() => openStepsBuilder(funnelKey), 400);
+        await refresh();
       }
     };
 
