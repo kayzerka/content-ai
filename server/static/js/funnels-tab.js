@@ -759,7 +759,7 @@
     };
 
 
-    modal.querySelector("#fsb-preset-1").onclick = () => fillPreset(1);
+    modal.querySelector("#fsb-preset-1").onclick = () => // fillPreset(1); // disabled auto overwrite
     modal.querySelector("#fsb-preset-2").onclick = () => fillPreset(2);
     modal.querySelector("#fsb-preset-3").onclick = () => fillPreset(3);
 
@@ -808,7 +808,7 @@
     // Do not auto-fill preset when existing steps are loaded,
     // because it clears saved button_url while switching/editing steps.
     if (!items || items.length === 0) {
-      fillPreset(1);
+      // fillPreset(1); // disabled auto overwrite
     }
   }
 
