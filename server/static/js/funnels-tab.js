@@ -498,25 +498,12 @@
 
     document.querySelectorAll("[data-edit-step]").forEach(b => {
       b.onclick = () => {
-        const step = state.steps.find(x => x.step_key === b.getAttribute("data-edit-step"));
-        if (!step) return;
-        document.getElementById("st-key").value = step.step_key || "";
-        document.getElementById("st-order").value = step.step_order || 100;
-        document.getElementById("st-active").value = String(step.active ?? 1);
-        document.getElementById("st-trigger").value = step.trigger_stage || "";
-        document.getElementById("st-next").value = step.next_stage || "";
-        document.getElementById("st-message").value = step.message_text || "";
-        document.getElementById("st-button").value = step.button_text || "";
-        document.getElementById("st-url").value = step.button_url || step.buttonUrl || "";
-        document.getElementById("st-delay").value = step.delay_minutes || 0;
-        try {
-          const sj = typeof step.settings_json === "string" ? JSON.parse(step.settings_json || "{}") : (step.settings_json || {});
-          const stType = document.getElementById("st-type");
-          if (stType) stType.value = sj.step_type || "send_message";
-        } catch(e) {
-          const stType = document.getElementById("st-type");
-          if (stType) stType.value = "send_message";
+        const stepKey = b.getAttribute("data-edit-step");
+        if (window.openFunnelStepEditor) {
+          window.openFunnelStepEditor(state.selectedKey, stepKey);
+          return;
         }
+        alert("funnel-steps-editor.js не підключений");
       };
     });
 
