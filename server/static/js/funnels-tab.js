@@ -787,6 +787,19 @@
 
       modal.querySelector("#fsb-output").textContent = JSON.stringify(save, null, 2);
 
+      if (save.ok && save.item) {
+        const item = save.item;
+        modal.querySelector("#fsb-step-key").value = item.step_key || payload.step_key || "";
+        modal.querySelector("#fsb-step-order").value = item.step_order || payload.step_order || 1;
+        modal.querySelector("#fsb-active").value = item.active ?? payload.active ?? 1;
+        modal.querySelector("#fsb-trigger-stage").value = item.trigger_stage || payload.trigger_stage || "";
+        modal.querySelector("#fsb-next-stage").value = item.next_stage || payload.next_stage || "";
+        modal.querySelector("#fsb-message-text").value = item.message_text || payload.message_text || "";
+        modal.querySelector("#fsb-button-text").value = item.button_text || payload.button_text || "";
+        modal.querySelector("#fsb-button-url").value = item.button_url || payload.button_url || "";
+        modal.querySelector("#fsb-delay").value = item.delay_minutes ?? payload.delay_minutes ?? 0;
+      }
+
       if (save.ok) {
         setTimeout(() => openStepsBuilder(funnelKey), 400);
       }
