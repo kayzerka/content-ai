@@ -1,104 +1,178 @@
 {
   "ok": true,
+  "status": "ok",
   "backup_type": "funnels_full_v2",
-  "source": "local_merged_funnel_backup",
+  "exported_at": "2026-05-10T10:14:49",
+  "content_db": "/opt/render/project/src/server/data/content.db",
+  "ig_webhook_db": "/opt/render/project/src/server/db/instagram.sqlite",
   "tables": {
-    "ig_reaction_funnel_plans": [
+    "funnel_configs": [
       {
         "id": 1,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46",
-        "plan_key": "reason",
-        "plan_name": "ПРИЧИНА / пошук кореня",
+        "updated_at": "2026-05-10T10:13:55",
+        "funnel_key": "reason",
+        "funnel_name": "ПРИЧИНА / пошук кореня",
         "active": 1,
-        "priority": 10,
+        "priority": 100,
+        "source_platform": "instagram",
         "trigger_keywords": "причина,чому,корінь,звідки,повторюється,не розумію",
-        "content_keywords": "причина,причини,причину,корінь,корені,повторюваний,повторюваного,повторюваний сценарій,повторюваного сценарію,сценарій,звідки це,повторюється",
-        "plan_goal": "мʼяко перевести людину в direct на діагностику запиту через слово ПРИЧИНА",
-        "public_cta": "Напиши мені в direct слово ПРИЧИНА — і я підкажу, з чого почати.",
-        "direct_cta": "Опиши коротко, що саме повторюється у твоєму житті — і я підкажу, чи це схоже на запит для регресії.",
-        "followup_sequence": "1) що повторюється? 2) як давно? 3) що вже пробувала? 4) запропонувати діагностику/сесію",
-        "notes": "Не продавати одразу. Спочатку знайти запит."
+        "content_keywords": "",
+        "telegram_bot_username": "",
+        "telegram_channel_url": "",
+        "target_url": "",
+        "next_funnel_key": "",
+        "dm_template": "",
+        "start_payload_template": "",
+        "intro_text": "",
+        "notes": "",
+        "settings_json": "{}"
       },
       {
         "id": 2,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-10T10:13:55",
+        "funnel_key": "session",
+        "funnel_name": "СЕСІЯ / запис",
+        "active": 1,
+        "priority": 100,
+        "source_platform": "instagram",
+        "trigger_keywords": "сесія,запис,хочу,консультація,вартість,ціна,прайс,як потрапити",
+        "content_keywords": "",
+        "telegram_bot_username": "",
+        "telegram_channel_url": "",
+        "target_url": "",
+        "next_funnel_key": "",
+        "dm_template": "",
+        "start_payload_template": "",
+        "intro_text": "",
+        "notes": "",
+        "settings_json": "{}"
+      },
+      {
+        "id": 3,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-10T10:13:55",
+        "funnel_key": "fear",
+        "funnel_name": "СТРАХ / зняття заперечення",
+        "active": 1,
+        "priority": 100,
+        "source_platform": "instagram",
+        "trigger_keywords": "страшно,боюсь,страх,небезпечно,раптом,побачу,травма,контроль",
+        "content_keywords": "",
+        "telegram_bot_username": "",
+        "telegram_channel_url": "",
+        "target_url": "",
+        "next_funnel_key": "",
+        "dm_template": "",
+        "start_payload_template": "",
+        "intro_text": "",
+        "notes": "",
+        "settings_json": "{}"
+      },
+      {
+        "id": 4,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-10T10:13:55",
+        "funnel_key": "bv",
+        "funnel_name": "БВ / пояснення методу",
+        "active": 1,
+        "priority": 100,
+        "source_platform": "instagram",
+        "trigger_keywords": "бв,базові вірування,вірування,перепрошивка,система",
+        "content_keywords": "",
+        "telegram_bot_username": "",
+        "telegram_channel_url": "",
+        "target_url": "",
+        "next_funnel_key": "",
+        "dm_template": "",
+        "start_payload_template": "",
+        "intro_text": "",
+        "notes": "",
+        "settings_json": "{}"
+      },
+      {
+        "id": 5,
+        "created_at": "2026-05-05T12:04:46",
+        "updated_at": "2026-05-10T10:13:55",
+        "funnel_key": "money",
+        "funnel_name": "ГРОШІ / блоки доходу",
+        "active": 1,
+        "priority": 100,
+        "source_platform": "instagram",
+        "trigger_keywords": "гроші,дохід,заробіток,борги,ціна,нема грошей,фінанси",
+        "content_keywords": "",
+        "telegram_bot_username": "",
+        "telegram_channel_url": "",
+        "target_url": "",
+        "next_funnel_key": "",
+        "dm_template": "",
+        "start_payload_template": "",
+        "intro_text": "",
+        "notes": "",
+        "settings_json": "{}"
+      },
+      {
+        "id": 6,
+        "created_at": "2026-05-05 10:10:24",
+        "updated_at": "2026-05-10T10:13:55",
+        "funnel_key": "general_engagement",
+        "funnel_name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
+        "active": 1,
+        "priority": 100,
+        "source_platform": "instagram",
+        "trigger_keywords": "відгукнулось,цікаво,дякую,клас,супер,актуально",
+        "content_keywords": "",
+        "telegram_bot_username": "",
+        "telegram_channel_url": "",
+        "target_url": "",
+        "next_funnel_key": "",
+        "dm_template": "",
+        "start_payload_template": "",
+        "intro_text": "",
+        "notes": "",
+        "settings_json": "{}"
+      },
+      {
+        "id": 7,
+        "created_at": "2026-05-10T10:14:49",
+        "updated_at": "2026-05-10T10:14:49",
+        "funnel_key": "shudnennia_bv",
+        "funnel_name": "shudnennia_bv",
+        "active": 1,
+        "priority": 100,
+        "source_platform": "instagram",
+        "trigger_keywords": "",
+        "content_keywords": "",
+        "telegram_bot_username": "DashaKarmologRegresologBV_bot",
+        "telegram_channel_url": "https://t.me/+G7oL3fn-1TE3ZTgy",
+        "target_url": "",
+        "next_funnel_key": "",
+        "dm_template": "",
+        "start_payload_template": "",
+        "intro_text": "",
+        "notes": "",
+        "settings_json": "{}"
+      }
+    ],
+    "funnel_steps_dynamic": [],
+    "funnel_sessions_dynamic": [],
+    "ig_reaction_funnel_plans": [
+      {
+        "id": 2,
+        "created_at": "2026-05-08T10:59:04",
+        "updated_at": "2026-05-08T10:59:04",
         "plan_key": "session",
         "plan_name": "СЕСІЯ / запис",
         "active": 1,
-        "priority": 50,
+        "priority": 5,
         "trigger_keywords": "сесія,запис,хочу,консультація,вартість,ціна,прайс,як потрапити",
-        "content_keywords": "сесія,консультація,запис,робота зі мною,вартість,ціна",
+        "content_keywords": "сесія,регресія,консультація,запис,робота зі мною",
         "plan_goal": "вести до запису або консультації",
         "public_cta": "Напиши мені в direct слово СЕСІЯ — і я підкажу найближчий крок.",
         "direct_cta": "Можу зорієнтувати по формату. Напиши, з якою темою хочеш прийти.",
         "followup_sequence": "1) тема запиту 2) актуальність/терміновість 3) протипоказання/очікування 4) запис",
         "notes": "Якщо людина гаряча — коротко і конкретно вести до запису."
-      },
-      {
-        "id": 3,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46",
-        "plan_key": "fear",
-        "plan_name": "СТРАХ / зняття заперечення",
-        "active": 1,
-        "priority": 20,
-        "trigger_keywords": "страшно,боюсь,страх,небезпечно,раптом,побачу,травма,контроль",
-        "content_keywords": "страх,страшно,безпека,контроль,боюсь,небезпечно,травма",
-        "plan_goal": "зняти страх і пояснити безпечність без обіцянок",
-        "public_cta": "Розумію цей страх. Якщо хочеш — напиши в direct слово СТРАХ, поясню мʼяко, як це проходить.",
-        "direct_cta": "Скажи, що саме лякає найбільше: невідомість, втрата контролю чи можливість щось побачити?",
-        "followup_sequence": "1) назвати страх 2) пояснити рамку безпеки 3) дати право не йти 4) запросити на мʼяке уточнення",
-        "notes": "Не тиснути і не переконувати. Тільки безпека."
-      },
-      {
-        "id": 4,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46",
-        "plan_key": "bv",
-        "plan_name": "БВ / пояснення методу",
-        "active": 1,
-        "priority": 30,
-        "trigger_keywords": "бв,базові вірування,вірування,перепрошивка,система",
-        "content_keywords": "бв,базові вірування,вірування,підсвідомість,програма",
-        "plan_goal": "пояснити БВ простими словами і перевести до запиту",
-        "public_cta": "Якщо відгукується тема БВ — напиши в direct слово БВ, поясню на твоєму прикладі.",
-        "direct_cta": "Напиши, яка тема зараз болить найбільше — і я покажу, як це може бути повʼязано з базовими віруваннями.",
-        "followup_sequence": "1) тема болю 2) повторюваний сценарій 3) базове вірування 4) варіант роботи",
-        "notes": "Не грузити термінами. Пояснювати через приклад."
-      },
-      {
-        "id": 5,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46",
-        "plan_key": "money",
-        "plan_name": "ГРОШІ / блоки доходу",
-        "active": 1,
-        "priority": 40,
-        "trigger_keywords": "гроші,дохід,заробіток,борги,ціна,нема грошей,фінанси",
-        "content_keywords": "гроші,дохід,фінанси,блок,цінність,заробіток",
-        "plan_goal": "вивести людину на повторюваний фінансовий сценарій",
-        "public_cta": "Якщо тема грошей відгукнулась — напиши в direct слово ГРОШІ.",
-        "direct_cta": "Напиши, що саме повторюється з грошима: не приходять, швидко йдуть чи страшно брати більше?",
-        "followup_sequence": "1) сценарій грошей 2) емоція 3) сімейний/особистий патерн 4) пропозиція розбору",
-        "notes": "Не обіцяти збільшення доходу. Аналізувати сценарій."
-      },
-      {
-        "id": 16,
-        "created_at": "2026-05-05 10:10:24",
-        "updated_at": "2026-05-05 10:10:24",
-        "plan_key": "general_engagement",
-        "plan_name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
-        "active": 1,
-        "priority": 999,
-        "trigger_keywords": "відгукнулось,цікаво,дякую,клас,супер,актуально",
-        "content_keywords": "",
-        "plan_goal": "мʼяко продовжити діалог і зрозуміти запит без продажу",
-        "public_cta": "Дякую, що відгукнулось 🤍 Якщо хочеш — напиши в direct, що саме зачепило.",
-        "direct_cta": "Що саме найбільше відгукнулось у цьому відео?",
-        "followup_sequence": "1) що зачепило 2) яка тема 3) чи повторюється це в житті 4) підібрати релевантний план",
-        "notes": "Default-план. Не вести одразу в продаж."
       },
       {
         "id": 1,
@@ -115,22 +189,6 @@
         "direct_cta": "Опиши коротко, що саме повторюється у твоєму житті — і я підкажу, чи це схоже на запит для регресії.",
         "followup_sequence": "1) що повторюється? 2) як давно? 3) що вже пробувала? 4) запропонувати діагностику/сесію",
         "notes": "Не продавати одразу. Спочатку знайти запит."
-      },
-      {
-        "id": 2,
-        "created_at": "2026-05-08T10:59:04",
-        "updated_at": "2026-05-08T10:59:04",
-        "plan_key": "session",
-        "plan_name": "СЕСІЯ / запис",
-        "active": 1,
-        "priority": 5,
-        "trigger_keywords": "сесія,запис,хочу,консультація,вартість,ціна,прайс,як потрапити",
-        "content_keywords": "сесія,регресія,консультація,запис,робота зі мною",
-        "plan_goal": "вести до запису або консультації",
-        "public_cta": "Напиши мені в direct слово СЕСІЯ — і я підкажу найближчий крок.",
-        "direct_cta": "Можу зорієнтувати по формату. Напиши, з якою темою хочеш прийти.",
-        "followup_sequence": "1) тема запиту 2) актуальність/терміновість 3) протипоказання/очікування 4) запис",
-        "notes": "Якщо людина гаряча — коротко і конкретно вести до запису."
       },
       {
         "id": 3,
@@ -179,6 +237,38 @@
         "direct_cta": "Напиши, що саме повторюється з грошима: не приходять, швидко йдуть чи страшно брати більше?",
         "followup_sequence": "1) сценарій грошей 2) емоція 3) сімейний/особистий патерн 4) пропозиція розбору",
         "notes": "Не обіцяти збільшення доходу. Аналізувати сценарій."
+      },
+      {
+        "id": 17,
+        "created_at": "2026-05-10T10:14:49",
+        "updated_at": "2026-05-10T10:14:49",
+        "plan_key": "shudnennia_bv",
+        "plan_name": "shudnennia_bv",
+        "active": 1,
+        "priority": 100,
+        "trigger_keywords": "",
+        "content_keywords": "",
+        "plan_goal": "",
+        "public_cta": "",
+        "direct_cta": "",
+        "followup_sequence": "",
+        "notes": ""
+      },
+      {
+        "id": 16,
+        "created_at": "2026-05-05 10:10:24",
+        "updated_at": "2026-05-05 10:10:24",
+        "plan_key": "general_engagement",
+        "plan_name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
+        "active": 1,
+        "priority": 999,
+        "trigger_keywords": "відгукнулось,цікаво,дякую,клас,супер,актуально",
+        "content_keywords": "",
+        "plan_goal": "мʼяко продовжити діалог і зрозуміти запит без продажу",
+        "public_cta": "Дякую, що відгукнулось 🤍 Якщо хочеш — напиши в direct, що саме зачепило.",
+        "direct_cta": "Що саме найбільше відгукнулось у цьому відео?",
+        "followup_sequence": "1) що зачепило 2) яка тема 3) чи повторюється це в житті 4) підібрати релевантний план",
+        "notes": "Default-план. Не вести одразу в продаж."
       }
     ],
     "ig_reactions": [
@@ -527,469 +617,16 @@
         "content_context_json": "{\"media_id\": \"18439307332136413\", \"media_url\": \"https://www.instagram.com/reel/DX09dqKoO-X/\", \"found\": false, \"title\": \"\", \"text\": \"\", \"source\": \"\", \"url\": \"\"}"
       }
     ],
-    "funnel_events": [
-      {
-        "id": 1,
-        "funnel_id": 1,
-        "contact_id": 1,
-        "event_type": "comment_keyword",
-        "payload_json": "{\"keyword\": \"ПРИЧИНА\", \"text\": \"ПРИЧИНА\"}",
-        "created_ts": 1778166077
-      },
-      {
-        "id": 2,
-        "funnel_id": 1,
-        "contact_id": 1,
-        "event_type": "step_send_message",
-        "payload_json": "{\"step_order\": 1, \"config\": {\"text\": \"Дякую за реакцію ❤️ Напиши мені в Telegram, і я надішлю безкоштовний матеріал.\"}}",
-        "created_ts": 1778166077
-      },
-      {
-        "id": 3,
-        "funnel_id": 1,
-        "contact_id": null,
-        "event_type": "funnel_updated",
-        "payload_json": "{\"trigger_value\": \"ХОЧУ\", \"output_target\": \"@content_ai_planner_bot\"}",
-        "created_ts": 1778166242
-      },
-      {
-        "id": 4,
-        "funnel_id": 1,
-        "contact_id": null,
-        "event_type": "funnel_step_upserted",
-        "payload_json": "{\"step_id\": 1, \"step_order\": 1, \"step_type\": \"send_message\", \"step_name\": \"DM welcome updated\", \"config\": {\"text\": \"Бачу твій коментар ❤️ Напиши мені в Telegram слово ХОЧУ — і я надішлю матеріал.\"}}",
-        "created_ts": 1778166345
-      },
-      {
-        "id": 5,
-        "funnel_id": 1,
-        "contact_id": 1,
-        "event_type": "step_send_telegram_invite",
-        "payload_json": "{\"step_order\": 2, \"config\": {\"text\": \"Перейди в Telegram, щоб отримати матеріал:\", \"url\": \"\"}}",
-        "created_ts": 1778166382
-      },
-      {
-        "id": 6,
-        "funnel_id": 1,
-        "contact_id": 1,
-        "event_type": "step_send_free_gift",
-        "payload_json": "{\"step_order\": 3, \"config\": {\"title\": \"Безкоштовний матеріал\", \"text\": \"Ось твій матеріал ❤️\", \"url\": \"\"}}",
-        "created_ts": 1778166409
-      },
-      {
-        "id": 7,
-        "funnel_id": 1,
-        "contact_id": 1,
-        "event_type": "step_wait_delay",
-        "payload_json": "{\"delay_seconds\": 86400, \"next_step\": 5}",
-        "created_ts": 1778166458
-      },
-      {
-        "id": 8,
-        "funnel_id": 1,
-        "contact_id": 1,
-        "event_type": "step_send_ai_message",
-        "payload_json": "{\"step_order\": 5, \"prompt\": \"Плавно прогрій людину до консультації. Не тисни. Постав 1 мʼяке питання про її ситуацію.\"}",
-        "created_ts": 1778166542
-      },
-      {
-        "id": 9,
-        "funnel_id": 1,
-        "contact_id": 2,
-        "event_type": "comment_keyword",
-        "payload_json": "{\"keyword\": \"ХОЧУ\"}",
-        "created_ts": 1778166654
-      },
-      {
-        "id": 10,
-        "funnel_id": 1,
-        "contact_id": 2,
-        "event_type": "step_send_message",
-        "payload_json": "{\"step_order\": 1, \"config\": {\"text\": \"Бачу твій коментар ❤️ Напиши мені в Telegram слово ХОЧУ — і я надішлю матеріал.\"}}",
-        "created_ts": 1778166654
-      },
-      {
-        "id": 11,
-        "funnel_id": 1,
-        "contact_id": 2,
-        "event_type": "step_send_telegram_invite",
-        "payload_json": "{\"step_order\": 2, \"config\": {\"text\": \"Перейди в Telegram, щоб отримати матеріал:\", \"url\": \"\"}}",
-        "created_ts": 1778166663
-      },
-      {
-        "id": 12,
-        "funnel_id": 1,
-        "contact_id": 2,
-        "event_type": "step_send_free_gift",
-        "payload_json": "{\"step_order\": 3, \"config\": {\"title\": \"Безкоштовний матеріал\", \"text\": \"Ось твій матеріал ❤️\", \"url\": \"\"}}",
-        "created_ts": 1778166663
-      },
-      {
-        "id": 13,
-        "funnel_id": 1,
-        "contact_id": 2,
-        "event_type": "step_wait_delay",
-        "payload_json": "{\"delay_seconds\": 86400, \"next_step\": 5}",
-        "created_ts": 1778166663
-      },
-      {
-        "id": 14,
-        "funnel_id": 1,
-        "contact_id": 2,
-        "event_type": "step_send_ai_message",
-        "payload_json": "{\"step_order\": 5, \"prompt\": \"Плавно прогрій людину до консультації. Не тисни. Постав 1 мʼяке питання про її ситуацію.\", \"generated_text\": \"Бачу, що ця тема тобі відгукнулась ❤️ Що саме зараз найбільше хочеться змінити у своїй ситуації?\", \"provider\": \"deepseek\", \"model\": null, \"ok\": false, \"error\": \"<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1020)>\"}",
-        "created_ts": 1778166685
-      },
-      {
-        "id": 15,
-        "funnel_id": 1,
-        "contact_id": 3,
-        "event_type": "comment_keyword",
-        "payload_json": "{\"keyword\": \"ХОЧУ\"}",
-        "created_ts": 1778166780
-      },
-      {
-        "id": 16,
-        "funnel_id": 1,
-        "contact_id": 3,
-        "event_type": "step_send_message",
-        "payload_json": "{\"step_order\": 1, \"config\": {\"text\": \"Бачу твій коментар ❤️ Напиши мені в Telegram слово ХОЧУ — і я надішлю матеріал.\"}}",
-        "created_ts": 1778166780
-      },
-      {
-        "id": 17,
-        "funnel_id": 1,
-        "contact_id": 3,
-        "event_type": "step_send_telegram_invite",
-        "payload_json": "{\"step_order\": 2, \"config\": {\"text\": \"Перейди в Telegram, щоб отримати матеріал:\", \"url\": \"\"}}",
-        "created_ts": 1778166780
-      },
-      {
-        "id": 18,
-        "funnel_id": 1,
-        "contact_id": 3,
-        "event_type": "step_send_free_gift",
-        "payload_json": "{\"step_order\": 3, \"config\": {\"title\": \"Безкоштовний матеріал\", \"text\": \"Ось твій матеріал ❤️\", \"url\": \"\"}}",
-        "created_ts": 1778166780
-      },
-      {
-        "id": 19,
-        "funnel_id": 1,
-        "contact_id": 3,
-        "event_type": "step_wait_delay",
-        "payload_json": "{\"delay_seconds\": 86400, \"next_step\": 5}",
-        "created_ts": 1778166780
-      },
-      {
-        "id": 20,
-        "funnel_id": 1,
-        "contact_id": 3,
-        "event_type": "step_send_ai_message",
-        "payload_json": "{\"step_order\": 5, \"prompt\": \"Плавно прогрій людину до консультації. Не тисни. Постав 1 мʼяке питання про її ситуацію.\", \"generated_text\": \"Привіт! 👋 Я бачу, що ви цікавитеся темою експертних консультацій. Розкажіть, будь ласка, що вас зараз найбільше хвилює або який запит ви хотіли б розглянути? 😊\", \"provider\": \"deepseek\", \"model\": \"deepseek-chat\", \"ok\": true, \"error\": null}",
-        "created_ts": 1778166783
-      },
-      {
-        "id": 21,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "telegram_chat_bound",
-        "payload_json": "{\"telegram_chat_id\": \"330800472\"}",
-        "created_ts": 1778167135
-      },
-      {
-        "id": 22,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "comment_keyword",
-        "payload_json": "{\"keyword\": \"ХОЧУ\", \"source\": \"planner_safe_test\"}",
-        "created_ts": 1778167143
-      },
-      {
-        "id": 23,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "step_send_message",
-        "payload_json": "{\"step_order\": 1, \"config\": {\"text\": \"Бачу твій коментар ❤️ Напиши мені в Telegram слово ХОЧУ — і я надішлю матеріал.\"}, \"message\": \"Бачу твій коментар ❤️ Напиши мені в Telegram слово ХОЧУ — і я надішлю матеріал.\", \"telegram\": null}",
-        "created_ts": 1778167143
-      },
-      {
-        "id": 24,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "step_send_telegram_invite",
-        "payload_json": "{\"step_order\": 2, \"config\": {\"text\": \"Перейди в Telegram, щоб отримати матеріал:\", \"url\": \"\"}, \"message\": \"Перейди в Telegram, щоб отримати матеріал:\", \"telegram\": null}",
-        "created_ts": 1778167151
-      },
-      {
-        "id": 25,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "step_send_free_gift",
-        "payload_json": "{\"step_order\": 3, \"config\": {\"title\": \"Безкоштовний матеріал\", \"text\": \"Ось твій матеріал ❤️\", \"url\": \"\"}, \"message\": \"Ось твій матеріал ❤️\", \"telegram\": null}",
-        "created_ts": 1778167151
-      },
-      {
-        "id": 26,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "step_wait_delay",
-        "payload_json": "{\"delay_seconds\": 86400, \"next_step\": 5}",
-        "created_ts": 1778167151
-      },
-      {
-        "id": 27,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "step_send_ai_message",
-        "payload_json": "{\"step_order\": 5, \"prompt\": \"Плавно прогрій людину до консультації. Не тисни. Постав 1 мʼяке питання про її ситуацію.\", \"generated_text\": \"Привіт! 👋 Я помітив, що ви цікавитесь темою планування та безпеки. Розкажіть, будь ласка, що саме вас турбує або яку ситуацію хотіли б покращити?\", \"provider\": \"deepseek\", \"model\": \"deepseek-chat\", \"ok\": true, \"error\": null, \"telegram\": {\"ok\": true, \"provider\": \"telegram\", \"response\": {\"ok\": true, \"result\": {\"message_id\": 83, \"from\": {\"id\": 8795587287, \"is_bot\": true, \"first_name\": \"Content AI Planner\", \"username\": \"content_ai_planner_bot\"}, \"chat\": {\"id\": 330800472, \"first_name\": \"Олексій\", \"username\": \"Alex_Poberezhniy\", \"type\": \"private\"}, \"date\": 1778167154, \"text\": \"Привіт! 👋 Я помітив, що ви цікавитесь темою планування та безпеки. Розкажіть, будь ласка, що саме вас турбує або яку ситуацію хотіли б покращити?\"}}}}",
-        "created_ts": 1778167154
-      },
-      {
-        "id": 28,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "event_type": "telegram_sent",
-        "payload_json": "{\"step_order\": 5, \"step_type\": \"send_ai_message\", \"message\": \"Привіт! 👋 Я помітив, що ви цікавитесь темою планування та безпеки. Розкажіть, будь ласка, що саме вас турбує або яку ситуацію хотіли б покращити?\", \"telegram\": {\"ok\": true, \"provider\": \"telegram\", \"response\": {\"ok\": true, \"result\": {\"message_id\": 83, \"from\": {\"id\": 8795587287, \"is_bot\": true, \"first_name\": \"Content AI Planner\", \"username\": \"content_ai_planner_bot\"}, \"chat\": {\"id\": 330800472, \"first_name\": \"Олексій\", \"username\": \"Alex_Poberezhniy\", \"type\": \"private\"}, \"date\": 1778167154, \"text\": \"Привіт! 👋 Я помітив, що ви цікавитесь темою планування та безпеки. Розкажіть, будь ласка, що саме вас турбує або яку ситуацію хотіли б покращити?\"}}}}",
-        "created_ts": 1778167155
-      },
-      {
-        "id": 29,
-        "funnel_id": 1,
-        "contact_id": null,
-        "event_type": "funnel_step_upserted",
-        "payload_json": "{\"step_id\": 5, \"step_order\": 5, \"step_type\": \"send_ai_message\", \"step_name\": \"AI warmup BVE spine context\", \"config\": {\"delivery\": \"telegram\", \"auto_send\": 1, \"temperature\": 0.7, \"max_tokens\": 220, \"system\": \"Ти теплий AI-асистент експертки з БВЕ. БВЕ — це німецька тілесна техніка вирівнювання хребта та роботи з напругою в тілі. Люди звертаються з темами: зайва вага, затиски, втома, психоемоційне виснаження, тривога, внутрішня напруга, відчуття що тіло блокує зміни. Твоя задача — мʼяко підтримати людину, створити довіру та плавно підвести до консультації або ознайомчого сеансу. Не став медичних діагнозів. Не обіцяй лікування або гарантований результат. Пиши українською, коротко, тепло, природно. Одне повідомлення + одне мʼяке питання.\", \"prompt\": \"Людина прийшла з Instagram-рілса про те, що тіло може не хотіти худнути, бо причина глибша за їжу. Поясни мʼяко, що інколи тіло накопичує напругу і це може впливати на стан людини. Без тиску запропонуй поділитися своєю ситуацією або прийти на ознайомчий сеанс БВЕ.\"}}",
-        "created_ts": 1778167305
-      },
-      {
-        "id": 30,
-        "funnel_id": 1,
-        "contact_id": 6,
-        "event_type": "telegram_chat_bound",
-        "payload_json": "{\"telegram_chat_id\": \"330800472\"}",
-        "created_ts": 1778167720
-      },
-      {
-        "id": 31,
-        "funnel_id": 1,
-        "contact_id": 7,
-        "event_type": "telegram_chat_bound",
-        "payload_json": "{\"telegram_chat_id\": \"330800472\"}",
-        "created_ts": 1778167977
-      },
-      {
-        "id": 32,
-        "funnel_id": 1,
-        "contact_id": 8,
-        "event_type": "telegram_chat_bound",
-        "payload_json": "{\"telegram_chat_id\": \"330800472\"}",
-        "created_ts": 1778168284
-      }
-    ],
-    "funnel_contacts": [
-      {
-        "id": 1,
-        "funnel_id": 1,
-        "platform": "instagram",
-        "external_user_id": "ig_test_user_1",
-        "username": "test_user",
-        "first_seen_ts": 1778166077,
-        "current_step": 6,
-        "lead_score": 0.0,
-        "tags_json": "[]",
-        "state_json": "{}"
-      },
-      {
-        "id": 2,
-        "funnel_id": 1,
-        "platform": "instagram",
-        "external_user_id": "ig_test_user_ai_1",
-        "username": "ai_test_user",
-        "first_seen_ts": 1778166654,
-        "current_step": 6,
-        "lead_score": 0.0,
-        "tags_json": "[]",
-        "state_json": "{}"
-      },
-      {
-        "id": 3,
-        "funnel_id": 1,
-        "platform": "instagram",
-        "external_user_id": "ig_test_user_ai_ssl_1",
-        "username": "ai_ssl_user",
-        "first_seen_ts": 1778166780,
-        "current_step": 6,
-        "lead_score": 0.0,
-        "tags_json": "[]",
-        "state_json": "{}"
-      },
-      {
-        "id": 4,
-        "funnel_id": 1,
-        "platform": "instagram",
-        "external_user_id": "planner_safe_test_user",
-        "username": "planner_safe_test",
-        "first_seen_ts": 1778167135,
-        "current_step": 6,
-        "lead_score": 0.0,
-        "tags_json": "[]",
-        "state_json": "{\"telegram_chat_id\": \"330800472\", \"telegram_bound_ts\": 1778167135}"
-      },
-      {
-        "id": 6,
-        "funnel_id": 1,
-        "platform": "instagram",
-        "external_user_id": "planner_autobind_test_user",
-        "username": "Alex_Poberezhniy",
-        "first_seen_ts": 1778167720,
-        "current_step": 1,
-        "lead_score": 0.0,
-        "tags_json": "[]",
-        "state_json": "{\"telegram_chat_id\": \"330800472\", \"telegram_bound_ts\": 1778167720}"
-      },
-      {
-        "id": 7,
-        "funnel_id": 1,
-        "platform": "instagram",
-        "external_user_id": "planner_real_webhook_test",
-        "username": "Alex_Poberezhniy",
-        "first_seen_ts": 1778167977,
-        "current_step": 1,
-        "lead_score": 0.0,
-        "tags_json": "[]",
-        "state_json": "{\"telegram_chat_id\": \"330800472\", \"telegram_bound_ts\": 1778167977}"
-      },
-      {
-        "id": 8,
-        "funnel_id": 1,
-        "platform": "instagram",
-        "external_user_id": "listener_click_test_user",
-        "username": "Alex_Poberezhniy",
-        "first_seen_ts": 1778168284,
-        "current_step": 1,
-        "lead_score": 0.0,
-        "tags_json": "[]",
-        "state_json": "{\"telegram_chat_id\": \"330800472\", \"telegram_bound_ts\": 1778168284}"
-      }
-    ],
-    "funnel_jobs": [
-      {
-        "id": 1,
-        "funnel_id": 1,
-        "contact_id": 1,
-        "execute_at": 1778166529,
-        "action_type": "continue_funnel",
-        "payload_json": "{\"next_step\": 5, \"from_step\": 4}",
-        "status": "done",
-        "created_ts": 1778166458,
-        "executed_ts": 1778166542
-      },
-      {
-        "id": 2,
-        "funnel_id": 1,
-        "contact_id": 2,
-        "execute_at": 1778166675,
-        "action_type": "continue_funnel",
-        "payload_json": "{\"next_step\": 5, \"from_step\": 4}",
-        "status": "done",
-        "created_ts": 1778166663,
-        "executed_ts": 1778166685
-      },
-      {
-        "id": 3,
-        "funnel_id": 1,
-        "contact_id": 3,
-        "execute_at": 1778166780,
-        "action_type": "continue_funnel",
-        "payload_json": "{\"next_step\": 5, \"from_step\": 4}",
-        "status": "done",
-        "created_ts": 1778166780,
-        "executed_ts": 1778166783
-      },
-      {
-        "id": 4,
-        "funnel_id": 1,
-        "contact_id": 4,
-        "execute_at": 1778167151,
-        "action_type": "continue_funnel",
-        "payload_json": "{\"next_step\": 5, \"from_step\": 4}",
-        "status": "done",
-        "created_ts": 1778167151,
-        "executed_ts": 1778167155
-      }
-    ],
-    "funnel_configs": [
-      {
-        "funnel_key": "reason",
-        "name": "ПРИЧИНА / пошук кореня",
-        "description": "мʼяко перевести людину в direct на діагностику запиту через слово ПРИЧИНА",
-        "trigger_type": "keyword",
-        "trigger_value": "причина,чому,корінь,звідки,повторюється,не розумію",
-        "output_type": "telegram_bot",
-        "output_target": "@content_ai_planner_bot",
-        "enabled": 1,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46"
-      },
-      {
-        "funnel_key": "session",
-        "name": "СЕСІЯ / запис",
-        "description": "вести до запису або консультації",
-        "trigger_type": "keyword",
-        "trigger_value": "сесія,запис,хочу,консультація,вартість,ціна,прайс,як потрапити",
-        "output_type": "telegram_bot",
-        "output_target": "@content_ai_planner_bot",
-        "enabled": 1,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46"
-      },
-      {
-        "funnel_key": "fear",
-        "name": "СТРАХ / зняття заперечення",
-        "description": "зняти страх і пояснити безпечність без обіцянок",
-        "trigger_type": "keyword",
-        "trigger_value": "страшно,боюсь,страх,небезпечно,раптом,побачу,травма,контроль",
-        "output_type": "telegram_bot",
-        "output_target": "@content_ai_planner_bot",
-        "enabled": 1,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46"
-      },
-      {
-        "funnel_key": "bv",
-        "name": "БВ / пояснення методу",
-        "description": "пояснити БВ простими словами і перевести до запиту",
-        "trigger_type": "keyword",
-        "trigger_value": "бв,базові вірування,вірування,перепрошивка,система",
-        "output_type": "telegram_bot",
-        "output_target": "@content_ai_planner_bot",
-        "enabled": 1,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46"
-      },
-      {
-        "funnel_key": "money",
-        "name": "ГРОШІ / блоки доходу",
-        "description": "вивести людину на повторюваний фінансовий сценарій",
-        "trigger_type": "keyword",
-        "trigger_value": "гроші,дохід,заробіток,борги,ціна,нема грошей,фінанси",
-        "output_type": "telegram_bot",
-        "output_target": "@content_ai_planner_bot",
-        "enabled": 1,
-        "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-05T12:04:46"
-      },
-      {
-        "funnel_key": "general_engagement",
-        "name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
-        "description": "мʼяко продовжити діалог і зрозуміти запит без продажу",
-        "trigger_type": "keyword",
-        "trigger_value": "відгукнулось,цікаво,дякую,клас,супер,актуально",
-        "output_type": "telegram_bot",
-        "output_target": "@content_ai_planner_bot",
-        "enabled": 1,
-        "created_at": "2026-05-05 10:10:24",
-        "updated_at": "2026-05-05 10:10:24"
-      }
-    ]
-  }
+    "instagram_webhook_messages": []
+  },
+  "counts": {
+    "funnel_configs": 7,
+    "funnel_steps_dynamic": 0,
+    "funnel_sessions_dynamic": 0,
+    "ig_reaction_funnel_plans": 7,
+    "ig_reactions": 9,
+    "ig_ai_reply_drafts": 9,
+    "instagram_webhook_messages": 0
+  },
+  "source": "auto_after_configs_upsert"
 }
