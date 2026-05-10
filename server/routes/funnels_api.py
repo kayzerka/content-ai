@@ -1686,8 +1686,23 @@ def _safe_auto_funnels_backup(reason: str = "auto"):
         out_dir.mkdir(parents=True, exist_ok=True)
         out = out_dir / "funnels-latest.json"
         backup["source"] = reason
+        tables = backup.get("tables") or {}
+        configs_count = len(tables.get("funnel_configs") or [])
+        steps_count = len(tables.get("funnel_steps_dynamic") or [])
+        plans_count = len(tables.get("ig_reaction_funnel_plans") or [])
+
+        if configs_count == 0:
+            print(
+                f"🚫 auto funnels backup blocked: empty funnel_configs "
+                f"reason={reason} configs={configs_count} steps={steps_count} plans={plans_count}"
+            )
+            return False
+
         out.write_text(json.dumps(backup, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"✅ auto funnels backup saved: {out} reason={reason}")
+        print(
+            f"✅ auto funnels backup saved: {out} reason={reason} "
+            f"configs={configs_count} steps={steps_count} plans={plans_count}"
+        )
 
         try:
             gh = _push_funnels_backup_to_github(backup, reason=reason)
