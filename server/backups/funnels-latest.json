@@ -2,7 +2,7 @@
   "ok": true,
   "status": "ok",
   "backup_type": "funnels_full_v2",
-  "exported_at": "2026-05-10T16:17:05",
+  "exported_at": "2026-05-10T16:17:19",
   "content_db": "/opt/render/project/src/server/data/content.db",
   "ig_webhook_db": "/opt/render/project/src/server/db/instagram.sqlite",
   "tables": {
@@ -175,7 +175,7 @@
       {
         "id": 2,
         "created_at": "2026-05-10T15:05:02",
-        "updated_at": "2026-05-10T16:15:54",
+        "updated_at": "2026-05-10T16:17:19",
         "funnel_key": "shudnennia_bv",
         "step_key": "free_session",
         "step_order": 2,
