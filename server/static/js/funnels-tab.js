@@ -408,6 +408,7 @@
   async function saveStep(){
     const key = state.selectedKey;
     const payload = {
+      funnel_key: key,
       step_key: val("st-key"),
       step_order: Number(val("st-order") || 100),
       active: Number(val("st-active") || 1),
@@ -416,9 +417,10 @@
       message_text: val("st-message"),
       button_text: val("st-button"),
       button_url: val("st-url"),
-      delay_minutes: Number(val("st-delay") || 0)
+      delay_minutes: Number(val("st-delay") || 0),
+      settings_json: "{}"
     };
-    const res = await api(`/api/funnels/configs/${encodeURIComponent(key)}/steps/upsert`, {
+    const res = await api(`/api/funnels/steps/upsert`, {
       method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
     });
     show(res);
