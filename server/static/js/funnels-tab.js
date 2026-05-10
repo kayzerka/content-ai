@@ -714,7 +714,7 @@
         modal.querySelector("#fsb-next-stage").value = "intro_video_sent";
         modal.querySelector("#fsb-message-text").value = "🌿 Вітаю тебе у просторі «Схуднення БВ».\n\nПеред тим як перейти до сеансу — подивись коротке пояснення методу БВ.\n\nУ цьому відео ти зрозумієш:\n• чому тіло може тримати вагу\n• як нервова система впливає на вагу\n• чому проблема може бути глибшою за їжу";
         modal.querySelector("#fsb-button-text").value = "🎥 Дивитися пояснення";
-        modal.querySelector("#fsb-button-url").value = "";
+        if (!modal.querySelector("#fsb-button-url").value) modal.querySelector("#fsb-button-url").value = "";
         modal.querySelector("#fsb-delay").value = "0";
       }
       if (n === 2) {
@@ -725,7 +725,7 @@
         modal.querySelector("#fsb-next-stage").value = "free_session_sent";
         modal.querySelector("#fsb-message-text").value = "🌿 Тепер переходь до безкоштовного ознайомчого сеансу БВ.\n\nПід час перегляду просто спостерігай за тілом:\n• що відгукується\n• де є напруга\n• які думки або емоції піднімаються";
         modal.querySelector("#fsb-button-text").value = "🌿 Перейти до сеансу";
-        modal.querySelector("#fsb-button-url").value = "";
+        if (!modal.querySelector("#fsb-button-url").value) modal.querySelector("#fsb-button-url").value = "";
         modal.querySelector("#fsb-delay").value = "0";
       }
       if (n === 3) {
@@ -736,7 +736,7 @@
         modal.querySelector("#fsb-next-stage").value = "prelearning_sent";
         modal.querySelector("#fsb-message-text").value = "🌿 Якщо тобі відгукнувся цей шлях — я запрошую тебе в простір переднавчання БВ.\n\nТам ми глибше працюємо з тілом, реакціями нервової системи і внутрішніми причинами ваги.\n\n👇 Переходь у переднавчання БВ";
         modal.querySelector("#fsb-button-text").value = "🔓 Перейти в переднавчання";
-        modal.querySelector("#fsb-button-url").value = "";
+        if (!modal.querySelector("#fsb-button-url").value) modal.querySelector("#fsb-button-url").value = "";
         modal.querySelector("#fsb-delay").value = "0";
       }
     }
@@ -754,7 +754,7 @@
       modal.querySelector("#fsb-next-stage").value = `step_${nextOrder}_sent`;
       modal.querySelector("#fsb-message-text").value = "";
       modal.querySelector("#fsb-button-text").value = "";
-      modal.querySelector("#fsb-button-url").value = "";
+      if (!modal.querySelector("#fsb-button-url").value) modal.querySelector("#fsb-button-url").value = "";
       modal.querySelector("#fsb-delay").value = "0";
     };
 
