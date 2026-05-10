@@ -2,7 +2,7 @@
   "ok": true,
   "status": "ok",
   "backup_type": "funnels_full_v2",
-  "exported_at": "2026-05-10T11:52:08",
+  "exported_at": "2026-05-10T11:52:47",
   "content_db": "/opt/render/project/src/server/data/content.db",
   "ig_webhook_db": "/opt/render/project/src/server/db/instagram.sqlite",
   "tables": {
@@ -155,7 +155,24 @@
         "settings_json": "{}"
       }
     ],
-    "funnel_steps_dynamic": [],
+    "funnel_steps_dynamic": [
+      {
+        "id": 1,
+        "created_at": "2026-05-10T11:52:47",
+        "updated_at": "2026-05-10T11:52:47",
+        "funnel_key": "shudnennia_bv",
+        "step_key": "start",
+        "step_order": 1,
+        "active": 1,
+        "trigger_stage": "tg_started",
+        "next_stage": "intro_video_sent",
+        "message_text": "🌿 Вітаю тебе у просторі «Схуднення БВ».\n\nПеред тим як перейти до сеансу — подивись коротке пояснення методу БВ.\n\nУ цьому відео ти зрозумієш:\n• чому тіло може тримати вагу\n• як нервова система впливає на вагу\n• чому проблема може бути глибшою за їжу",
+        "button_text": "🎥 Дивитися пояснення",
+        "button_url": "",
+        "delay_minutes": 0,
+        "settings_json": "{\"step_type\":\"send_message\"}"
+      }
+    ],
     "funnel_sessions_dynamic": [],
     "ig_reaction_funnel_plans": [
       {
@@ -621,12 +638,12 @@
   },
   "counts": {
     "funnel_configs": 7,
-    "funnel_steps_dynamic": 0,
+    "funnel_steps_dynamic": 1,
     "funnel_sessions_dynamic": 0,
     "ig_reaction_funnel_plans": 7,
     "ig_reactions": 9,
     "ig_ai_reply_drafts": 9,
     "instagram_webhook_messages": 0
   },
-  "source": "auto_after_configs_upsert"
+  "source": "auto_after_steps_upsert"
 }
