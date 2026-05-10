@@ -782,14 +782,25 @@ def funnels_update(funnel_id: int, req: FunnelUpdateRequest):
     return {"ok": True, "item": update_funnel(funnel_id, patch)}
 
 @router.post("/steps/upsert")
-def funnels_step_upsert(req: FunnelStepUpsertRequest):
+def funnels_step_upsert(req: Dict[str, Any]):
+    """
+    Compatible steps upsert:
+    - old numeric funnel_id flow
+    - new dynamic funnel_key/step_key flow used by frontend constructor
+    """
+    if req.get("funnel_key") or req.get("step_key"):
+        return funnel_steps_upsert(req)
+
     item = upsert_funnel_step(
-        funnel_id=req.funnel_id,
-        step_order=req.step_order,
-        step_type=req.step_type,
-        step_name=req.step_name or "",
-        config=req.config or {},
+        funnel_id=req.get("funnel_id"),
+        step_order=int(req.get("step_order", 100) or 100),
+        step_type=req.get("step_type") or "send_message",
+        step_name=req.get("step_name") or "",
+        config=req.get("config") or {},
     )
+
+    _safe_auto_funnels_backup("auto_after_legacy_steps_upsert")
+
     return {"ok": True, "item": item}
 
 @router.post("/steps/delete")
@@ -3650,6 +3661,8 @@ def funnel_steps_upsert(payload: Dict[str, Any]):
     """, (funnel_key, step_key)).fetchone()
 
     con.close()
+
+    _safe_auto_funnels_backup("auto_after_steps_upsert")
 
     return {
         "ok": True,
