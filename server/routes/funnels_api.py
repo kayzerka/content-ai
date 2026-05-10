@@ -441,6 +441,8 @@ def dyn_config_upsert(payload: Dict[str, Any]):
     if str(payload.get("source_platform") or "instagram").lower() == "instagram":
         dyn_bridge_to_ig_plan({**payload, "funnel_key": key})
 
+    _safe_auto_funnels_backup("auto_after_configs_upsert")
+
     return {"ok": True, "status": "ok", "item": dyn_get_config(key)}
 
 @router.get("/configs/list")
@@ -1587,6 +1589,106 @@ def funnel_auto_snapshot_silent(reason="auto"):
         return {"ok": False, "error": str(e)}
 # === /FUNNEL AUTO SNAPSHOT SILENT V1 ===
 
+
+
+
+
+def _push_funnels_backup_to_github(backup_obj: dict, reason: str = "auto"):
+    """
+    Push backups/funnels-latest.json to GitHub after funnel save.
+    Required env:
+      GITHUB_BACKUP_TOKEN
+      GITHUB_BACKUP_REPO      example: username/repo
+      GITHUB_BACKUP_BRANCH    default: main
+      GITHUB_BACKUP_PATH      example: server/backups/funnels-latest.json
+    """
+    import os, json, base64, urllib.request, urllib.error
+
+    token = os.getenv("GITHUB_BACKUP_TOKEN", "").strip()
+    repo = os.getenv("GITHUB_BACKUP_REPO", "").strip()
+    branch = os.getenv("GITHUB_BACKUP_BRANCH", "main").strip()
+    path = os.getenv("GITHUB_BACKUP_PATH", "server/backups/funnels-latest.json").strip()
+
+    if not token or not repo:
+        print("⚠️ GitHub backup skipped: GITHUB_BACKUP_TOKEN or GITHUB_BACKUP_REPO missing")
+        return {"ok": False, "skipped": True, "reason": "missing_env"}
+
+    api = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "content-ai-funnels-backup",
+    }
+
+    sha = None
+    try:
+        req = urllib.request.Request(api + f"?ref={branch}", headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            current = json.loads(resp.read().decode("utf-8"))
+            sha = current.get("sha")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            body = e.read().decode("utf-8", errors="replace")
+            print("⚠️ GitHub backup get failed:", e.code, body[:500])
+            return {"ok": False, "error": f"GET {e.code}", "body": body[:500]}
+    except Exception as e:
+        print("⚠️ GitHub backup get exception:", repr(e))
+        return {"ok": False, "error": repr(e)}
+
+    content = json.dumps(backup_obj, ensure_ascii=False, indent=2).encode("utf-8")
+    payload = {
+        "message": f"Update funnels backup ({reason})",
+        "content": base64.b64encode(content).decode("ascii"),
+        "branch": branch,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(api, data=data, headers={**headers, "Content-Type": "application/json"}, method="PUT")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            print("✅ GitHub funnels backup pushed:", result.get("commit", {}).get("sha"))
+            return {"ok": True, "commit": result.get("commit", {}).get("sha")}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print("⚠️ GitHub backup push failed:", e.code, body[:1000])
+        return {"ok": False, "error": f"PUT {e.code}", "body": body[:1000]}
+    except Exception as e:
+        print("⚠️ GitHub backup push exception:", repr(e))
+        return {"ok": False, "error": repr(e)}
+
+
+def _safe_auto_funnels_backup(reason: str = "auto"):
+    """
+    Auto-save funnels backup after create/update/delete.
+    Important: on Render this saves inside Render filesystem.
+    Local machine must still pull /api/funnels/backup/export into backups/funnels-latest.json.
+    """
+    try:
+        backup = _build_funnel_full_backup()
+        import json
+        from pathlib import Path
+        out_dir = Path("backups")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out = out_dir / "funnels-latest.json"
+        backup["source"] = reason
+        out.write_text(json.dumps(backup, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"✅ auto funnels backup saved: {out} reason={reason}")
+
+        try:
+            gh = _push_funnels_backup_to_github(backup, reason=reason)
+            print("GitHub backup result:", gh)
+        except Exception as e:
+            print("⚠️ GitHub backup wrapper failed:", repr(e))
+
+        return True
+    except Exception as e:
+        print(f"⚠️ auto funnels backup failed reason={reason}: {repr(e)}")
+        return False
+
 def _build_funnel_full_backup():
     dyn_init()
 
@@ -2470,6 +2572,7 @@ def funnels_seed_from_reaction_plans_safe_v2():
             imported += 1
 
         con.commit()
+        _safe_auto_funnels_backup('auto_after_funnel_save')
         return {"ok": True, "status": "ok", "imported": imported}
     except Exception as e:
         return {"ok": False, "status": "error", "error": repr(e)}
@@ -2741,6 +2844,7 @@ def convert_legacy_funnel_events_to_dynamic_v1():
                 created_steps += 1
 
         con.commit()
+        _safe_auto_funnels_backup('auto_after_funnel_save')
         return {
             "ok": True,
             "status": "ok",
@@ -2938,6 +3042,7 @@ def convert_legacy_funnel_events_from_db_v1():
                 created_steps += 1
 
         con.commit()
+        _safe_auto_funnels_backup('auto_after_funnel_save')
         return {
             "ok": True,
             "status": "ok",
@@ -3223,6 +3328,7 @@ def import_legacy_funnel_payload_v1(payload: Dict[str, Any]):
                 imported[table_name] += 1
 
         con.commit()
+        _safe_auto_funnels_backup('auto_after_funnel_save')
         return {"ok": True, "status": "ok", "imported": imported}
     except Exception as e:
         return {"ok": False, "status": "error", "where": "import_legacy_payload", "error": repr(e)}
@@ -3320,6 +3426,7 @@ def convert_ig_reactions_to_funnel_leads_v1():
             imported += 1
 
         con.commit()
+        _safe_auto_funnels_backup('auto_after_funnel_save')
         return {"ok": True, "status": "ok", "imported": imported, "skipped": skipped, "source_rows": len(rows)}
     except Exception as e:
         return {"ok": False, "status": "error", "where": "convert_ig_reactions_to_leads", "error": repr(e)}
