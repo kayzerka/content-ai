@@ -501,7 +501,7 @@
         document.getElementById("st-next").value = step.next_stage || "";
         document.getElementById("st-message").value = step.message_text || "";
         document.getElementById("st-button").value = step.button_text || "";
-        document.getElementById("st-url").value = step.button_url || "";
+        document.getElementById("st-url").value = step.button_url || step.buttonUrl || "";
         document.getElementById("st-delay").value = step.delay_minutes || 0;
       };
     });
@@ -796,7 +796,7 @@
         modal.querySelector("#fsb-next-stage").value = item.next_stage || payload.next_stage || "";
         modal.querySelector("#fsb-message-text").value = item.message_text || payload.message_text || "";
         modal.querySelector("#fsb-button-text").value = item.button_text || payload.button_text || "";
-        modal.querySelector("#fsb-button-url").value = item.button_url || payload.button_url || "";
+        modal.querySelector("#fsb-button-url").value = item.button_url || item.buttonUrl || payload.button_url || payload.buttonUrl || "";
         modal.querySelector("#fsb-delay").value = item.delay_minutes ?? payload.delay_minutes ?? 0;
       }
 
