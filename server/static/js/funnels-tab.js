@@ -309,15 +309,17 @@
     return (state.sessions || []).find(s => String(s.source_user_id || "") === uid) || null;
   }
 
-  function leadActiveFunnelKey(l){
-    const sess = latestSessionForLead(l);
+  function leadMatchedFunnelKey(l){
     return String(
-      (sess && sess.funnel_key) ||
-      l.active_funnel_key ||
       l.matched_funnel_key ||
       l.matched_plan_key ||
       ""
     ).trim();
+  }
+
+  function leadActiveFunnelKey(l){
+    const sess = latestSessionForLead(l);
+    return String((sess && sess.funnel_key) || "").trim();
   }
 
   function leadsHtml(){
@@ -341,8 +343,10 @@
           <tbody>
             ${state.leads.map(l => {
               const uid = leadUserId(l);
+              const matchedKey = leadMatchedFunnelKey(l);
               const activeKey = leadActiveFunnelKey(l);
               const sess = latestSessionForLead(l);
+              const selectedKey = activeKey || matchedKey;
 
               return `
               <tr>
@@ -351,13 +355,14 @@
                 <td>${esc(uid)}<br><span class="fu-muted">${esc(l.username || "")}</span></td>
                 <td>${esc((l.text || "").slice(0,140))}</td>
                 <td>
-                  <b>${esc(activeKey || "—")}</b><br>
-                  ${activeKey ? `<span class="fu-active-lead">✅ Активна</span>` : `<span class="fu-inactive-lead">○ Не вибрано</span>`}
+                  <div><b>Matched:</b> ${esc(matchedKey || "—")}</div>
+                  <div><b>Active:</b> ${esc(activeKey || "—")}</div>
+                  ${activeKey ? `<span class="fu-active-lead">✅ Активна</span>` : `<span class="fu-inactive-lead">○ Ще не запущено</span>`}
                   ${sess ? `<div class="fu-muted">session #${esc(sess.id || "")} · ${esc(sess.stage || sess.status || "")}</div>` : ""}
                 </td>
                 <td>
                   <select data-funnel-select="${esc(uid)}">
-                    ${state.funnels.map(f => `<option value="${esc(f.funnel_key)}" ${f.funnel_key === activeKey ? "selected" : ""}>${f.funnel_key === activeKey ? "✅ " : ""}${esc(f.funnel_name || f.funnel_key)}</option>`).join("")}
+                    ${state.funnels.map(f => `<option value="${esc(f.funnel_key)}" ${f.funnel_key === selectedKey ? "selected" : ""}>${f.funnel_key === activeKey ? "✅ " : ""}${esc(f.funnel_name || f.funnel_key)}</option>`).join("")}
                   </select>
                   <button class="primary" data-start-lead="${esc(uid)}" data-lead-text="${esc(l.text || "")}" data-lead-user="${esc(l.username || "")}">
                     ▶️ ${activeKey ? "Застосувати іншу" : "Застосувати"}
