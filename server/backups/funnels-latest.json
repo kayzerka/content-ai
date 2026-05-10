@@ -2,7 +2,7 @@
   "ok": true,
   "status": "ok",
   "backup_type": "funnels_full_v2",
-  "exported_at": "2026-05-10T15:05:02",
+  "exported_at": "2026-05-10T15:11:48",
   "content_db": "/opt/render/project/src/server/data/content.db",
   "ig_webhook_db": "/opt/render/project/src/server/db/instagram.sqlite",
   "tables": {
@@ -10,7 +10,7 @@
       {
         "id": 1,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "reason",
         "funnel_name": "ПРИЧИНА / пошук кореня",
         "active": 1,
@@ -31,7 +31,7 @@
       {
         "id": 2,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "session",
         "funnel_name": "СЕСІЯ / запис",
         "active": 1,
@@ -52,7 +52,7 @@
       {
         "id": 3,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "fear",
         "funnel_name": "СТРАХ / зняття заперечення",
         "active": 1,
@@ -73,7 +73,7 @@
       {
         "id": 4,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "bv",
         "funnel_name": "БВ / пояснення методу",
         "active": 1,
@@ -94,7 +94,7 @@
       {
         "id": 5,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "money",
         "funnel_name": "ГРОШІ / блоки доходу",
         "active": 1,
@@ -115,7 +115,7 @@
       {
         "id": 6,
         "created_at": "2026-05-05 10:10:24",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "general_engagement",
         "funnel_name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
         "active": 1,
@@ -136,7 +136,7 @@
       {
         "id": 7,
         "created_at": "2026-05-10T10:14:49",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "shudnennia_bv",
         "funnel_name": "Схуднення БВ",
         "active": 1,
@@ -159,7 +159,7 @@
       {
         "id": 1,
         "created_at": "2026-05-10T11:52:47",
-        "updated_at": "2026-05-10T15:03:04",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "shudnennia_bv",
         "step_key": "start",
         "step_order": 1,
@@ -175,7 +175,7 @@
       {
         "id": 2,
         "created_at": "2026-05-10T15:05:02",
-        "updated_at": "2026-05-10T15:05:02",
+        "updated_at": "2026-05-10T15:10:30",
         "funnel_key": "shudnennia_bv",
         "step_key": "free_session",
         "step_order": 2,
@@ -187,6 +187,22 @@
         "button_url": "https://t.me/c/3978692875/6",
         "delay_minutes": 0,
         "settings_json": "{\"step_type\":\"send_free_gift\"}"
+      },
+      {
+        "id": 3,
+        "created_at": "2026-05-10T15:11:48",
+        "updated_at": "2026-05-10T15:11:48",
+        "funnel_key": "shudnennia_bv",
+        "step_key": "prelearning",
+        "step_order": 3,
+        "active": 1,
+        "trigger_stage": "free_session_sent",
+        "next_stage": "prelearning_sent",
+        "message_text": "🌿 Якщо тобі відгукнувся цей шлях — я запрошую тебе в простір переднавчання БВ.\n\nТам ми глибше працюємо з тілом, реакціями нервової системи і внутрішніми причинами ваги.\n\n👇 Переходь у переднавчання БВ",
+        "button_text": "🔓 Перейти в переднавчання",
+        "button_url": "https://t.me/c/3978692875/7",
+        "delay_minutes": 0,
+        "settings_json": "{\"step_type\":\"send_message\"}"
       }
     ],
     "funnel_sessions_dynamic": [],
@@ -654,7 +670,7 @@
   },
   "counts": {
     "funnel_configs": 7,
-    "funnel_steps_dynamic": 2,
+    "funnel_steps_dynamic": 3,
     "funnel_sessions_dynamic": 0,
     "ig_reaction_funnel_plans": 7,
     "ig_reactions": 9,
