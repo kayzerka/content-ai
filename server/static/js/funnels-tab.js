@@ -693,6 +693,8 @@
               <b>${esc(x.step_order)}. ${esc(x.step_key)}</b>
               <span style="color:#667085;">trigger: ${esc(x.trigger_stage)} → next: ${esc(x.next_stage)}</span>
               <div style="white-space:pre-wrap;margin-top:6px;">${esc((x.message_text || "").slice(0,300))}</div>
+              <div style="color:#667085;margin-top:6px;">${esc(x.button_text || "")} ${x.button_url ? "→ " + esc(x.button_url) : ""}</div>
+              <button data-fsb-edit="${esc(x.step_key)}" style="margin-top:8px;border:1px solid #ddd;border-radius:10px;padding:8px 12px;background:#fff;cursor:pointer;">✏️ Редагувати</button>
             </div>
           `).join("") : `<div style="color:#667085;">Кроків ще нема.</div>`}
         </div>
@@ -741,6 +743,37 @@
       }
     }
 
+    function loadStepToForm(item){
+      if (!item) return;
+
+      let stepType = "send_message";
+      try {
+        const sj = typeof item.settings_json === "string"
+          ? JSON.parse(item.settings_json || "{}")
+          : (item.settings_json || {});
+        stepType = sj.step_type || stepType;
+      } catch(e) {}
+
+      modal.querySelector("#fsb-step-key").value = item.step_key || "";
+      modal.querySelector("#fsb-step-type").value = stepType;
+      modal.querySelector("#fsb-step-order").value = String(item.step_order || 1);
+      modal.querySelector("#fsb-active").value = String(item.active ?? 1);
+      modal.querySelector("#fsb-trigger-stage").value = item.trigger_stage || "";
+      modal.querySelector("#fsb-next-stage").value = item.next_stage || "";
+      modal.querySelector("#fsb-message-text").value = item.message_text || "";
+      modal.querySelector("#fsb-button-text").value = item.button_text || "";
+      modal.querySelector("#fsb-button-url").value = item.button_url || item.buttonUrl || "";
+      modal.querySelector("#fsb-delay").value = String(item.delay_minutes ?? 0);
+    }
+
+    modal.querySelectorAll("[data-fsb-edit]").forEach(btn => {
+      btn.onclick = () => {
+        const stepKey = btn.getAttribute("data-fsb-edit");
+        const item = items.find(x => x.step_key === stepKey);
+        loadStepToForm(item);
+      };
+    });
+
     
     modal.querySelector("#fsb-add-new").onclick = () => {
       const maxOrder = Math.max(0, ...items.map(x => Number(x.step_order || 0)));
@@ -754,12 +787,12 @@
       modal.querySelector("#fsb-next-stage").value = `step_${nextOrder}_sent`;
       modal.querySelector("#fsb-message-text").value = "";
       modal.querySelector("#fsb-button-text").value = "";
-      if (!modal.querySelector("#fsb-button-url").value) modal.querySelector("#fsb-button-url").value = "";
+      modal.querySelector("#fsb-button-url").value = "";
       modal.querySelector("#fsb-delay").value = "0";
     };
 
 
-    modal.querySelector("#fsb-preset-1").onclick = () => // fillPreset(1); // disabled auto overwrite
+    modal.querySelector("#fsb-preset-1").onclick = () => fillPreset(1);
     modal.querySelector("#fsb-preset-2").onclick = () => fillPreset(2);
     modal.querySelector("#fsb-preset-3").onclick = () => fillPreset(3);
 
@@ -800,15 +833,23 @@
         modal.querySelector("#fsb-delay").value = item.delay_minutes ?? payload.delay_minutes ?? 0;
       }
 
-      if (save.ok) {
-        await openStepsBuilder(funnelKey);
+      if (save.ok && save.item) {
+        const idx = items.findIndex(x => x.step_key === save.item.step_key);
+        if (idx >= 0) items[idx] = save.item;
+        else items.push(save.item);
+
+        modal.querySelector("#fsb-output").textContent = JSON.stringify({
+          ok: true,
+          saved: save.item,
+          note: "Крок збережено. Дані у формі залишені без перетирання."
+        }, null, 2);
       }
     };
 
-    // Do not auto-fill preset when existing steps are loaded,
-    // because it clears saved button_url while switching/editing steps.
-    if (!items || items.length === 0) {
-      // fillPreset(1); // disabled auto overwrite
+    if (items && items.length > 0) {
+      loadStepToForm(items[0]);
+    } else {
+      fillPreset(1);
     }
   }
 
