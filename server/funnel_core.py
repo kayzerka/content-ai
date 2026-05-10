@@ -305,15 +305,37 @@ def build_telegram_start_link(bot_username: Optional[str], funnel_id: int, exter
 
 def parse_telegram_start_payload(payload: str) -> Dict[str, Any]:
     """
-    Expected: funnel_1__external_user_id
+    Supported:
+      Legacy:  funnel_1__external_user_id
+      Dynamic: funnel_<funnel_key>__ig_<external_user_id>
     """
     payload = (payload or "").strip()
+
+    # Dynamic funnel_key format:
+    # funnel_shudnennia_bv__ig_manual_test_001
+    if payload.startswith("funnel_") and "__ig_" in payload:
+        left, external_user_id = payload.split("__ig_", 1)
+        funnel_key = left.replace("funnel_", "", 1).strip()
+        external_user_id = str(external_user_id or "").strip()
+
+        if funnel_key and external_user_id:
+            return {
+                "ok": True,
+                "mode": "dynamic",
+                "funnel_key": funnel_key,
+                "external_user_id": external_user_id,
+                "payload": payload,
+            }
+
+    # Legacy numeric format:
+    # funnel_1__external_user_id
     m = re.match(r"^funnel_(\d+)__(.+)$", payload)
     if not m:
         return {"ok": False, "error": "bad_start_payload", "payload": payload}
 
     return {
         "ok": True,
+        "mode": "legacy",
         "funnel_id": int(m.group(1)),
         "external_user_id": m.group(2),
         "payload": payload,
