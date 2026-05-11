@@ -146,6 +146,7 @@
         <button id="fu-list">📋 Всі воронки</button>
         <button id="fu-leads">👥 Ліди</button>
         <button id="fu-sessions">🧾 Sessions</button>
+        <button id="fu-pull-render-backup">💾 Backup Render → Local</button>
         <button id="fu-status">Status</button>
       </div>
 
@@ -502,6 +503,32 @@
     document.getElementById("fu-list").onclick = async () => { state.view = "list"; await render(); };
     document.getElementById("fu-leads").onclick = async () => { state.view = "leads"; await render(); };
     document.getElementById("fu-sessions").onclick = async () => { state.view = "sessions"; await render(); };
+    const pullRenderBackupBtn = document.getElementById("fu-pull-render-backup");
+    if (pullRenderBackupBtn) pullRenderBackupBtn.onclick = async () => {
+      pullRenderBackupBtn.disabled = true;
+      const oldText = pullRenderBackupBtn.textContent;
+      pullRenderBackupBtn.textContent = "⏳ Зберігаю backup...";
+
+      try {
+        const res = await api("/api/funnels/restore/save_render_to_local", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({reason:"manual_frontend_pull_render_to_local"})
+        });
+
+        show(res);
+        pullRenderBackupBtn.textContent = res && res.ok ? "✅ Backup збережено" : "❌ Помилка backup";
+      } catch(e) {
+        show({ok:false, error:String(e)});
+        pullRenderBackupBtn.textContent = "❌ Помилка backup";
+      } finally {
+        setTimeout(() => {
+          pullRenderBackupBtn.disabled = false;
+          pullRenderBackupBtn.textContent = oldText;
+        }, 2500);
+      }
+    };
+
     document.getElementById("fu-status").onclick = async () => show(await api("/api/funnels/runtime/status"));
     var ingestLeadsBtn = document.getElementById("fu-ingest-leads");
     if (ingestLeadsBtn) ingestLeadsBtn.onclick = async () => {

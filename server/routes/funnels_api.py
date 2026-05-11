@@ -3447,6 +3447,9 @@ def push_latest_local_funnels_backup_to_render_v1():
         payload.pop("telegram_db", None)
         payload.pop("telegram_bundle", None)
 
+        payload = payload or {}
+        reason = str(payload.get("reason") or "auto_save_all").strip()[:100] or "auto_save_all"
+
         render_url = os.getenv("RENDER_API", "https://content-ai-ps1k.onrender.com").rstrip("/")
         req = urllib.request.Request(
             render_url + "/api/funnels/backup/import",
@@ -3577,7 +3580,7 @@ def push_fixed_local_funnels_backup_to_render_v1():
 
 # === AUTO BACKUP ALL SYSTEM DATA V1 ===
 @router.post("/backup/auto_save_all")
-def auto_save_all_system_backups_v1():
+def auto_save_all_system_backups_v1(payload: Dict[str, Any] = None):
     try:
         import json, os, urllib.request
         from pathlib import Path
@@ -3604,6 +3607,14 @@ def auto_save_all_system_backups_v1():
                 "ok": True,
                 "path": str(funnels_path)
             }
+
+            try:
+                results["github_funnels"] = _push_funnels_backup_to_github(
+                    funnels,
+                    reason=reason
+                )
+            except Exception as e:
+                results["github_funnels"] = {"ok": False, "error": repr(e)}
         except Exception as e:
             results["funnels"] = {"ok": False, "error": repr(e)}
 
@@ -3625,7 +3636,9 @@ def auto_save_all_system_backups_v1():
         # FULL
         full = {
             "saved_at": time.time(),
+            "reason": reason,
             "funnels": results.get("funnels"),
+            "github_funnels": results.get("github_funnels"),
             "telegram": results.get("telegram"),
         }
 
@@ -3635,6 +3648,7 @@ def auto_save_all_system_backups_v1():
         return {
             "ok": True,
             "status": "ok",
+            "reason": reason,
             "backup_dir": str(backup_dir),
             "results": results,
             "full_backup": str(full_path)
