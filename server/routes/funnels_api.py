@@ -3447,9 +3447,6 @@ def push_latest_local_funnels_backup_to_render_v1():
         payload.pop("telegram_db", None)
         payload.pop("telegram_bundle", None)
 
-        payload = payload or {}
-        reason = str(payload.get("reason") or "auto_save_all").strip()[:100] or "auto_save_all"
-
         render_url = os.getenv("RENDER_API", "https://content-ai-ps1k.onrender.com").rstrip("/")
         req = urllib.request.Request(
             render_url + "/api/funnels/backup/import",
@@ -3582,6 +3579,9 @@ def push_fixed_local_funnels_backup_to_render_v1():
 @router.post("/backup/auto_save_all")
 def auto_save_all_system_backups_v1(payload: Dict[str, Any] = None):
     try:
+        payload = payload or {}
+        reason = str(payload.get("reason") or "auto_save_all").strip()[:100] or "auto_save_all"
+
         import json, os, urllib.request
         from pathlib import Path
 
