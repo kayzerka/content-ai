@@ -320,7 +320,17 @@ def dyn_send_instagram_dm(recipient_id: str, text: str):
         return {"ok": False, "error": "text_empty"}
 
     api_ver = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
-    url = f"https://graph.facebook.com/{api_ver}/me/messages?access_token={quote(token)}"
+
+    ig_user_id = (
+        os.getenv("IG_USER_ID", "").strip()
+        or os.getenv("INSTAGRAM_USER_ID", "").strip()
+        or os.getenv("META_IG_USER_ID", "").strip()
+    )
+
+    if not ig_user_id:
+        return {"ok": False, "error": "IG_USER_ID_missing"}
+
+    url = f"https://graph.facebook.com/{api_ver}/{ig_user_id}/messages?access_token={quote(token)}"
 
     body = json.dumps({
         "recipient": {"id": recipient_id},
