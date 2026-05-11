@@ -685,7 +685,40 @@ def dyn_runtime_leads(limit: int = 100):
         except Exception:
             pass
 
-    items = sorted(items, key=lambda x: str(x.get("created_at") or ""), reverse=True)[:limit]
+    normalized = []
+
+    for x in items:
+        d = dict(x)
+
+        d["text"] = (
+            d.get("text")
+            or d.get("reaction_text")
+            or d.get("direct_reply")
+            or ""
+        )
+
+        d["source_user_id"] = (
+            d.get("source_user_id")
+            or d.get("external_user_id")
+            or d.get("sender_id")
+            or ""
+        )
+
+        d["matched_funnel_key"] = (
+            d.get("matched_funnel_key")
+            or d.get("matched_plan_key")
+            or d.get("selected_funnel_plan_key")
+            or ""
+        )
+
+        normalized.append(d)
+
+    items = sorted(
+        normalized,
+        key=lambda x: str(x.get("created_at") or ""),
+        reverse=True
+    )[:limit]
+
     return {"ok": True, "status": "ok", "items": items}
 
 @router.post("/runtime/manual-start")
@@ -859,6 +892,137 @@ def dyn_runtime_manual_start(payload: Dict[str, Any]):
         "mode": mode,
         "instagram_send": send_result,
     }
+
+
+# AUTO_START_WEBHOOK_FUNNELS_V1
+
+def dyn_match_funnel_for_text(text: str):
+    txt = str(text or "").strip().lower()
+    if not txt:
+        return None
+
+    con = dyn_con()
+
+    rows = con.execute("""
+        SELECT *
+        FROM funnel_configs
+        WHERE active=1
+        ORDER BY priority ASC, id ASC
+    """).fetchall()
+
+    con.close()
+
+    for r in rows:
+        item = dict(r)
+
+        kws_raw = str(item.get("trigger_keywords") or "")
+        kws = [
+            k.strip().lower()
+            for k in re.split(r"[,\\n;]+", kws_raw)
+            if k.strip()
+        ]
+
+        for kw in kws:
+            if kw and kw in txt:
+                return item
+
+    return None
+
+
+@router.post("/runtime/auto-start-webhooks")
+def dyn_runtime_auto_start_webhooks(payload: Dict[str, Any] = {}):
+    dyn_init()
+
+    limit = max(1, min(int(payload.get("limit") or 100), 500))
+    mode = str(payload.get("mode") or "send").strip().lower()
+
+    if mode not in ("draft", "send"):
+        mode = "send"
+
+    imported = 0
+    skipped = 0
+    started = []
+
+    if not Path(IG_WEBHOOK_DB_PATH).exists():
+        return {
+            "ok": False,
+            "status": "error",
+            "error": "instagram webhook db missing"
+        }
+
+    con_ig = sqlite3.connect(IG_WEBHOOK_DB_PATH)
+    con_ig.row_factory = sqlite3.Row
+
+    rows = con_ig.execute("""
+        SELECT *
+        FROM instagram_webhook_messages
+        WHERE COALESCE(text,'') != ''
+        ORDER BY id DESC
+        LIMIT ?
+    """, (limit,)).fetchall()
+
+    con_ig.close()
+
+    for row in rows:
+        r = dict(row)
+
+        source_user_id = str(r.get("sender_id") or "").strip()
+        text = str(r.get("text") or "").strip()
+
+        if not source_user_id or not text:
+            skipped += 1
+            continue
+
+        cfg = dyn_match_funnel_for_text(text)
+
+        if not cfg:
+            skipped += 1
+            continue
+
+        funnel_key = str(cfg.get("funnel_key") or "").strip()
+
+        try:
+            res = dyn_runtime_manual_start({
+                "funnel_key": funnel_key,
+                "source_platform": "instagram",
+                "source_user_id": source_user_id,
+                "source_message": text,
+                "source_webhook_message_id": r.get("id"),
+                "mode": mode,
+            })
+
+            if res.get("ok"):
+                imported += 1
+                started.append({
+                    "user": source_user_id,
+                    "funnel_key": funnel_key,
+                    "status": res.get("status"),
+                    "session_id": res.get("session_id"),
+                })
+            else:
+                skipped += 1
+
+        except Exception as e:
+            skipped += 1
+            started.append({
+                "user": source_user_id,
+                "error": repr(e)
+            })
+
+    try:
+        _safe_auto_funnels_backup("after_auto_start_webhooks")
+    except Exception as e:
+        print("auto webhook backup failed", repr(e), flush=True)
+
+    return {
+        "ok": True,
+        "status": "ok",
+        "started_count": imported,
+        "skipped": skipped,
+        "items": started
+    }
+
+
 
 @router.get("/runtime/sessions")
 def dyn_runtime_sessions(limit: int = 100):
