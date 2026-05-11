@@ -296,6 +296,56 @@ def dyn_default_dm_template():
         "👇 Натисни й почни тут:\\n{{telegram_deeplink}}"
     )
 
+def dyn_send_instagram_dm(recipient_id: str, text: str):
+    import urllib.request
+    import urllib.error
+
+    token = (
+        os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("META_PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("PAGE_ACCESS_TOKEN", "").strip()
+        or os.getenv("IG_ACCESS_TOKEN", "").strip()
+    )
+
+    if not token:
+        return {"ok": False, "error": "missing_page_access_token"}
+
+    recipient_id = str(recipient_id or "").strip()
+    text = str(text or "").strip()
+
+    if not recipient_id:
+        return {"ok": False, "error": "recipient_id_missing"}
+
+    if not text:
+        return {"ok": False, "error": "text_empty"}
+
+    api_ver = os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
+    url = f"https://graph.facebook.com/{api_ver}/me/messages?access_token={quote(token)}"
+
+    body = json.dumps({
+        "recipient": {"id": recipient_id},
+        "message": {"text": text}
+    }, ensure_ascii=False).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            data["ok"] = True
+            return data
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", errors="replace")
+        return {"ok": False, "error": f"HTTP {e.code}", "body": raw[:1000]}
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+
+
 def dyn_bridge_to_ig_plan(payload: dict):
     """
     Паралельно синхронізує funnel_configs у стару таблицю ig_reaction_funnel_plans,
@@ -723,7 +773,38 @@ def dyn_runtime_manual_start(payload: Dict[str, Any]):
 
     session_id = cur.lastrowid
     con.commit()
+
+    send_result = None
+
+    if mode == "send":
+        send_result = dyn_send_instagram_dm(source_user_id, dm_text)
+
+        cur.execute("""
+            UPDATE funnel_sessions_dynamic
+            SET
+                status=?,
+                stage=?,
+                sent_at=?,
+                error=?,
+                updated_at=?
+            WHERE id=?
+        """, (
+            "ig_dm_sent" if send_result and send_result.get("ok") else "ig_dm_error",
+            "ig_dm_sent" if send_result and send_result.get("ok") else "ig_dm_error",
+            dyn_now() if send_result and send_result.get("ok") else "",
+            "" if send_result and send_result.get("ok") else json.dumps(send_result or {}, ensure_ascii=False),
+            dyn_now(),
+            session_id,
+        ))
+
+        con.commit()
+
     con.close()
+
+    try:
+        _safe_auto_funnels_backup("after_manual_start_lead_send" if mode == "send" else "after_manual_start_lead_draft")
+    except Exception as e:
+        print("manual start backup failed", repr(e), flush=True)
 
     return {
         "ok": True,
@@ -734,6 +815,7 @@ def dyn_runtime_manual_start(payload: Dict[str, Any]):
         "telegram_deeplink": deeplink,
         "dm_text": dm_text,
         "mode": mode,
+        "instagram_send": send_result,
     }
 
 @router.get("/runtime/sessions")

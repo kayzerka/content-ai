@@ -590,7 +590,7 @@
               source_user_id:user,
               source_username:b.getAttribute("data-lead-user") || "",
               source_message:b.getAttribute("data-lead-text") || "",
-              mode:"draft"
+              mode:"send"
             })
           });
 
