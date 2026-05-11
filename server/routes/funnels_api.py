@@ -2079,6 +2079,139 @@ def dyn_runtime_leads_v2(limit: int = 100):
     funnel_leads_ingest_from_existing(limit=500)
     return funnel_leads_list(limit=limit)
 
+
+# INSTAGRAM_AI_REACTIONS_TO_FUNNELS_SAFE_V1
+@router.post("/runtime/instagram-ai-sync-and-start")
+def dyn_instagram_ai_sync_and_start(payload: Dict[str, Any] = None):
+    payload = payload or {}
+
+    dyn_init()
+    funnel_leads_init()
+
+    limit = max(1, min(int(payload.get("limit") or 100), 500))
+    mode = str(payload.get("mode") or "send").strip().lower()
+    if mode not in ("draft", "send"):
+        mode = "send"
+
+    report = {
+        "ingest": None,
+        "started": 0,
+        "skipped": 0,
+        "errors": [],
+        "items": [],
+    }
+
+    try:
+        report["ingest"] = funnel_leads_ingest_from_existing(limit=500)
+    except Exception as e:
+        report["errors"].append({"stage": "ingest", "error": repr(e)})
+
+    con = dyn_con()
+    con.row_factory = sqlite3.Row
+
+    try:
+        rows = con.execute("""
+            SELECT *
+            FROM funnel_leads
+            WHERE COALESCE(status,'') NOT IN ('own_ignored','processed','done','archived')
+            ORDER BY id DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        for row in rows:
+            lead = dict(row)
+            lead_id = lead.get("id")
+
+            source_user_id = str(lead.get("external_user_id") or "").strip()
+            username = str(lead.get("username") or "").strip()
+            text = str(lead.get("text") or "").strip()
+
+            matched_key = str(lead.get("matched_funnel_key") or "").strip()
+            matched_name = str(lead.get("matched_funnel_name") or "").strip()
+
+            if not matched_key and text:
+                try:
+                    matched_key, matched_name, kw = funnel_leads_match_funnel(text)
+                    if matched_key:
+                        con.execute("""
+                            UPDATE funnel_leads
+                            SET matched_funnel_key=?,
+                                matched_funnel_name=?,
+                                updated_at=?
+                            WHERE id=?
+                        """, (matched_key, matched_name or "", dyn_now(), lead_id))
+                        con.commit()
+                except Exception as e:
+                    report["errors"].append({"stage": "match", "lead_id": lead_id, "error": repr(e)})
+
+            if not source_user_id:
+                report["skipped"] += 1
+                report["items"].append({"lead_id": lead_id, "skipped": "missing_user"})
+                continue
+
+            if not matched_key:
+                report["skipped"] += 1
+                report["items"].append({"lead_id": lead_id, "user": source_user_id, "skipped": "no_matched_funnel"})
+                continue
+
+            try:
+                res = dyn_runtime_manual_start({
+                    "funnel_key": matched_key,
+                    "source_platform": "instagram",
+                    "source_user_id": source_user_id,
+                    "source_username": username,
+                    "source_message": text,
+                    "mode": mode,
+                })
+
+                if res and res.get("ok"):
+                    report["started"] += 1
+
+                    con.execute("""
+                        UPDATE funnel_leads
+                        SET status='started',
+                            updated_at=?
+                        WHERE id=?
+                    """, (dyn_now(), lead_id))
+                    con.commit()
+
+                    report["items"].append({
+                        "lead_id": lead_id,
+                        "user": source_user_id,
+                        "funnel_key": matched_key,
+                        "session_id": res.get("session_id"),
+                        "status": res.get("status"),
+                        "instagram_send": res.get("instagram_send"),
+                    })
+                else:
+                    report["skipped"] += 1
+                    report["items"].append({
+                        "lead_id": lead_id,
+                        "user": source_user_id,
+                        "funnel_key": matched_key,
+                        "error": res,
+                    })
+
+            except Exception as e:
+                report["skipped"] += 1
+                report["errors"].append({"stage": "manual_start", "lead_id": lead_id, "error": repr(e)})
+
+    finally:
+        con.close()
+
+    try:
+        _safe_auto_funnels_backup("after_instagram_ai_sync_and_start")
+    except Exception as e:
+        report["errors"].append({"stage": "backup", "error": repr(e)})
+
+    return {
+        "ok": True,
+        "status": "ok",
+        **report,
+    }
+
+
+
 # === /FUNNEL LEAD INBOX V1 ===
 
 

@@ -333,3 +333,118 @@
   // It must be loaded only by the modal opener.
   window.igReactionEngineLoad = loadAll;
 })();
+
+
+
+// INSTAGRAM_AI_TO_FUNNELS_BUTTON_V1
+(function(){
+  if (window.__igAiToFunnelsButtonV1) return;
+  window.__igAiToFunnelsButtonV1 = true;
+
+  async function igAiToFunnelsApi(path, opts){
+    const r = await fetch(path, opts || {});
+    const text = await r.text();
+    try { return JSON.parse(text); }
+    catch(e){ return {ok:false, status:r.status, error:"bad_json", body:text}; }
+  }
+
+  function ensureStyle(){
+    if (document.getElementById("ig-ai-to-funnels-style")) return;
+
+    const st = document.createElement("style");
+    st.id = "ig-ai-to-funnels-style";
+    st.textContent = `
+      #ig-ai-to-funnels-btn{
+        border:1px solid #111;
+        background:#111;
+        color:#fff;
+        border-radius:12px;
+        padding:10px 14px;
+        font-weight:800;
+        cursor:pointer;
+        margin:6px;
+      }
+      #ig-ai-to-funnels-btn[disabled]{
+        opacity:.65;
+        cursor:wait;
+      }
+    `;
+    document.head.appendChild(st);
+  }
+
+  function findInstagramReactionMount(){
+    const candidates = [
+      document.getElementById("instagram-reaction-root"),
+      document.getElementById("instagram-reactions-root"),
+      document.getElementById("instagram-reaction-tab"),
+      document.getElementById("instagram-tab"),
+      document.querySelector("[data-tab='instagram']"),
+      document.querySelector("#instagram-content"),
+      document.querySelector(".instagram-content"),
+    ].filter(Boolean);
+
+    if (candidates.length) return candidates[0];
+
+    const buttons = Array.from(document.querySelectorAll("button"));
+    const reactionBtn = buttons.find(b => /Direct Reaction AI|AI Reaction|Reaction AI|Instagram AI/i.test(b.textContent || ""));
+    if (reactionBtn) return reactionBtn.parentElement || reactionBtn.closest("div");
+
+    return null;
+  }
+
+  function inject(){
+    ensureStyle();
+
+    if (document.getElementById("ig-ai-to-funnels-btn")) return;
+
+    const mount = findInstagramReactionMount();
+    if (!mount) return;
+
+    const btn = document.createElement("button");
+    btn.id = "ig-ai-to-funnels-btn";
+    btn.type = "button";
+    btn.textContent = "🧲 AI reactions → Funnel leads";
+
+    btn.addEventListener("click", async ()=>{
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "⏳ Запускаю воронки...";
+
+      try{
+        const res = await igAiToFunnelsApi("/api/funnels/runtime/instagram-ai-sync-and-start", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            limit:100,
+            mode:"send"
+          })
+        });
+
+        console.log("[Instagram AI → Funnels]", res);
+
+        alert(
+          "Instagram AI → Funnels\n\n" +
+          "Started: " + (res.started || 0) +
+          "\nSkipped: " + (res.skipped || 0) +
+          "\nErrors: " + ((res.errors || []).length)
+        );
+      }catch(e){
+        alert("Instagram AI → Funnels failed: " + e);
+      }finally{
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    });
+
+    mount.prepend(btn);
+  }
+
+  document.addEventListener("DOMContentLoaded", inject);
+  setTimeout(inject, 500);
+  setTimeout(inject, 1500);
+  setTimeout(inject, 3000);
+
+  const obs = new MutationObserver(inject);
+  obs.observe(document.documentElement, {childList:true, subtree:true});
+})();
+

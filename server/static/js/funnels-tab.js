@@ -148,7 +148,6 @@
         <button id="fu-sessions">🧾 Sessions</button>
         <button id="fu-pull-render-backup">💾 Backup Render → Local</button>
         <button id="fu-status">Status</button>
-        <button id="fu-auto-start-webhooks">⚡ Direct hooks → Funnels</button>
       </div>
 
       ${state.view === "edit" ? editorHtml() : ""}
