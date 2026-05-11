@@ -373,6 +373,19 @@ def handle_telegram_start_update(update: Dict[str, Any]) -> Dict[str, Any]:
         or ""
     )
 
+    if parsed.get("mode") == "dynamic":
+        return {
+            "ok": True,
+            "action": "telegram_start_dynamic_parsed",
+            "mode": "dynamic",
+            "funnel_key": parsed.get("funnel_key"),
+            "external_user_id": parsed.get("external_user_id"),
+            "telegram_chat_id": str(chat_id),
+            "telegram_username": username,
+            "payload": parsed.get("payload"),
+            "note": "dynamic payload parsed; next patch should bind funnel_sessions_dynamic and send first step"
+        }
+
     contact = bind_contact_telegram_chat(
         funnel_id=parsed["funnel_id"],
         platform="instagram",
