@@ -911,6 +911,8 @@ def funnels_telegram_webhook(update: Dict[str, Any]):
             telegram_chat_id = str(res.get("telegram_chat_id") or "").strip()
             telegram_username = str(res.get("telegram_username") or "").strip()
 
+            dyn_init()
+            funnel_leads_init()
             con = dyn_con()
             cur = con.cursor()
 
