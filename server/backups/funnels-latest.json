@@ -2,7 +2,7 @@
   "ok": true,
   "status": "ok",
   "backup_type": "funnels_full_v2",
-  "exported_at": "2026-05-11T17:20:11",
+  "exported_at": "2026-05-11T17:47:00",
   "content_db": "/opt/render/project/src/server/data/content.db",
   "ig_webhook_db": "/opt/render/project/src/server/db/instagram.sqlite",
   "tables": {
@@ -10,7 +10,7 @@
       {
         "id": 1,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "reason",
         "funnel_name": "ПРИЧИНА / пошук кореня",
         "active": 1,
@@ -31,7 +31,7 @@
       {
         "id": 2,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "session",
         "funnel_name": "СЕСІЯ / запис",
         "active": 1,
@@ -52,7 +52,7 @@
       {
         "id": 3,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "fear",
         "funnel_name": "СТРАХ / зняття заперечення",
         "active": 1,
@@ -73,7 +73,7 @@
       {
         "id": 4,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "bv",
         "funnel_name": "БВ / пояснення методу",
         "active": 1,
@@ -94,7 +94,7 @@
       {
         "id": 5,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "money",
         "funnel_name": "ГРОШІ / блоки доходу",
         "active": 1,
@@ -115,7 +115,7 @@
       {
         "id": 6,
         "created_at": "2026-05-05 10:10:24",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "general_engagement",
         "funnel_name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
         "active": 1,
@@ -136,7 +136,7 @@
       {
         "id": 7,
         "created_at": "2026-05-10T10:14:49",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "shudnennia_bv",
         "funnel_name": "Схуднення БВ",
         "active": 1,
@@ -159,7 +159,7 @@
       {
         "id": 1,
         "created_at": "2026-05-10T11:52:47",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "shudnennia_bv",
         "step_key": "start",
         "step_order": 1,
@@ -175,7 +175,7 @@
       {
         "id": 2,
         "created_at": "2026-05-10T15:05:02",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "shudnennia_bv",
         "step_key": "free_session",
         "step_order": 2,
@@ -191,7 +191,7 @@
       {
         "id": 3,
         "created_at": "2026-05-10T15:11:48",
-        "updated_at": "2026-05-11T17:16:22",
+        "updated_at": "2026-05-11T17:44:51",
         "funnel_key": "shudnennia_bv",
         "step_key": "prelearning",
         "step_order": 3,
@@ -209,7 +209,7 @@
       {
         "id": 1,
         "created_at": "2026-05-11T17:18:04",
-        "updated_at": "2026-05-11T17:20:11",
+        "updated_at": "2026-05-11T17:47:00",
         "source_platform": "instagram",
         "source_user_id": "3100596540128323",
         "source_username": "ig_real_test",
@@ -217,17 +217,17 @@
         "source_webhook_message_id": 0,
         "funnel_key": "shudnennia_bv",
         "funnel_name": "Схуднення БВ",
-        "status": "step_sent",
-        "stage": "intro_video_sent",
+        "status": "ig_dm_error",
+        "stage": "ig_dm_error",
         "telegram_chat_id": "123456789",
         "telegram_username": "manual_test",
         "telegram_start_payload": "funnel_shudnennia_bv__ig_3100596540128323",
         "telegram_deeplink": "https://t.me/DashaKarmologRegresologBV_bot?start=funnel_shudnennia_bv__ig_3100596540128323",
         "dm_text": "🌿 Я підготувала для тебе безкоштовний простір «Схуднення БВ».\n\nТам ти:\n• зрозумієш причини набору ваги\n• побачиш як тіло тримає стрес\n• пройдеш безкоштовний сеанс БВ\n\n👇 Почни тут:\nhttps://t.me/DashaKarmologRegresologBV_bot?start=funnel_shudnennia_bv__ig_3100596540128323",
         "started_by": "manual",
-        "mode": "draft",
-        "sent_at": "2026-05-11T17:20:11",
-        "error": "",
+        "mode": "send",
+        "sent_at": "",
+        "error": "{\"ok\": false, \"error\": \"HTTP 400\", \"body\": \"{\\\"error\\\":{\\\"message\\\":\\\"Unsupported post request. Object with ID 'me' does not exist, cannot be loaded due to missing permissions, or does not support this operation. Please read the Graph API documentation at https:\\\\/\\\\/developers.facebook.com\\\\/docs\\\\/graph-api\\\",\\\"type\\\":\\\"GraphMethodException\\\",\\\"code\\\":100,\\\"error_subcode\\\":33,\\\"fbtrace_id\\\":\\\"AP2xLMmN0w4bp67ckwnfKwL\\\"}}\"}",
         "raw_json": "{\"funnel_key\": \"shudnennia_bv\", \"source_platform\": \"instagram\", \"source_user_id\": \"3100596540128323\", \"source_username\": \"ig_real_test\", \"source_message\": \"вага\", \"mode\": \"draft\"}"
       }
     ],
@@ -235,7 +235,7 @@
       {
         "id": 1,
         "created_at": "2026-05-11T17:15:33",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 1,
@@ -250,7 +250,7 @@
       {
         "id": 2,
         "created_at": "2026-05-11T17:15:45",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 1,
@@ -265,7 +265,7 @@
       {
         "id": 3,
         "created_at": "2026-05-11 17:15:33",
-        "updated_at": "2026-05-11T17:20:11",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "instagram_webhook_messages",
         "source_row_id": 1,
@@ -280,7 +280,7 @@
       {
         "id": 13,
         "created_at": "2026-05-11T13:08:18+0000",
-        "updated_at": "2026-05-11T17:16:24",
+        "updated_at": "2026-05-11T17:44:53",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2249326470,
@@ -295,7 +295,7 @@
       {
         "id": 14,
         "created_at": "2026-05-11T16:26:58+0000",
-        "updated_at": "2026-05-11T17:16:24",
+        "updated_at": "2026-05-11T17:44:54",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 1047535662,
@@ -310,7 +310,7 @@
       {
         "id": 15,
         "created_at": "2026-05-11T13:01:55+0000",
-        "updated_at": "2026-05-11T17:16:25",
+        "updated_at": "2026-05-11T17:44:54",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 1541015291,
@@ -325,7 +325,7 @@
       {
         "id": 16,
         "created_at": "2026-05-10T10:22:55+0000",
-        "updated_at": "2026-05-11T17:16:28",
+        "updated_at": "2026-05-11T17:44:56",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2956900273,
@@ -340,7 +340,7 @@
       {
         "id": 17,
         "created_at": "2026-05-08T10:21:03+0000",
-        "updated_at": "2026-05-11T17:16:28",
+        "updated_at": "2026-05-11T17:44:56",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 1720553510,
@@ -355,7 +355,7 @@
       {
         "id": 18,
         "created_at": "2026-05-07T17:27:56+0000",
-        "updated_at": "2026-05-11T17:16:28",
+        "updated_at": "2026-05-11T17:44:56",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 4200845712,
@@ -370,7 +370,7 @@
       {
         "id": 19,
         "created_at": "2026-05-07T16:48:52+0000",
-        "updated_at": "2026-05-11T17:16:28",
+        "updated_at": "2026-05-11T17:44:56",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2278493298,
@@ -385,7 +385,7 @@
       {
         "id": 20,
         "created_at": "2026-05-08T16:29:27+0000",
-        "updated_at": "2026-05-11T17:16:30",
+        "updated_at": "2026-05-11T17:44:58",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 2517625319,
@@ -400,7 +400,7 @@
       {
         "id": 21,
         "created_at": "2026-05-07T17:34:06+0000",
-        "updated_at": "2026-05-11T17:16:30",
+        "updated_at": "2026-05-11T17:44:58",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 811716533,
@@ -415,7 +415,7 @@
       {
         "id": 22,
         "created_at": "2026-05-07T17:24:24+0000",
-        "updated_at": "2026-05-11T17:16:31",
+        "updated_at": "2026-05-11T17:44:59",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 1696469420,
@@ -430,7 +430,7 @@
       {
         "id": 23,
         "created_at": "2026-05-07T09:56:45+0000",
-        "updated_at": "2026-05-11T17:16:32",
+        "updated_at": "2026-05-11T17:45:00",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 1705154551,
@@ -445,7 +445,7 @@
       {
         "id": 24,
         "created_at": "2026-05-06T17:48:49+0000",
-        "updated_at": "2026-05-11T17:16:32",
+        "updated_at": "2026-05-11T17:45:00",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 4192179771,
@@ -460,7 +460,7 @@
       {
         "id": 25,
         "created_at": "2026-05-06T15:48:43+0000",
-        "updated_at": "2026-05-11T17:16:33",
+        "updated_at": "2026-05-11T17:45:02",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 3990329267,
@@ -475,7 +475,7 @@
       {
         "id": 26,
         "created_at": "2026-05-06T15:48:38+0000",
-        "updated_at": "2026-05-11T17:16:33",
+        "updated_at": "2026-05-11T17:45:02",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 3804747653,
@@ -490,7 +490,7 @@
       {
         "id": 27,
         "created_at": "2026-05-06T16:05:51+0000",
-        "updated_at": "2026-05-11T17:16:34",
+        "updated_at": "2026-05-11T17:45:03",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 3213991437,
@@ -505,7 +505,7 @@
       {
         "id": 28,
         "created_at": "2026-05-06T16:06:52+0000",
-        "updated_at": "2026-05-11T17:16:35",
+        "updated_at": "2026-05-11T17:45:03",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 2408591052,
@@ -520,7 +520,7 @@
       {
         "id": 29,
         "created_at": "2026-05-05T19:03:33+0000",
-        "updated_at": "2026-05-11T17:16:35",
+        "updated_at": "2026-05-11T17:45:04",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 1024396379,
@@ -535,7 +535,7 @@
       {
         "id": 30,
         "created_at": "2026-05-05T17:06:57+0000",
-        "updated_at": "2026-05-11T17:16:35",
+        "updated_at": "2026-05-11T17:45:04",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2536052847,
@@ -550,7 +550,7 @@
       {
         "id": 31,
         "created_at": "2026-05-05T17:02:02+0000",
-        "updated_at": "2026-05-11T17:16:35",
+        "updated_at": "2026-05-11T17:45:04",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 773592401,
@@ -565,7 +565,7 @@
       {
         "id": 32,
         "created_at": "2026-05-06T06:30:34+0000",
-        "updated_at": "2026-05-11T17:16:36",
+        "updated_at": "2026-05-11T17:45:05",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 3897542536,
@@ -580,7 +580,7 @@
       {
         "id": 33,
         "created_at": "2026-05-06T06:30:40+0000",
-        "updated_at": "2026-05-11T17:16:37",
+        "updated_at": "2026-05-11T17:45:05",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 4082888487,
@@ -595,7 +595,7 @@
       {
         "id": 34,
         "created_at": "2026-05-06T06:30:37+0000",
-        "updated_at": "2026-05-11T17:16:38",
+        "updated_at": "2026-05-11T17:45:06",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 1496819758,
@@ -610,7 +610,7 @@
       {
         "id": 35,
         "created_at": "2026-05-05T14:31:08+0000",
-        "updated_at": "2026-05-11T17:16:39",
+        "updated_at": "2026-05-11T17:45:07",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 3812944752,
@@ -625,7 +625,7 @@
       {
         "id": 36,
         "created_at": "2026-05-06T15:24:29+0000",
-        "updated_at": "2026-05-11T17:16:39",
+        "updated_at": "2026-05-11T17:45:07",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 2735744784,
@@ -640,7 +640,7 @@
       {
         "id": 37,
         "created_at": "2026-05-03T19:44:20+0000",
-        "updated_at": "2026-05-11T17:16:40",
+        "updated_at": "2026-05-11T17:45:08",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 3939024381,
@@ -655,7 +655,7 @@
       {
         "id": 38,
         "created_at": "2026-05-02T19:42:30+0000",
-        "updated_at": "2026-05-11T17:16:42",
+        "updated_at": "2026-05-11T17:45:10",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 1580203873,
@@ -670,7 +670,7 @@
       {
         "id": 39,
         "created_at": "2026-05-02T09:46:06+0000",
-        "updated_at": "2026-05-11T17:16:42",
+        "updated_at": "2026-05-11T17:45:10",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2127384606,
@@ -685,7 +685,7 @@
       {
         "id": 40,
         "created_at": "2026-05-02T09:46:02+0000",
-        "updated_at": "2026-05-11T17:16:42",
+        "updated_at": "2026-05-11T17:45:10",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 77993156,
@@ -700,7 +700,7 @@
       {
         "id": 41,
         "created_at": "2026-05-02T19:49:48+0000",
-        "updated_at": "2026-05-11T17:16:43",
+        "updated_at": "2026-05-11T17:45:10",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 3157886301,
@@ -715,7 +715,7 @@
       {
         "id": 42,
         "created_at": "2026-05-05T10:46:22+0000",
-        "updated_at": "2026-05-11T17:16:44",
+        "updated_at": "2026-05-11T17:45:11",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 517039560,
@@ -730,7 +730,7 @@
       {
         "id": 43,
         "created_at": "2026-05-01T23:38:11+0000",
-        "updated_at": "2026-05-11T17:16:45",
+        "updated_at": "2026-05-11T17:45:12",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2090677418,
@@ -745,7 +745,7 @@
       {
         "id": 44,
         "created_at": "2026-05-01T21:01:57+0000",
-        "updated_at": "2026-05-11T17:16:45",
+        "updated_at": "2026-05-11T17:45:12",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 1536137896,
@@ -760,7 +760,7 @@
       {
         "id": 45,
         "created_at": "2026-05-01T19:01:25+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:12",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2629127979,
@@ -775,7 +775,7 @@
       {
         "id": 46,
         "created_at": "2026-05-01T17:53:16+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:12",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 4275886626,
@@ -790,7 +790,7 @@
       {
         "id": 47,
         "created_at": "2026-05-01T17:52:52+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:12",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2173370611,
@@ -805,7 +805,7 @@
       {
         "id": 48,
         "created_at": "2026-05-01T17:29:56+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:12",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2839292984,
@@ -820,7 +820,7 @@
       {
         "id": 49,
         "created_at": "2026-05-01T17:05:45+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:12",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 830470874,
@@ -835,7 +835,7 @@
       {
         "id": 50,
         "created_at": "2026-05-01T17:05:10+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:13",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 2078964247,
@@ -850,7 +850,7 @@
       {
         "id": 51,
         "created_at": "2026-05-01T16:10:38+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:13",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 4141007982,
@@ -865,7 +865,7 @@
       {
         "id": 52,
         "created_at": "2026-05-01T16:06:45+0000",
-        "updated_at": "2026-05-11T17:16:46",
+        "updated_at": "2026-05-11T17:45:13",
         "source_platform": "instagram",
         "source_table": "instagram_comments",
         "source_row_id": 3152491979,
@@ -880,7 +880,7 @@
       {
         "id": 53,
         "created_at": "2026-05-02T06:06:01+0000",
-        "updated_at": "2026-05-11T17:16:47",
+        "updated_at": "2026-05-11T17:45:13",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 1529156961,
@@ -895,7 +895,7 @@
       {
         "id": 54,
         "created_at": "2026-05-02T06:05:43+0000",
-        "updated_at": "2026-05-11T17:16:48",
+        "updated_at": "2026-05-11T17:45:14",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 1481415055,
@@ -910,7 +910,7 @@
       {
         "id": 55,
         "created_at": "2026-05-02T06:06:12+0000",
-        "updated_at": "2026-05-11T17:16:48",
+        "updated_at": "2026-05-11T17:45:15",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 3985344589,
@@ -925,7 +925,7 @@
       {
         "id": 56,
         "created_at": "2026-05-02T06:06:20+0000",
-        "updated_at": "2026-05-11T17:16:49",
+        "updated_at": "2026-05-11T17:45:16",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 837268110,
@@ -940,7 +940,7 @@
       {
         "id": 57,
         "created_at": "2026-05-02T06:06:26+0000",
-        "updated_at": "2026-05-11T17:16:50",
+        "updated_at": "2026-05-11T17:45:16",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 3481430737,
@@ -955,7 +955,7 @@
       {
         "id": 58,
         "created_at": "2026-05-02T06:05:51+0000",
-        "updated_at": "2026-05-11T17:16:51",
+        "updated_at": "2026-05-11T17:45:17",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 1184819935,
@@ -970,7 +970,7 @@
       {
         "id": 59,
         "created_at": "2026-05-02T06:04:51+0000",
-        "updated_at": "2026-05-11T17:16:52",
+        "updated_at": "2026-05-11T17:45:18",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 2162641870,
@@ -985,7 +985,7 @@
       {
         "id": 60,
         "created_at": "2026-05-02T06:04:59+0000",
-        "updated_at": "2026-05-11T17:16:53",
+        "updated_at": "2026-05-11T17:45:19",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 32816503,
@@ -1000,7 +1000,7 @@
       {
         "id": 61,
         "created_at": "2026-05-02T06:05:35+0000",
-        "updated_at": "2026-05-11T17:16:54",
+        "updated_at": "2026-05-11T17:45:19",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 1564715364,
@@ -1015,7 +1015,7 @@
       {
         "id": 62,
         "created_at": "2026-05-02T06:05:26+0000",
-        "updated_at": "2026-05-11T17:16:54",
+        "updated_at": "2026-05-11T17:45:20",
         "source_platform": "instagram",
         "source_table": "instagram_comment_replies",
         "source_row_id": 154875533,
@@ -1030,7 +1030,7 @@
       {
         "id": 63,
         "created_at": "2026-05-05T12:40:29",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 9,
@@ -1045,7 +1045,7 @@
       {
         "id": 64,
         "created_at": "2026-05-05T12:40:22",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 8,
@@ -1060,7 +1060,7 @@
       {
         "id": 65,
         "created_at": "2026-05-05T12:40:13",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 7,
@@ -1075,7 +1075,7 @@
       {
         "id": 66,
         "created_at": "2026-05-05T12:39:59",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 6,
@@ -1090,7 +1090,7 @@
       {
         "id": 67,
         "created_at": "2026-05-05T12:39:52",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 5,
@@ -1105,7 +1105,7 @@
       {
         "id": 68,
         "created_at": "2026-05-05T12:24:29",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 4,
@@ -1120,7 +1120,7 @@
       {
         "id": 69,
         "created_at": "2026-05-05T12:05:09",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 3,
@@ -1135,7 +1135,7 @@
       {
         "id": 70,
         "created_at": "2026-05-05T11:50:21",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_reactions",
         "source_row_id": 2,
@@ -1150,7 +1150,7 @@
       {
         "id": 72,
         "created_at": "2026-05-05T12:40:38",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 9,
@@ -1165,7 +1165,7 @@
       {
         "id": 73,
         "created_at": "2026-05-05T12:40:29",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 8,
@@ -1180,7 +1180,7 @@
       {
         "id": 74,
         "created_at": "2026-05-05T12:40:22",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 7,
@@ -1195,7 +1195,7 @@
       {
         "id": 75,
         "created_at": "2026-05-05T12:40:07",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 6,
@@ -1210,7 +1210,7 @@
       {
         "id": 76,
         "created_at": "2026-05-05T12:39:58",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 5,
@@ -1225,7 +1225,7 @@
       {
         "id": 77,
         "created_at": "2026-05-05T12:24:38",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 4,
@@ -1240,7 +1240,7 @@
       {
         "id": 78,
         "created_at": "2026-05-05T12:05:17",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 3,
@@ -1255,7 +1255,7 @@
       {
         "id": 79,
         "created_at": "2026-05-05T11:50:31",
-        "updated_at": "2026-05-11T17:16:58",
+        "updated_at": "2026-05-11T17:45:23",
         "source_platform": "instagram",
         "source_table": "ig_ai_reply_drafts",
         "source_row_id": 2,
@@ -1754,5 +1754,5 @@
     "ig_ai_reply_drafts": 9,
     "instagram_webhook_messages": 1
   },
-  "source": "after_telegram_start_dynamic"
+  "source": "after_existing_session_send_dm"
 }
