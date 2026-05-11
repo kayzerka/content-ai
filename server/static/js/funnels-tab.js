@@ -113,11 +113,6 @@
   async function loadAll(){
     const funnels = await api("/api/funnels/configs/list");
     state.funnels = funnels.items || [];
-    await api("/api/funnels/leads/ingest", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({limit:500})
-    });
     const leads = await api("/api/funnels/leads/list_safe?limit=100");
     state.leads = leads.items || [];
     const sessions = await api("/api/funnels/runtime/sessions?limit=50");
@@ -306,7 +301,10 @@
   function latestSessionForLead(l){
     const uid = leadUserId(l);
     if (!uid) return null;
-    return (state.sessions || []).find(s => String(s.source_user_id || "") === uid) || null;
+
+    return (state.sessions || [])
+      .filter(s => String(s.source_user_id || "") === uid)
+      .sort((a,b) => Number(b.id || 0) - Number(a.id || 0))[0] || null;
   }
 
   function leadMatchedFunnelKey(l){
@@ -601,6 +599,13 @@
           if (res && res.ok) {
             if (statusEl) statusEl.textContent = `✅ Застосовано: ${funnel_key}`;
             await autoBackupFunnels("after_manual_start_lead");
+
+            const leads = await api("/api/funnels/leads/list_safe?limit=100");
+            state.leads = leads.items || [];
+
+            const sessions = await api("/api/funnels/runtime/sessions?limit=50");
+            state.sessions = sessions.items || [];
+
             state.view = "leads";
             await render();
           } else {
