@@ -741,6 +741,37 @@ def dyn_runtime_manual_start(payload: Dict[str, Any]):
     )).fetchone()
 
     if existing:
+        send_result = None
+
+        if mode == "send":
+            send_result = dyn_send_instagram_dm(source_user_id, existing["dm_text"])
+
+            cur.execute("""
+                UPDATE funnel_sessions_dynamic
+                SET
+                    status=?,
+                    stage=?,
+                    sent_at=?,
+                    error=?,
+                    mode='send',
+                    updated_at=?
+                WHERE id=?
+            """, (
+                "ig_dm_sent" if send_result and send_result.get("ok") else "ig_dm_error",
+                "ig_dm_sent" if send_result and send_result.get("ok") else "ig_dm_error",
+                dyn_now() if send_result and send_result.get("ok") else "",
+                "" if send_result and send_result.get("ok") else json.dumps(send_result or {}, ensure_ascii=False),
+                dyn_now(),
+                existing["id"],
+            ))
+
+            con.commit()
+
+            try:
+                _safe_auto_funnels_backup("after_existing_session_send_dm")
+            except Exception as e:
+                print("existing session send backup failed", repr(e), flush=True)
+
         con.close()
         return {
             "ok": True,
@@ -750,7 +781,8 @@ def dyn_runtime_manual_start(payload: Dict[str, Any]):
             "telegram_start_payload": existing["telegram_start_payload"],
             "telegram_deeplink": existing["telegram_deeplink"],
             "dm_text": existing["dm_text"],
-            "mode": existing["mode"],
+            "mode": "send" if mode == "send" else existing["mode"],
+            "instagram_send": send_result,
         }
 
     cur.execute("""
