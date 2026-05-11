@@ -677,6 +677,32 @@ def dyn_runtime_manual_start(payload: Dict[str, Any]):
     now = dyn_now()
     con = dyn_con()
     cur = con.cursor()
+    existing = con.execute("""
+        SELECT *
+        FROM funnel_sessions_dynamic
+        WHERE funnel_key=?
+          AND source_user_id=?
+          AND status IN ('created', 'telegram_connected', 'step_sent', 'active', 'started')
+        ORDER BY id DESC
+        LIMIT 1
+    """, (
+        funnel_key,
+        source_user_id,
+    )).fetchone()
+
+    if existing:
+        con.close()
+        return {
+            "ok": True,
+            "status": "existing_session",
+            "session_id": existing["id"],
+            "funnel_key": funnel_key,
+            "telegram_start_payload": existing["telegram_start_payload"],
+            "telegram_deeplink": existing["telegram_deeplink"],
+            "dm_text": existing["dm_text"],
+            "mode": existing["mode"],
+        }
+
     cur.execute("""
         INSERT INTO funnel_sessions_dynamic (
             created_at, updated_at, source_platform, source_user_id, source_username,
@@ -744,6 +770,12 @@ def dyn_runtime_stage(session_id: int, payload: Dict[str, Any]):
     changed = cur.rowcount
     con.commit()
     con.close()
+
+    try:
+        _safe_auto_funnels_backup("after_runtime_stage_update")
+    except Exception as e:
+        print("runtime stage backup failed", repr(e), flush=True)
+
     return {"ok": True, "status": "ok", "updated": changed}
 
 # === /DYNAMIC KEY FUNNELS RUNTIME V1 ===
@@ -870,7 +902,128 @@ def funnels_telegram_webhook(update: Dict[str, Any]):
                 "reason": "not_funnel_start"
             }
 
-        return handle_telegram_start_update(update)
+        res = handle_telegram_start_update(update)
+
+        # DYNAMIC_FUNNEL_START_RUNTIME_V2
+        if isinstance(res, dict) and res.get("ok") and res.get("mode") == "dynamic":
+            funnel_key = str(res.get("funnel_key") or "").strip()
+            external_user_id = str(res.get("external_user_id") or "").strip()
+            telegram_chat_id = str(res.get("telegram_chat_id") or "").strip()
+            telegram_username = str(res.get("telegram_username") or "").strip()
+
+            con = dyn_con()
+            cur = con.cursor()
+
+            cur.execute("""
+                UPDATE funnel_sessions_dynamic
+                SET
+                    telegram_chat_id=?,
+                    telegram_username=?,
+                    status='telegram_connected',
+                    stage='tg_started',
+                    updated_at=?
+                WHERE id = (
+                    SELECT id
+                    FROM funnel_sessions_dynamic
+                    WHERE funnel_key=?
+                      AND source_user_id=?
+                    ORDER BY id DESC
+                    LIMIT 1
+                )
+            """, (
+                telegram_chat_id,
+                telegram_username,
+                dyn_now(),
+                funnel_key,
+                external_user_id,
+            ))
+            con.commit()
+
+            sess = con.execute("""
+                SELECT *
+                FROM funnel_sessions_dynamic
+                WHERE funnel_key=?
+                  AND source_user_id=?
+                ORDER BY id DESC
+                LIMIT 1
+            """, (
+                funnel_key,
+                external_user_id,
+            )).fetchone()
+
+            sess = dict(sess) if sess else None
+
+            first_step = con.execute("""
+                SELECT *
+                FROM funnel_steps_dynamic
+                WHERE funnel_key=?
+                  AND active=1
+                ORDER BY step_order ASC, id ASC
+                LIMIT 1
+            """, (funnel_key,)).fetchone()
+
+            first_step = dict(first_step) if first_step else None
+            sent = None
+
+            if sess and first_step and telegram_chat_id:
+                txt = str(first_step.get("message_text") or "").strip()
+                btn_text = str(first_step.get("button_text") or "").strip()
+                btn_url = str(first_step.get("button_url") or "").strip()
+
+                if btn_text and btn_url:
+                    txt += f"\\n\\n{btn_text}\\n{btn_url}"
+
+                if txt:
+                    sent = send_telegram_message(telegram_chat_id, txt)
+
+                    cur.execute("""
+                        UPDATE funnel_sessions_dynamic
+                        SET
+                            status='step_sent',
+                            stage=?,
+                            sent_at=?,
+                            updated_at=?
+                        WHERE id=?
+                    """, (
+                        str(first_step.get("next_stage") or "step_sent"),
+                        dyn_now(),
+                        dyn_now(),
+                        sess["id"],
+                    ))
+                    con.commit()
+
+            try:
+                cur.execute("""
+                    UPDATE funnel_leads
+                    SET
+                        status='in_progress',
+                        matched_funnel_key=?,
+                        updated_at=?
+                    WHERE external_user_id=?
+                """, (
+                    funnel_key,
+                    dyn_now(),
+                    external_user_id,
+                ))
+                con.commit()
+            except Exception as e:
+                print("lead status sync failed", repr(e), flush=True)
+
+            con.close()
+
+            try:
+                _safe_auto_funnels_backup("after_telegram_start_dynamic")
+            except Exception as e:
+                print("backup failed", repr(e), flush=True)
+
+            res["action"] = "dynamic_funnel_started"
+            res["session_bound"] = bool(sess)
+            res["first_step_sent"] = bool(sent and sent.get("ok"))
+            res["first_step"] = first_step
+            res["telegram"] = sent
+            return res
+
+        return res
 
     except Exception as e:
         return {
@@ -960,6 +1113,7 @@ def funnels_backup_export_full():
         "funnel_configs": _dump_table(con, "funnel_configs", "priority ASC, id ASC"),
         "funnel_steps_dynamic": _dump_table(con, "funnel_steps_dynamic", "funnel_key ASC, step_order ASC, id ASC"),
         "funnel_sessions_dynamic": _dump_table(con, "funnel_sessions_dynamic", "id ASC"),
+        "funnel_leads": _dump_table(con, "funnel_leads", "id ASC"),
         "ig_reaction_funnel_plans": _dump_table(con, "ig_reaction_funnel_plans", "priority ASC, id ASC"),
         "ig_reactions": _dump_table(con, "ig_reactions", "id ASC"),
         "ig_ai_reply_drafts": _dump_table(con, "ig_ai_reply_drafts", "id ASC"),
@@ -1164,6 +1318,57 @@ def funnels_backup_import_full(payload: Dict[str, Any]):
                         int(r.get("delay_minutes") or 0),
                         r.get("settings_json") if isinstance(r.get("settings_json"), str) else json.dumps(r.get("settings_json") or {}, ensure_ascii=False),
                     ))
+                    n += 1
+
+                imported[table] = n
+                continue
+
+            if table == "funnel_sessions_dynamic":
+                n = 0
+
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+
+                    funnel_key = str(r.get("funnel_key") or "").strip()
+                    source_user_id = str(r.get("source_user_id") or "").strip()
+                    telegram_start_payload = str(r.get("telegram_start_payload") or "").strip()
+
+                    if not funnel_key or not source_user_id:
+                        continue
+
+                    existing = con.execute("""
+                        SELECT id
+                        FROM funnel_sessions_dynamic
+                        WHERE funnel_key=?
+                          AND source_user_id=?
+                          AND telegram_start_payload=?
+                        ORDER BY id DESC
+                        LIMIT 1
+                    """, (
+                        funnel_key,
+                        source_user_id,
+                        telegram_start_payload,
+                    )).fetchone()
+
+                    if existing:
+                        continue
+
+                    cols_existing = _table_columns(con, table)
+                    clean = {k: v for k, v in r.items() if k in cols_existing}
+
+                    if not clean:
+                        continue
+
+                    cols = list(clean.keys())
+                    placeholders = ",".join(["?"] * len(cols))
+                    col_sql = ",".join(cols)
+
+                    con.execute(
+                        f"INSERT INTO {table} ({col_sql}) VALUES ({placeholders})",
+                        [clean[c] for c in cols]
+                    )
+
                     n += 1
 
                 imported[table] = n
@@ -1725,6 +1930,7 @@ def _build_funnel_full_backup():
         "funnel_configs": _dump_table(con, "funnel_configs", "priority ASC, id ASC"),
         "funnel_steps_dynamic": _dump_table(con, "funnel_steps_dynamic", "funnel_key ASC, step_order ASC, id ASC"),
         "funnel_sessions_dynamic": _dump_table(con, "funnel_sessions_dynamic", "id ASC"),
+        "funnel_leads": _dump_table(con, "funnel_leads", "id ASC"),
         "ig_reaction_funnel_plans": _dump_table(con, "ig_reaction_funnel_plans", "priority ASC, id ASC"),
         "ig_reactions": _dump_table(con, "ig_reactions", "id ASC"),
         "ig_ai_reply_drafts": _dump_table(con, "ig_ai_reply_drafts", "id ASC"),
