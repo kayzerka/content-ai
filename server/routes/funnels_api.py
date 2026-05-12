@@ -330,9 +330,21 @@ def dyn_send_instagram_dm(recipient_id: str, text: str):
     if not ig_user_id:
         return {"ok": False, "error": "IG_USER_ID_missing"}
 
-    url = f"https://graph.facebook.com/{api_ver}/{ig_user_id}/messages?access_token={quote(token)}"
+    # Instagram Messaging API expects /me/messages or /<PAGE_ID>/messages with a valid Page/IG messaging token.
+    # Do not use /<IG_USER_ID>/messages here.
+    page_id = (
+        os.getenv("FB_PAGE_ID", "").strip()
+        or os.getenv("META_PAGE_ID", "").strip()
+        or os.getenv("PAGE_ID", "").strip()
+    )
+
+    if not page_id:
+        return {"ok": False, "error": "FB_PAGE_ID_missing"}
+
+    url = f"https://graph.facebook.com/{api_ver}/{page_id}/messages?access_token={quote(token)}"
 
     body = json.dumps({
+        "messaging_type": "RESPONSE",
         "recipient": {"id": recipient_id},
         "message": {"text": text}
     }, ensure_ascii=False).encode("utf-8")
@@ -345,7 +357,10 @@ def dyn_send_instagram_dm(recipient_id: str, text: str):
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             data["ok"] = True
             return data
@@ -720,6 +735,98 @@ def dyn_runtime_leads(limit: int = 100):
     )[:limit]
 
     return {"ok": True, "status": "ok", "items": items}
+
+
+# WEBHOOK_TO_FUNNEL_AUTOSTART_V1
+def dyn_match_active_funnel_by_text(text: str):
+    dyn_init()
+    txt = str(text or "").strip().lower()
+    if not txt:
+        return None
+
+    con = dyn_con()
+    rows = con.execute("""
+        SELECT *
+        FROM funnel_configs
+        WHERE active=1
+          AND LOWER(COALESCE(source_platform,'instagram'))='instagram'
+        ORDER BY priority ASC, id DESC
+    """).fetchall()
+    con.close()
+
+    for r in rows:
+        cfg = dict(r)
+        raw = "\n".join([
+            str(cfg.get("trigger_keywords") or ""),
+            str(cfg.get("trigger_value") or ""),
+        ])
+
+        keys = [x.strip().lower() for x in re.split(r"[,;\\n]+", raw) if x.strip()]
+
+        for kw in keys:
+            if kw and kw in txt:
+                return cfg
+
+    return None
+
+
+def dyn_start_funnel_from_instagram_webhook_event(event: Dict[str, Any], mode: str = "send"):
+    """
+    Direct webhook → active funnel → manual-start.
+    event expects: sender_id/source_user_id, text, username?, webhook_message_id/id?
+    """
+    dyn_init()
+
+    source_user_id = str(
+        event.get("source_user_id")
+        or event.get("sender_id")
+        or event.get("external_user_id")
+        or ""
+    ).strip()
+
+    text = str(
+        event.get("text")
+        or event.get("message")
+        or event.get("source_message")
+        or ""
+    ).strip()
+
+    username = str(event.get("username") or event.get("source_username") or "").strip()
+    webhook_id = int(event.get("source_webhook_message_id") or event.get("webhook_message_id") or event.get("id") or 0)
+
+    if not source_user_id:
+        return {"ok": False, "status": "skipped", "reason": "missing_source_user_id"}
+
+    if not text:
+        return {"ok": False, "status": "skipped", "reason": "empty_text", "source_user_id": source_user_id}
+
+    cfg = dyn_match_active_funnel_by_text(text)
+    if not cfg:
+        return {
+            "ok": True,
+            "status": "skipped",
+            "reason": "no_matching_funnel",
+            "source_user_id": source_user_id,
+            "text": text[:160],
+        }
+
+    return dyn_runtime_manual_start({
+        "funnel_key": cfg.get("funnel_key"),
+        "source_platform": "instagram",
+        "source_user_id": source_user_id,
+        "source_username": username,
+        "source_message": text,
+        "source_webhook_message_id": webhook_id,
+        "mode": mode,
+        "started_by": "webhook",
+    })
+
+
+@router.post("/runtime/start-from-webhook")
+def dyn_runtime_start_from_webhook(payload: Dict[str, Any]):
+    return dyn_start_funnel_from_instagram_webhook_event(payload or {}, mode=str((payload or {}).get("mode") or "send"))
+
+
 
 @router.post("/runtime/manual-start")
 def dyn_runtime_manual_start(payload: Dict[str, Any]):
@@ -2011,12 +2118,29 @@ def funnel_leads_ingest_from_existing(limit: int = 500):
 
 @router.post("/leads/ingest")
 def funnel_leads_ingest(payload: Dict[str, Any] = None):
+    """
+    Safe ingest endpoint for Render/frontend.
+    Never returns raw 500; returns structured JSON diagnostics instead.
+    """
     payload = payload or {}
-    limit = int(payload.get("limit") or 500)
-    imported = funnel_leads_ingest_from_existing(limit=limit)
 
     try:
-        backup = _build_funnel_full_backup()
+        limit = int(payload.get("limit") or 500)
+    except Exception:
+        limit = 500
+
+    try:
+        imported = funnel_leads_ingest_from_existing(limit=limit)
+    except Exception as e:
+        return {
+            "ok": False,
+            "status": "ingest_failed",
+            "error": str(e),
+            "imported": {},
+            "snapshot": {"ok": False, "skipped": True, "reason": "ingest_failed_before_snapshot"},
+        }
+
+    try:
         snap = {"ok": True, "skipped": True, "reason": "after_leads_ingest_telegram_backup_disabled"}
     except Exception as e:
         snap = {"ok": False, "error": str(e)}
