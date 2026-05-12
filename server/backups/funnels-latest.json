@@ -2,7 +2,7 @@
   "ok": true,
   "status": "ok",
   "backup_type": "funnels_full_v2",
-  "exported_at": "2026-05-12T10:19:21",
+  "exported_at": "2026-05-12T10:19:22",
   "content_db": "/opt/render/project/src/server/data/content.db",
   "ig_webhook_db": "/opt/render/project/src/server/db/instagram.sqlite",
   "tables": {
@@ -1708,6 +1708,5 @@
     "ig_reactions": 9,
     "ig_ai_reply_drafts": 9,
     "instagram_webhook_messages": 1
-  },
-  "source": "after_manual_start_lead_send"
+  }
 }
