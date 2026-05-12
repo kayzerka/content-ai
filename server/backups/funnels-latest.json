@@ -2,7 +2,7 @@
   "ok": true,
   "status": "ok",
   "backup_type": "funnels_full_v2",
-  "exported_at": "2026-05-12T10:19:22",
+  "exported_at": "2026-05-12T10:31:14",
   "content_db": "/opt/render/project/src/server/data/content.db",
   "ig_webhook_db": "/opt/render/project/src/server/db/instagram.sqlite",
   "tables": {
@@ -10,7 +10,7 @@
       {
         "id": 1,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "reason",
         "funnel_name": "ПРИЧИНА / пошук кореня",
         "active": 1,
@@ -31,7 +31,7 @@
       {
         "id": 2,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "session",
         "funnel_name": "СЕСІЯ / запис",
         "active": 1,
@@ -52,7 +52,7 @@
       {
         "id": 3,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "fear",
         "funnel_name": "СТРАХ / зняття заперечення",
         "active": 1,
@@ -73,7 +73,7 @@
       {
         "id": 4,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "bv",
         "funnel_name": "БВ / пояснення методу",
         "active": 1,
@@ -94,7 +94,7 @@
       {
         "id": 5,
         "created_at": "2026-05-05T12:04:46",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "money",
         "funnel_name": "ГРОШІ / блоки доходу",
         "active": 1,
@@ -115,7 +115,7 @@
       {
         "id": 6,
         "created_at": "2026-05-05 10:10:24",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "general_engagement",
         "funnel_name": "ЗАГАЛЬНА РЕАКЦІЯ / мʼякий діалог",
         "active": 1,
@@ -136,7 +136,7 @@
       {
         "id": 7,
         "created_at": "2026-05-10T10:14:49",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "shudnennia_bv",
         "funnel_name": "Схуднення БВ",
         "active": 1,
@@ -159,7 +159,7 @@
       {
         "id": 1,
         "created_at": "2026-05-10T11:52:47",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "shudnennia_bv",
         "step_key": "start",
         "step_order": 1,
@@ -175,7 +175,7 @@
       {
         "id": 2,
         "created_at": "2026-05-10T15:05:02",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "shudnennia_bv",
         "step_key": "free_session",
         "step_order": 2,
@@ -191,7 +191,7 @@
       {
         "id": 3,
         "created_at": "2026-05-10T15:11:48",
-        "updated_at": "2026-05-12T10:13:23",
+        "updated_at": "2026-05-12T10:29:39",
         "funnel_key": "shudnennia_bv",
         "step_key": "prelearning",
         "step_order": 3,
@@ -232,8 +232,8 @@
       },
       {
         "id": 2,
-        "created_at": "2026-05-12T10:19:20",
-        "updated_at": "2026-05-12T10:19:21",
+        "created_at": "2026-05-12T10:31:14",
+        "updated_at": "2026-05-12T10:31:14",
         "source_platform": "instagram",
         "source_user_id": "3100596540128323",
         "source_username": "",
@@ -251,7 +251,7 @@
         "started_by": "manual",
         "mode": "send",
         "sent_at": "",
-        "error": "{\"ok\": false, \"error\": \"HTTP 500\", \"body\": \"{\\\"error\\\":{\\\"message\\\":\\\"An unknown error has occurred.\\\",\\\"type\\\":\\\"OAuthException\\\",\\\"code\\\":1,\\\"fbtrace_id\\\":\\\"AB-FH9rEFSx7WUCJ2DtaqOt\\\"}}\"}",
+        "error": "{\"ok\": false, \"error\": \"HTTP 500\", \"body\": \"{\\\"error\\\":{\\\"message\\\":\\\"An unknown error has occurred.\\\",\\\"type\\\":\\\"OAuthException\\\",\\\"code\\\":1,\\\"fbtrace_id\\\":\\\"A0fq2m5PMVH4auBwgJ-9RNV\\\"}}\"}",
         "raw_json": "{\"funnel_key\": \"shudnennia_bv\", \"source_platform\": \"instagram\", \"source_user_id\": \"3100596540128323\", \"source_username\": \"\", \"source_message\": \"\", \"mode\": \"send\"}"
       }
     ],
@@ -1708,5 +1708,6 @@
     "ig_reactions": 9,
     "ig_ai_reply_drafts": 9,
     "instagram_webhook_messages": 1
-  }
+  },
+  "source": "after_manual_start_lead_send"
 }
