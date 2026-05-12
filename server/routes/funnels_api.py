@@ -853,14 +853,8 @@ def dyn_runtime_manual_start(payload: Dict[str, Any]):
 
     start_payload = dyn_start_payload(cfg, source_user_id)
     deeplink = dyn_deeplink(cfg, start_payload)
-    if not deeplink:
-        return {
-            "ok": False,
-            "status": "error",
-            "error": "telegram bot username missing",
-            "hint": "Set telegram_bot_username in funnel config or TELEGRAM_BOT_USERNAME env",
-        }
-
+    # Instagram Direct manual start does not require Telegram deeplink.
+    # Telegram deeplink is optional and only used when telegram_bot_username is configured.
     ctx = {
         "funnel_key": funnel_key,
         "funnel_name": cfg.get("funnel_name") or funnel_key,

@@ -6138,6 +6138,23 @@ def instagram_reaction_webhook_ingest(payload: dict):
 
     for ev in events:
         s = ig_save_reaction(ev, source="webhook")
+
+        # WEBHOOK_TO_FUNNEL_AUTOSTART_V1
+        try:
+            from routes.funnels_api import dyn_start_funnel_from_instagram_webhook_event
+
+            funnel_res = dyn_start_funnel_from_instagram_webhook_event({
+                "source_user_id": ev.get("external_user_id") or ev.get("sender_id"),
+                "sender_id": ev.get("sender_id") or ev.get("external_user_id"),
+                "text": ev.get("reaction_text") or ev.get("text") or ev.get("message_text"),
+                "username": ev.get("username") or "",
+                "source_webhook_message_id": ev.get("id") or 0,
+            }, mode="send")
+
+            print("[webhook funnel autostart]", funnel_res, flush=True)
+
+        except Exception as e:
+            print("[webhook funnel autostart error]", repr(e), flush=True)
         saved.append(s)
 
         if s.get("reaction_id") and (s.get("inserted") is True):
@@ -8116,7 +8133,12 @@ def ig_send_dm_text(recipient_id: str, text: str):
         return {"ok": False, "error": "no IG/FB PAGE access token env"}
 
     api_ver = os.getenv("META_GRAPH_VERSION", "v20.0").strip()
-    url = f"https://graph.facebook.com/{api_ver}/me/messages"
+    ig_user_id = os.getenv("IG_USER_ID", "").strip()
+
+    if not ig_user_id:
+        return {"ok": False, "error": "IG_USER_ID env missing"}
+
+    url = f"https://graph.facebook.com/{api_ver}/{ig_user_id}/messages"
 
     payload = {
         "recipient": {"id": str(recipient_id)},
@@ -8160,13 +8182,8 @@ def ig_funnel_create_session_and_maybe_send(sender_id: str, text: str, raw_item:
     start_payload = ig_funnel_start_payload(funnel_key, sender_id)
     deeplink = ig_funnel_deeplink(cfg, start_payload)
 
-    if not deeplink:
-        return {
-            "ok": False,
-            "error": "telegram bot username missing",
-            "funnel_key": funnel_key,
-        }
-
+    # Instagram Direct funnel does not require Telegram deeplink.
+    # Telegram deeplink is optional and only used when telegram_bot_username is configured.
     ctx = {
         "funnel_key": funnel_key,
         "funnel_name": funnel_name,
