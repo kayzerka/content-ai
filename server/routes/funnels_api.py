@@ -1920,6 +1920,28 @@ def funnel_leads_init():
         CREATE INDEX IF NOT EXISTS ix_funnel_leads_status
         ON funnel_leads(status, created_at)
     """)
+
+    # Runtime schema migration for older Render DBs where funnel_leads already exists
+    # without the newer columns used by the leads inbox.
+    existing_cols = {r[1] for r in cur.execute("PRAGMA table_info(funnel_leads)").fetchall()}
+    required_cols = {
+        "created_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
+        "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
+        "source_platform": "TEXT DEFAULT 'instagram'",
+        "source_table": "TEXT DEFAULT ''",
+        "source_row_id": "INTEGER DEFAULT 0",
+        "external_user_id": "TEXT DEFAULT ''",
+        "username": "TEXT DEFAULT ''",
+        "text": "TEXT DEFAULT ''",
+        "matched_funnel_key": "TEXT DEFAULT ''",
+        "matched_funnel_name": "TEXT DEFAULT ''",
+        "status": "TEXT DEFAULT 'new'",
+        "raw_json": "TEXT DEFAULT ''",
+    }
+    for col, ddl in required_cols.items():
+        if col not in existing_cols:
+            cur.execute(f"ALTER TABLE funnel_leads ADD COLUMN {col} {ddl}")
+
     con.commit()
     con.close()
 
