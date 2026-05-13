@@ -9,8 +9,10 @@
     logs: '/api/telegram/birthday/logs',
     runDue: '/api/telegram/birthday/run-due',
     testSend: '/api/telegram/birthday/test-send',
-    autoRun: '/api/telegram/birthday/auto-run'
-  };
+    autoRun: '/api/telegram/birthday/auto-run',
+    backupContacts: '/api/telegram/birthday/contacts/backup-save',
+    restoreContacts: '/api/telegram/birthday/contacts/restore'
+};
 
   function $(id){ return document.getElementById(id); }
 
@@ -545,14 +547,14 @@
 
   async function tgBirthdayBackupContacts(){
     setStatus('⏳ Зберігаю backup контактів...');
-    const data = await apiPost(API.backupContacts, {});
+    const data = await apiPost(API.backupContacts || '/api/telegram/birthday/contacts/backup-save', {});
     setStatus(data.ok ? '✅ Backup контактів збережено' : '⚠️ Backup помилка', data);
   }
 
   async function tgBirthdayRestoreContacts(){
     if (!confirm('Відновити контакти Birthday Bot з backup після деплою?')) return;
     setStatus('⏳ Відновлюю контакти...');
-    const data = await apiPost(API.restoreContacts, {});
+    const data = await apiPost(API.restoreContacts || '/api/telegram/birthday/contacts/restore', {});
     setStatus(data.ok ? '✅ Контакти відновлено' : '⚠️ Restore помилка', data);
     await tgBirthdayLoadContacts();
     await tgBirthdayLoadSettings();
