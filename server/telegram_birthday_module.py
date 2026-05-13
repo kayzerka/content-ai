@@ -105,9 +105,7 @@ def init_telegram_birthday_tables():
         )
     """)
 
-    default_message = """🎉 {first_name}, вітаємо з Днем народження!
-
-Нехай цей новий рік життя принесе більше легкості, радості та внутрішньої опори 💛
+    default_message = """Нехай цей новий рік життя принесе більше легкості, радості та внутрішньої опори 💛
 
 А від нас — маленький подарунок: персональна знижка {discount_percent}% на сесію / консультацію.
 
@@ -786,6 +784,74 @@ def run_birthday_sender(force_chat_id: Optional[str] = None, purpose: str = "pla
     }
 
 
+
+def build_planner_birthday_reminder(row: Dict[str, Any]) -> str:
+    name = row.get("first_name") or row.get("username") or row.get("chat_id") or "контакт"
+    username = row.get("username") or ""
+    birthday_date = row.get("birthday_date") or ""
+    discount = row.get("discount_percent") or 15
+    code = row.get("discount_code") or "BDAY15"
+
+    start_link = "https://t.me/DashaKarmologRegresologBV_bot?start=birthday"
+
+    copy_text = f"""Вітаю з Днем народження 💛
+
+Маю для вас маленький подарунок — персональний birthday-сертифікат зі знижкою {discount}% на сесію/консультацію.
+
+Щоб забрати подарунок, натисніть тут:
+{start_link}
+
+Після відкриття бота натисніть Start, і я надішлю вам сертифікат 🎁"""
+
+    return f"""🎂 Сьогодні день народження у контакта
+
+👤 Імʼя: {name}
+🔗 Username: @{username if username else '—'}
+📅 Дата ДН: {birthday_date}
+🎁 Знижка: {discount}%
+🏷️ Промокод: {code}
+
+📩 Текст для копіпасту клієнту:
+
+{copy_text}
+"""
+
+
+def run_birthday_planner_reminders() -> Dict[str, Any]:
+    init_telegram_birthday_tables()
+
+    contacts = get_due_contacts()
+    sent = 0
+    errors = []
+
+    for row in contacts:
+        try:
+            msg = build_planner_birthday_reminder(row)
+            # planner purpose: шлемо у внутрішній Content Planner чат
+            planner_chat_id = os.getenv("TELEGRAM_CHAT_ID") or os.getenv("CHAT_ID")
+            if not planner_chat_id:
+                return {"ok": False, "error": "planner_chat_id_missing: TELEGRAM_CHAT_ID or CHAT_ID"}
+
+            res = send_telegram_text(planner_chat_id, msg, purpose="planner")
+            if not isinstance(res, dict) or not res.get("ok"):
+                raise RuntimeError(str(res))
+
+            sent += 1
+            _log(row, "planner_reminder_sent", "")
+
+        except Exception as e:
+            err = str(e)
+            errors.append({"chat_id": row.get("chat_id"), "error": err})
+            _log(row, "planner_reminder_error", err)
+
+    return {
+        "ok": True,
+        "checked": len(contacts),
+        "sent": sent,
+        "errors": errors,
+        "mode": "planner_reminder"
+    }
+
 def maybe_auto_run_birthday_sender() -> Dict[str, Any]:
     init_telegram_birthday_tables()
     settings = get_settings()
@@ -807,7 +873,7 @@ def maybe_auto_run_birthday_sender() -> Dict[str, Any]:
     if (now_struct.tm_hour, now_struct.tm_min) < (hour, minute):
         return {"ok": True, "status": "not_time_yet"}
 
-    result = run_birthday_sender(purpose="planner")
+    result = run_birthday_planner_reminders()
 
     con = _db()
     con.execute("""
@@ -847,6 +913,103 @@ def export_birthday_contacts_backup() -> Dict[str, Any]:
 
     return {"ok": True, "saved_to": str(out), "count": len(contacts), "backup": payload}
 
+
+
+def _github_put_file(path_in_repo: str, content_text: str, message: str) -> Dict[str, Any]:
+    """
+    Push one file to GitHub repo using GitHub Contents API.
+
+    Required env:
+      GITHUB_TOKEN
+      GITHUB_REPO = owner/repo, example: kayzerka/content-ai
+    Optional:
+      GITHUB_BRANCH = main
+    """
+    import base64
+    import requests
+
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+    repo = os.getenv("GITHUB_REPO") or "kayzerka/content-ai"
+    branch = os.getenv("GITHUB_BRANCH") or "main"
+
+    if not token:
+        return {"ok": False, "error": "GITHUB_TOKEN_missing"}
+
+    url = f"https://api.github.com/repos/{repo}/contents/{path_in_repo}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    sha = None
+    get_r = requests.get(url, headers=headers, params={"ref": branch}, timeout=30)
+    if get_r.status_code == 200:
+        try:
+            sha = get_r.json().get("sha")
+        except Exception:
+            sha = None
+    elif get_r.status_code not in (404,):
+        return {
+            "ok": False,
+            "stage": "github_get",
+            "status_code": get_r.status_code,
+            "text": get_r.text[:1000],
+        }
+
+    payload = {
+        "message": message,
+        "content": base64.b64encode(content_text.encode("utf-8")).decode("ascii"),
+        "branch": branch,
+    }
+    if sha:
+        payload["sha"] = sha
+
+    put_r = requests.put(url, headers=headers, json=payload, timeout=30)
+
+    try:
+        data = put_r.json()
+    except Exception:
+        data = {"text": put_r.text}
+
+    if put_r.status_code not in (200, 201):
+        return {
+            "ok": False,
+            "stage": "github_put",
+            "status_code": put_r.status_code,
+            "response": data,
+        }
+
+    return {
+        "ok": True,
+        "repo": repo,
+        "branch": branch,
+        "path": path_in_repo,
+        "commit": (data.get("commit") or {}).get("sha"),
+    }
+
+
+def export_birthday_contacts_backup_to_github() -> Dict[str, Any]:
+    import json
+
+    result = export_birthday_contacts_backup()
+    backup = result.get("backup") or {}
+
+    content_text = json.dumps(backup, ensure_ascii=False, indent=2)
+    path_in_repo = "server/backups/birthday-contacts-latest.json"
+
+    gh = _github_put_file(
+        path_in_repo=path_in_repo,
+        content_text=content_text,
+        message="Update birthday contacts backup",
+    )
+
+    return {
+        "ok": bool(result.get("ok")) and bool(gh.get("ok")),
+        "local": result,
+        "github": gh,
+    }
 
 def restore_birthday_contacts_backup() -> Dict[str, Any]:
     init_telegram_birthday_tables()
