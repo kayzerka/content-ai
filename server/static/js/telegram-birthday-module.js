@@ -70,7 +70,8 @@
         tgBirthdayLoadLogs()
       ]);
       tgBirthdayBindPreviewInputs();
-      tgBirthdayRenderPreview();
+      tgBirthdayBindDragCanvas();
+      tgBirthdayRenderPreviewWithFrames();
       setStatus('✅ Birthday Bot модуль завантажено');
     } catch(e) {
       setStatus('❌ Помилка завантаження: ' + e.message);
@@ -120,6 +121,26 @@
       `;
     }
 
+
+    window.__bdPositions = {
+      message: {
+        x: Number(s.pos_message_x ?? 0.040),
+        y: Number(s.pos_message_y ?? 0.300)
+      },
+      discount: {
+        x: Number(s.pos_discount_x ?? 0.565),
+        y: Number(s.pos_discount_y ?? 0.205)
+      },
+      services: {
+        x: Number(s.pos_services_x ?? 0.565),
+        y: Number(s.pos_services_y ?? 0.505)
+      },
+      date: {
+        x: Number(s.pos_date_x ?? 0.685),
+        y: Number(s.pos_date_y ?? 0.846)
+      }
+    };
+
     window.__bdSettings = s;
   }
 
@@ -142,7 +163,7 @@
     }
 
     tgBirthdayUpdatePreview();
-    tgBirthdayRenderPreview();
+    tgBirthdayRenderPreviewWithFrames();
   }
 
   function tgBirthdayUpdatePreview(){
@@ -250,7 +271,7 @@
     if ($('bdDiscountCode')) $('bdDiscountCode').value = x.discount_code || 'BDAY15';
     if ($('bdContactTemplateImage')) $('bdContactTemplateImage').value = x.template_image || '';
 
-    tgBirthdayRenderPreview();
+    tgBirthdayRenderPreviewWithFrames();
     setStatus('✏️ Контакт завантажено в форму');
   }
 
@@ -361,7 +382,13 @@
       font_services_color: $('bdFontServicesColor')?.value || '#3a2d28',
       font_date_family: $('bdFontDateFamily')?.value || 'Georgia',
       font_date_size: Number($('bdFontDateSize')?.value || 34),
-      font_date_color: $('bdFontDateColor')?.value || '#a55d63'
+      font_date_color: $('bdFontDateColor')?.value || '#a55d63',
+      positions: window.__bdPositions || {
+        message:{x:0.040,y:0.300},
+        discount:{x:0.565,y:0.205},
+        services:{x:0.565,y:0.505},
+        date:{x:0.685,y:0.846}
+      }
     };
   }
 
@@ -431,8 +458,8 @@
       if (msg.trim()) tgBirthdayWrapCanvasText(
         ctx,
         msg,
-        Math.floor(w * 0.040),
-        Math.floor(h * 0.300),
+        Math.floor(w * data.positions.message.x),
+        Math.floor(h * data.positions.message.y),
         Math.floor(w * 0.255),
         Math.floor(h * 0.028)
       );
@@ -443,8 +470,8 @@
         ctx.font = `${data.font_discount_size}px ${data.font_discount_family}, Georgia, "Times New Roman", serif`;
         ctx.fillText(
           `${data.discount_percent}%`,
-          Math.floor(w * 0.565),
-          Math.floor(h * 0.205)
+          Math.floor(w * data.positions.discount.x),
+          Math.floor(h * data.positions.discount.y)
         );
       }
 
@@ -458,8 +485,8 @@
         .filter(Boolean)
         .map(x => x.match(/^[•♡◎☼◌♧☆📖]/) ? x : '• ' + x);
 
-      let sy = Math.floor(h * 0.505);
-      const sx = Math.floor(w * 0.565);
+      let sy = Math.floor(h * data.positions.services.y);
+      const sx = Math.floor(w * data.positions.services.x);
       const lineH = Math.floor(h * 0.031);
 
       services.forEach(line => {
@@ -472,8 +499,8 @@
       ctx.font = `${data.font_date_size}px ${data.font_date_family}, Georgia, "Times New Roman", serif`;
       ctx.fillText(
         data.valid_until_short,
-        Math.floor(w * 0.685),
-        Math.floor(h * 0.846)
+        Math.floor(w * data.positions.date.x),
+        Math.floor(h * data.positions.date.y)
       );
     };
 
@@ -530,6 +557,101 @@
     await tgBirthdayLoadContacts();
     await tgBirthdayLoadSettings();
     await tgBirthdayRenderPreview();
+  }
+
+
+
+
+  function tgBirthdayCanvasPoint(evt, canvas){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (evt.clientX - rect.left) * scaleX,
+      y: (evt.clientY - rect.top) * scaleY
+    };
+  }
+
+  function tgBirthdayBlockRects(canvas){
+    const w = canvas.width;
+    const h = canvas.height;
+    const p = window.__bdPositions || {};
+    return [
+      {key:'message', label:'Привітання', x:(p.message?.x ?? 0.040)*w, y:(p.message?.y ?? 0.300)*h, width:w*0.27, height:h*0.25},
+      {key:'discount', label:'Знижка', x:(p.discount?.x ?? 0.565)*w, y:(p.discount?.y ?? 0.205)*h, width:w*0.18, height:h*0.12},
+      {key:'services', label:'Послуги', x:(p.services?.x ?? 0.565)*w, y:(p.services?.y ?? 0.505)*h, width:w*0.27, height:h*0.22},
+      {key:'date', label:'Дата', x:(p.date?.x ?? 0.685)*w, y:(p.date?.y ?? 0.846)*h, width:w*0.10, height:h*0.05},
+    ];
+  }
+
+  function tgBirthdayDrawDragFrames(){
+    const canvas = $('bdTemplatePreviewCanvas');
+    if (!canvas || !canvas.width || !canvas.height) return;
+    const ctx = canvas.getContext('2d');
+    const rects = tgBirthdayBlockRects(canvas);
+
+    ctx.save();
+    rects.forEach(r => {
+      ctx.strokeStyle = window.__bdDraggingKey === r.key ? '#2563eb' : 'rgba(37,99,235,0.55)';
+      ctx.lineWidth = window.__bdDraggingKey === r.key ? 4 : 2;
+      ctx.setLineDash([8, 5]);
+      ctx.strokeRect(r.x, r.y, r.width, r.height);
+
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(37,99,235,0.85)';
+      ctx.font = '20px Arial';
+      ctx.fillText(r.label, r.x + 8, r.y - 24);
+    });
+    ctx.restore();
+  }
+
+  async function tgBirthdayRenderPreviewWithFrames(){
+    await tgBirthdayRenderPreview();
+    setTimeout(tgBirthdayDrawDragFrames, 80);
+  }
+
+  function tgBirthdayBindDragCanvas(){
+    const canvas = $('bdTemplatePreviewCanvas');
+    if (!canvas || canvas.__bdDragBound) return;
+    canvas.__bdDragBound = true;
+
+    canvas.style.cursor = 'move';
+
+    canvas.addEventListener('mousedown', (evt) => {
+      const p = tgBirthdayCanvasPoint(evt, canvas);
+      const rects = tgBirthdayBlockRects(canvas).reverse();
+      const hit = rects.find(r => p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height);
+      if (!hit) return;
+
+      window.__bdDraggingKey = hit.key;
+      window.__bdDragOffset = {x: p.x - hit.x, y: p.y - hit.y};
+      evt.preventDefault();
+      tgBirthdayRenderPreviewWithFrames();
+    });
+
+    window.addEventListener('mousemove', (evt) => {
+      if (!window.__bdDraggingKey) return;
+      const p = tgBirthdayCanvasPoint(evt, canvas);
+      const key = window.__bdDraggingKey;
+
+      window.__bdPositions = window.__bdPositions || {};
+      window.__bdPositions[key] = window.__bdPositions[key] || {x:0, y:0};
+
+      const ox = window.__bdDragOffset?.x || 0;
+      const oy = window.__bdDragOffset?.y || 0;
+
+      window.__bdPositions[key].x = Math.max(0, Math.min(0.95, (p.x - ox) / canvas.width));
+      window.__bdPositions[key].y = Math.max(0, Math.min(0.95, (p.y - oy) / canvas.height));
+
+      tgBirthdayRenderPreviewWithFrames();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!window.__bdDraggingKey) return;
+      window.__bdDraggingKey = null;
+      window.__bdDragOffset = null;
+      tgBirthdayRenderPreviewWithFrames();
+    });
   }
 
 

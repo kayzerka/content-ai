@@ -70,6 +70,14 @@ def init_telegram_birthday_tables():
             font_date_family TEXT,
             font_date_size INTEGER DEFAULT 34,
             font_date_color TEXT DEFAULT '#a55d63',
+            pos_message_x REAL DEFAULT 0.040,
+            pos_message_y REAL DEFAULT 0.300,
+            pos_discount_x REAL DEFAULT 0.565,
+            pos_discount_y REAL DEFAULT 0.205,
+            pos_services_x REAL DEFAULT 0.565,
+            pos_services_y REAL DEFAULT 0.505,
+            pos_date_x REAL DEFAULT 0.685,
+            pos_date_y REAL DEFAULT 0.846,
             last_auto_run_date TEXT,
             last_run_at INTEGER,
             last_run_sent INTEGER DEFAULT 0,
@@ -131,6 +139,14 @@ def init_telegram_birthday_tables():
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_date_family TEXT",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_date_size INTEGER DEFAULT 34",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_date_color TEXT DEFAULT '#a55d63'",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_message_x REAL DEFAULT 0.040",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_message_y REAL DEFAULT 0.300",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_discount_x REAL DEFAULT 0.565",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_discount_y REAL DEFAULT 0.205",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_services_x REAL DEFAULT 0.565",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_services_y REAL DEFAULT 0.505",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_date_x REAL DEFAULT 0.685",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_date_y REAL DEFAULT 0.846",
     ]:
         try:
             con.execute(_col_sql)
@@ -206,6 +222,14 @@ def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
             font_date_family = ?,
             font_date_size = ?,
             font_date_color = ?,
+            pos_message_x = ?,
+            pos_message_y = ?,
+            pos_discount_x = ?,
+            pos_discount_y = ?,
+            pos_services_x = ?,
+            pos_services_y = ?,
+            pos_date_x = ?,
+            pos_date_y = ?,
             updated_at = ?
         WHERE id = 1
     """, (
@@ -229,6 +253,14 @@ def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
         payload.get("font_date_family", current.get("font_date_family") or "Georgia"),
         int(payload.get("font_date_size", current.get("font_date_size") or 34) or 34),
         payload.get("font_date_color", current.get("font_date_color") or "#a55d63"),
+        float(payload.get("pos_message_x", current.get("pos_message_x") or 0.040) or 0.040),
+        float(payload.get("pos_message_y", current.get("pos_message_y") or 0.300) or 0.300),
+        float(payload.get("pos_discount_x", current.get("pos_discount_x") or 0.565) or 0.565),
+        float(payload.get("pos_discount_y", current.get("pos_discount_y") or 0.205) or 0.205),
+        float(payload.get("pos_services_x", current.get("pos_services_x") or 0.565) or 0.565),
+        float(payload.get("pos_services_y", current.get("pos_services_y") or 0.505) or 0.505),
+        float(payload.get("pos_date_x", current.get("pos_date_x") or 0.685) or 0.685),
+        float(payload.get("pos_date_y", current.get("pos_date_y") or 0.846) or 0.846),
         _now(),
     ))
     con.commit()
@@ -479,7 +511,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
     )
     left_wrapped = _wrap_text(draw, left_text, left_font, int(w * 0.255))
     draw.multiline_text(
-        (int(w * 0.040), int(h * 0.300)),
+        (int(w * float(settings.get('pos_message_x') or 0.040)), int(h * float(settings.get('pos_message_y') or 0.300))),
         left_wrapped,
         font=left_font,
         fill=_hex_to_rgb(settings.get("font_message_color"), (70, 55, 50)),
@@ -492,7 +524,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
         int(settings.get("font_discount_size") or max(110, int(w * 0.088)))
     )
     draw.text(
-        (int(w * 0.565), int(h * 0.205)),
+        (int(w * float(settings.get('pos_discount_x') or 0.565)), int(h * float(settings.get('pos_discount_y') or 0.205))),
         f"{discount}%",
         font=discount_font,
         fill=_hex_to_rgb(settings.get("font_discount_color"), (165, 93, 99))
@@ -509,7 +541,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
         int(settings.get("font_services_size") or 20)
     )
     draw.multiline_text(
-        (int(w * 0.565), int(h * 0.505)),
+        (int(w * float(settings.get('pos_services_x') or 0.565)), int(h * float(settings.get('pos_services_y') or 0.505))),
         services_text,
         font=services_font,
         fill=_hex_to_rgb(settings.get("font_services_color"), (58, 45, 40)),
@@ -523,7 +555,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
         int(settings.get("font_date_size") or 34)
     )
     draw.text(
-        (int(w * 0.685), int(h * 0.846)),
+        (int(w * float(settings.get('pos_date_x') or 0.685)), int(h * float(settings.get('pos_date_y') or 0.846))),
         valid_until,
         font=date_font,
         fill=_hex_to_rgb(settings.get("font_date_color"), (165, 93, 99))
