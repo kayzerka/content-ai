@@ -96,7 +96,7 @@
     if ($('bdFontDiscountColor')) $('bdFontDiscountColor').value = s.font_discount_color || '#a55d63';
 
     if ($('bdFontServicesFamily')) $('bdFontServicesFamily').value = s.font_services_family || 'Georgia';
-    if ($('bdFontServicesSize')) $('bdFontServicesSize').value = s.font_services_size || 26;
+    if ($('bdFontServicesSize')) $('bdFontServicesSize').value = s.font_services_size || 20;
     if ($('bdFontServicesColor')) $('bdFontServicesColor').value = s.font_services_color || '#3a2d28';
 
     if ($('bdFontDateFamily')) $('bdFontDateFamily').value = s.font_date_family || 'Georgia';
@@ -357,7 +357,7 @@
       font_discount_size: Number($('bdFontDiscountSize')?.value || 120),
       font_discount_color: $('bdFontDiscountColor')?.value || '#a55d63',
       font_services_family: $('bdFontServicesFamily')?.value || 'Georgia',
-      font_services_size: Number($('bdFontServicesSize')?.value || 26),
+      font_services_size: Number($('bdFontServicesSize')?.value || 20),
       font_services_color: $('bdFontServicesColor')?.value || '#3a2d28',
       font_date_family: $('bdFontDateFamily')?.value || 'Georgia',
       font_date_size: Number($('bdFontDateSize')?.value || 34),
@@ -434,7 +434,7 @@
         Math.floor(w * 0.040),
         Math.floor(h * 0.300),
         Math.floor(w * 0.255),
-        Math.floor(h * 0.030)
+        Math.floor(h * 0.028)
       );
 
       // Знижка
@@ -458,9 +458,9 @@
         .filter(Boolean)
         .map(x => x.match(/^[•♡◎☼◌♧☆📖]/) ? x : '• ' + x);
 
-      let sy = Math.floor(h * 0.610);
+      let sy = Math.floor(h * 0.505);
       const sx = Math.floor(w * 0.565);
-      const lineH = Math.floor(h * 0.030);
+      const lineH = Math.floor(h * 0.031);
 
       services.forEach(line => {
         ctx.fillText(line, sx, sy);
@@ -472,8 +472,8 @@
       ctx.font = `${data.font_date_size}px ${data.font_date_family}, Georgia, "Times New Roman", serif`;
       ctx.fillText(
         data.valid_until_short,
-        Math.floor(w * 0.705),
-        Math.floor(h * 0.842)
+        Math.floor(w * 0.685),
+        Math.floor(h * 0.846)
       );
     };
 

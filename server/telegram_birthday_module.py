@@ -506,14 +506,14 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
 
     services_font = _font_from_family(
         settings.get("font_services_family") or "Georgia",
-        int(settings.get("font_services_size") or 26)
+        int(settings.get("font_services_size") or 20)
     )
     draw.multiline_text(
-        (int(w * 0.565), int(h * 0.610)),
+        (int(w * 0.565), int(h * 0.505)),
         services_text,
         font=services_font,
         fill=_hex_to_rgb(settings.get("font_services_color"), (58, 45, 40)),
-        spacing=max(8, int(h * 0.010))
+        spacing=max(7, int(h * 0.009))
     )
 
     # 4) дата в нижній блок після слова "до"
@@ -523,7 +523,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
         int(settings.get("font_date_size") or 34)
     )
     draw.text(
-        (int(w * 0.705), int(h * 0.842)),
+        (int(w * 0.685), int(h * 0.846)),
         valid_until,
         font=date_font,
         fill=_hex_to_rgb(settings.get("font_date_color"), (165, 93, 99))
