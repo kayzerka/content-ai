@@ -813,47 +813,7 @@
       </div>
     </section>
 
-  </main>
-
-  <!-- МОДАЛЬНЕ ВІКНО ДЛЯ СТВОРЕННЯ/РЕДАГУВАННЯ ЗАДАЧІ -->
-  <div id="taskModal" class="modal-overlay">
-    <div class="modal-container">
-      <div class="modal-header">
-        <h3 id="modalTitle">📌 Задача</h3>
-        <button class="modal-close" onclick="closeTaskModal()">✕</button>
-      </div>
-      <div class="modal-body">
-        <label>Назва задачі *</label>
-        <input type="text" id="taskTitle" placeholder="Наприклад: Зняти Reels для Instagram" />
-        <label>Опис / нотатки</label>
-        <textarea id="taskDescription" rows="3" placeholder="Деталі, ідеї, посилання..."></textarea>
-        <label>📅 Дедлайн (дата виконання)</label>
-        <input type="date" id="taskDueDate" />
-        <label>📌 Статус</label>
-        <select id="taskStatus">
-          <option value="planned">📋 Заплановано</option>
-          <option value="in_progress">⚙️ В роботі</option>
-          <option value="done">✅ Виконано</option>
-        </select>
-      </div>
-      <div class="modal-footer">
-        <button class="btn" onclick="closeTaskModal()">Скасувати</button>
-        <button class="btn primary" id="saveTaskBtn">💾 Зберегти</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Підключаємо JavaScript модулі модалок (оригінальні) -->
-  <script src="/static/js/calendar-modal.js"></script>
-  <script src="/static/js/platform-posting-settings.js"></script>
-  <script src="/static/js/metrics-modal.js"></script>
-  <script src="/static/js/ai-result-modal.js"></script>
-  <script src="/static/js/content-score-modal.js"></script>
-  <script src="/static/js/ai-analysis-modal.js"></script>
-  <script src="/static/js/ab-test-modal.js"></script>
-  <script src="/static/js/modals-main.js"></script>
   
-  <!-- ОСНОВНИЙ СКРИПТ: ОРИГІНАЛЬНА ЛОГІКА + ПЛАНУВАЛЬНИК -->
 
   <section id="birthday" style="display:none;">
     <h2>🎂 Birthday Bot</h2>
@@ -997,7 +957,49 @@
   </section>
 
 
-  <script>
+  
+</main>
+
+  <!-- МОДАЛЬНЕ ВІКНО ДЛЯ СТВОРЕННЯ/РЕДАГУВАННЯ ЗАДАЧІ -->
+  <div id="taskModal" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 id="modalTitle">📌 Задача</h3>
+        <button class="modal-close" onclick="closeTaskModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <label>Назва задачі *</label>
+        <input type="text" id="taskTitle" placeholder="Наприклад: Зняти Reels для Instagram" />
+        <label>Опис / нотатки</label>
+        <textarea id="taskDescription" rows="3" placeholder="Деталі, ідеї, посилання..."></textarea>
+        <label>📅 Дедлайн (дата виконання)</label>
+        <input type="date" id="taskDueDate" />
+        <label>📌 Статус</label>
+        <select id="taskStatus">
+          <option value="planned">📋 Заплановано</option>
+          <option value="in_progress">⚙️ В роботі</option>
+          <option value="done">✅ Виконано</option>
+        </select>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeTaskModal()">Скасувати</button>
+        <button class="btn primary" id="saveTaskBtn">💾 Зберегти</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Підключаємо JavaScript модулі модалок (оригінальні) -->
+  <script src="/static/js/calendar-modal.js"></script>
+  <script src="/static/js/platform-posting-settings.js"></script>
+  <script src="/static/js/metrics-modal.js"></script>
+  <script src="/static/js/ai-result-modal.js"></script>
+  <script src="/static/js/content-score-modal.js"></script>
+  <script src="/static/js/ai-analysis-modal.js"></script>
+  <script src="/static/js/ab-test-modal.js"></script>
+  <script src="/static/js/modals-main.js"></script>
+  
+  <!-- ОСНОВНИЙ СКРИПТ: ОРИГІНАЛЬНА ЛОГІКА + ПЛАНУВАЛЬНИК -->
+<script>
     // ---------- ОРИГІНАЛЬНІ ГЛОБАЛЬНІ ЗМІННІ ТА ФУНКЦІЇ (аналітика) ----------
     let DASHBOARD_ROWS = [];
     let ACTIVE_PLATFORM = 'ALL';
