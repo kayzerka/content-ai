@@ -72,6 +72,7 @@
         tgBirthdayLoadLogs()
       ]);
       tgBirthdayBindPreviewInputs();
+      tgBirthdayForceLivePreviewBinding();
       tgBirthdayBindDragCanvas();
       tgBirthdayRenderPreviewWithFrames();
       setStatus('✅ Birthday Bot модуль завантажено');
@@ -652,6 +653,47 @@
       window.__bdDraggingKey = null;
       window.__bdDragOffset = null;
       tgBirthdayRenderPreviewWithFrames();
+    });
+  }
+
+
+
+
+  function tgBirthdayForceLivePreviewBinding(){
+    [
+      'bdMessageTemplate',
+      'bdServicesTemplate',
+      'bdDiscountPercent',
+      'bdDiscountCode',
+      'bdFirstName',
+      'bdTemplateImage',
+      'bdContactTemplateImage',
+      'bdFontMessageFamily',
+      'bdFontMessageSize',
+      'bdFontMessageColor',
+      'bdFontDiscountFamily',
+      'bdFontDiscountSize',
+      'bdFontDiscountColor',
+      'bdFontServicesFamily',
+      'bdFontServicesSize',
+      'bdFontServicesColor',
+      'bdFontDateFamily',
+      'bdFontDateSize',
+      'bdFontDateColor'
+    ].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el || el.__forcePreviewBound) return;
+      el.__forcePreviewBound = true;
+      const handler = () => {
+        if (typeof tgBirthdayRenderPreviewWithFrames === 'function') {
+          tgBirthdayRenderPreviewWithFrames();
+        } else if (typeof tgBirthdayRenderPreview === 'function') {
+          tgBirthdayRenderPreview();
+        }
+      };
+      el.addEventListener('input', handler);
+      el.addEventListener('change', handler);
+      el.addEventListener('keyup', handler);
     });
   }
 
