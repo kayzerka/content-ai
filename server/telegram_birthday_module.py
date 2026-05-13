@@ -353,7 +353,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
         (int(w * 0.565), int(h * 0.210)),
         f"{discount}%",
         font=discount_font,
-        fill=(158, 78, 82)
+        fill=(165, 93, 99)
     )
 
     # 3) перелік послуг під блоком "В будь-який із цих тем"
@@ -375,7 +375,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
         (int(w * 0.675), int(h * 0.855)),
         valid_until,
         font=date_font,
-        fill=(158, 78, 82)
+        fill=(165, 93, 99)
     )
 
     out = GENERATED_DIR / f"birthday_{row.get('chat_id')}_{date.today().year}.jpg"

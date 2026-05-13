@@ -327,9 +327,9 @@
     const yyyy = valid.getFullYear();
 
     return {
-      first_name: $('bdFirstName')?.value?.trim() || 'Тест',
-      discount_percent: $('bdDiscountPercent')?.value || '15',
-      discount_code: $('bdDiscountCode')?.value?.trim() || 'BDAY15',
+      first_name: $('bdFirstName')?.value?.trim() || '',
+      discount_percent: $('bdDiscountPercent')?.value || '',
+      discount_code: $('bdDiscountCode')?.value?.trim() || '',
       valid_until: `${dd}.${mm}.${yyyy}`,
       valid_until_short: `${dd}.${mm}`,
       message_template: $('bdMessageTemplate')?.value || defaultTemplate(),
@@ -376,7 +376,13 @@
     const img = new Image();
     img.crossOrigin = 'anonymous';
 
-    const template = data.template_image || 'birthday_offer_01.png';
+    const template = data.template_image;
+    if (!template) {
+      canvas.width = 1;
+      canvas.height = 1;
+      ctx.clearRect(0, 0, 1, 1);
+      return;
+    }
     img.src = '/static/birthday_templates/' + encodeURIComponent(template) + '?v=' + Date.now();
 
     img.onload = function(){
@@ -391,11 +397,11 @@
 
       // Лівий текст
       ctx.fillStyle = '#4f3932';
-      ctx.font = `italic ${Math.max(24, Math.floor(w * 0.020))}px "Snell Roundhand", "Apple Chancery", "Brush Script MT", Georgia, serif`;
+      ctx.font = `${Math.max(22, Math.floor(w * 0.0175))}px "Avenir Next", "Helvetica Neue", Arial, sans-serif`;
       ctx.textBaseline = 'top';
 
-      let msg = tgBirthdayApplyVars(data.message_template, data);
-      tgBirthdayWrapCanvasText(
+      let msg = data.message_template ? tgBirthdayApplyVars(data.message_template, data) : '';
+      if (msg.trim()) tgBirthdayWrapCanvasText(
         ctx,
         msg,
         Math.floor(w * 0.040),
@@ -405,13 +411,15 @@
       );
 
       // Знижка
-      ctx.fillStyle = '#9e4e52';
-      ctx.font = `${Math.max(90, Math.floor(w * 0.090))}px Georgia, "Times New Roman", serif`;
-      ctx.fillText(
-        `${data.discount_percent}%`,
-        Math.floor(w * 0.565),
-        Math.floor(h * 0.205)
-      );
+      if (String(data.discount_percent || '').trim()) {
+        ctx.fillStyle = '#a55d63';
+        ctx.font = `${Math.max(90, Math.floor(w * 0.088))}px Georgia, "Times New Roman", serif`;
+        ctx.fillText(
+          `${data.discount_percent}%`,
+          Math.floor(w * 0.565),
+          Math.floor(h * 0.205)
+        );
+      }
 
       // Послуги
       ctx.fillStyle = '#3a2d28';
@@ -433,7 +441,7 @@
       });
 
       // Дата в нижньому блоці
-      ctx.fillStyle = '#9e4e52';
+      ctx.fillStyle = '#a55d63';
       ctx.font = `${Math.max(28, Math.floor(w * 0.025))}px Georgia, "Times New Roman", serif`;
       ctx.fillText(
         data.valid_until_short,
