@@ -105,6 +105,14 @@ def init_telegram_birthday_tables():
 
     default_caption = "🎁 Ваш подарунок до Дня народження"
 
+    default_services = """♡ Навчання БВ
+♡ 5 сеансів БВ
+♡ Сеанс квантової регресії
+♡ Сеанс Божого потоку
+♡ Обмін енергіями
+♡ Родові програми
+♡ Курс «Етика сили»"""
+
     try:
         con.execute("ALTER TABLE telegram_birthday_settings ADD COLUMN services_template TEXT")
     except Exception:
