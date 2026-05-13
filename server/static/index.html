@@ -561,6 +561,7 @@
 <link rel="stylesheet" href="/static/css/instagram-reaction-engine.css?v=1">
 
 
+  <link rel="stylesheet" href="/static/css/telegram-birthday-module.css">
 </head>
 <body>
   <header>
@@ -576,6 +577,7 @@
     <button id="nav_planner" onclick="showSection('planner')">📅 Планувальник (Trello+Календар)</button>
     <button id="nav_funnels" onclick="showSection('funnels'); window.renderFunnelsNativeTab && window.renderFunnelsNativeTab();">🧲 Воронки</button>
     <button id="nav_telegram" onclick="showSection('telegram'); tgLoadChats();">🤖 Telegram Center</button>
+    <button id="nav_birthday" onclick="showSection('birthday'); tgBirthdayLoad();">🎂 Birthday Bot</button>
 </nav>
 
   <main>
@@ -852,6 +854,149 @@
   <script src="/static/js/modals-main.js"></script>
   
   <!-- ОСНОВНИЙ СКРИПТ: ОРИГІНАЛЬНА ЛОГІКА + ПЛАНУВАЛЬНИК -->
+
+  <section id="birthday" style="display:none;">
+    <h2>🎂 Birthday Bot</h2>
+    <p class="muted">Telegram-привітання з Днем народження: шаблон картинки, текст, дисконт, ручний або автоматичний запуск.</p>
+
+    <div class="birthday-grid">
+      <div>
+        <div class="birthday-card">
+          <h3>⚙️ Налаштування автоматизації</h3>
+
+          <div class="birthday-form-row">
+            <label class="birthday-toggle">
+              <input type="checkbox" id="bdEnabled">
+              <span>Модуль увімкнений</span>
+            </label>
+
+            <label class="birthday-toggle">
+              <input type="checkbox" id="bdAutoRun">
+              <span>Автоматично перевіряти дні народження</span>
+            </label>
+          </div>
+
+          <div class="birthday-form-row">
+            <div>
+              <label>Година автоперевірки</label>
+              <input id="bdAutoHour" type="number" min="0" max="23" value="9">
+            </div>
+            <div>
+              <label>Хвилина автоперевірки</label>
+              <input id="bdAutoMinute" type="number" min="0" max="59" value="0">
+            </div>
+          </div>
+
+          <div>
+            <label>Картинка-шаблон за замовчуванням</label>
+            <select id="bdTemplateImage" onchange="tgBirthdayUpdatePreview()"></select>
+            <img id="bdTemplatePreview" class="birthday-template-preview" alt="Birthday template preview">
+            <div class="birthday-muted">Картинки клади у <code>static/birthday_templates/</code>. Наприклад: <code>birthday_offer_01.png</code></div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label>Caption до картинки</label>
+            <input id="bdCaptionTemplate" placeholder="🎁 Ваш подарунок до Дня народження">
+          </div>
+
+          <div style="margin-top:12px;">
+            <label>Перелік послуг на правій частині картинки</label>
+            <textarea id="bdServicesTemplate" style="min-height:130px;"></textarea>
+            <div class="birthday-muted">
+              Це вставляється під блоком “В будь-який із цих тем”.
+            </div>
+          </div>
+
+          <div style="margin-top:12px;">
+            <label>Текст привітання / fallback, якщо картинки немає</label>
+            <textarea id="bdMessageTemplate"></textarea>
+            <div class="birthday-muted">
+              Змінні: <code>{first_name}</code>, <code>{discount_percent}</code>, <code>{discount_code}</code>, <code>{valid_until}</code>, <code>{birthday_date}</code>
+            </div>
+          </div>
+
+          <div class="birthday-actions">
+            <button class="btn primary" onclick="tgBirthdaySaveSettings()">💾 Зберегти налаштування</button>
+            <button class="btn" onclick="tgBirthdayRunDue()">▶️ Запустити перевірку зараз</button>
+          </div>
+
+          <div id="bdLastRun" class="birthday-status" style="margin-top:12px;">—</div>
+        </div>
+
+        <div class="birthday-card">
+          <h3>👤 Контакт</h3>
+
+          <div class="birthday-form-row">
+            <div>
+              <label>Telegram chat_id</label>
+              <input id="bdChatId" placeholder="123456789">
+            </div>
+            <div>
+              <label>Username</label>
+              <input id="bdUsername" placeholder="username без @">
+            </div>
+          </div>
+
+          <div class="birthday-form-row">
+            <div>
+              <label>Імʼя</label>
+              <input id="bdFirstName" placeholder="Марія">
+            </div>
+            <div>
+              <label>Прізвище</label>
+              <input id="bdLastName" placeholder="">
+            </div>
+          </div>
+
+          <div class="birthday-form-row">
+            <div>
+              <label>Дата народження</label>
+              <input id="bdBirthdayDate" type="date">
+            </div>
+            <div>
+              <label>Картинка для цього контакта</label>
+              <select id="bdContactTemplateImage"></select>
+            </div>
+          </div>
+
+          <div class="birthday-form-row">
+            <div>
+              <label>Знижка %</label>
+              <input id="bdDiscountPercent" type="number" value="15">
+            </div>
+            <div>
+              <label>Промокод</label>
+              <input id="bdDiscountCode" value="BDAY15">
+            </div>
+          </div>
+
+          <div class="birthday-actions">
+            <button class="btn primary" onclick="tgBirthdaySaveContact()">💾 Зберегти контакт</button>
+            <button class="btn" onclick="tgBirthdayTestSend()">🧪 Тестово відправити</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="birthday-card">
+          <h3>📡 Статус</h3>
+          <div id="birthdayStatus" class="birthday-status">Birthday Bot готовий</div>
+        </div>
+
+        <div class="birthday-card">
+          <h3>📋 Контакти</h3>
+          <div id="bdContactsTable">Завантаження...</div>
+        </div>
+
+        <div class="birthday-card">
+          <h3>🧾 Логи</h3>
+          <div id="bdLogs">Завантаження...</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
   <script>
     // ---------- ОРИГІНАЛЬНІ ГЛОБАЛЬНІ ЗМІННІ ТА ФУНКЦІЇ (аналітика) ----------
     let DASHBOARD_ROWS = [];
@@ -1807,5 +1952,6 @@ window.restoreFunnelsSeedData = restoreFunnelsSeedData;
     ФОП Дарія Побережна • Україна • regresolog.top • dariapoberezhna88@gmail.com
 </footer>
 
+  <script src="/static/js/telegram-birthday-module.js"></script>
 </body>
 </html>

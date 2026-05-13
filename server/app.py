@@ -16,6 +16,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from pathlib import Path
+from telegram_birthday_module import init_telegram_birthday_tables, get_settings as tg_birthday_get_settings, save_settings as tg_birthday_save_settings, list_templates as tg_birthday_list_templates, upsert_birthday_contact as tg_birthday_upsert_contact, list_contacts as tg_birthday_list_contacts, list_logs as tg_birthday_list_logs, run_birthday_sender as tg_birthday_run_sender, maybe_auto_run_birthday_sender
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
@@ -8610,3 +8611,63 @@ def telegram_backup_import_v1_sync(payload: dict):
     finally:
         con.close()
 # ===== /TELEGRAM BACKUP / RESTORE API V1 =====
+
+# === TELEGRAM BIRTHDAY BOT MODULE ===
+
+@app.on_event("startup")
+def _telegram_birthday_startup_init():
+    try:
+        init_telegram_birthday_tables()
+    except Exception as e:
+        print("[telegram_birthday] init error:", e)
+
+
+@app.get("/api/telegram/birthday/settings")
+def api_telegram_birthday_settings():
+    return {"ok": True, "settings": tg_birthday_get_settings()}
+
+
+@app.post("/api/telegram/birthday/settings/save")
+def api_telegram_birthday_settings_save(payload: dict):
+    return tg_birthday_save_settings(payload or {})
+
+
+@app.get("/api/telegram/birthday/templates")
+def api_telegram_birthday_templates():
+    return tg_birthday_list_templates()
+
+
+@app.post("/api/telegram/birthday/contact/upsert")
+def api_telegram_birthday_contact_upsert(payload: dict):
+    return tg_birthday_upsert_contact(payload or {})
+
+
+@app.get("/api/telegram/birthday/contacts")
+def api_telegram_birthday_contacts():
+    return tg_birthday_list_contacts()
+
+
+@app.get("/api/telegram/birthday/logs")
+def api_telegram_birthday_logs(limit: int = 100):
+    return tg_birthday_list_logs(limit)
+
+
+@app.post("/api/telegram/birthday/run-due")
+def api_telegram_birthday_run_due():
+    return tg_birthday_run_sender()
+
+
+@app.post("/api/telegram/birthday/test-send")
+def api_telegram_birthday_test_send(payload: dict):
+    chat_id = str((payload or {}).get("chat_id") or "").strip()
+    if not chat_id:
+        return {"ok": False, "error": "chat_id_required"}
+    return tg_birthday_run_sender(force_chat_id=chat_id)
+
+
+@app.post("/api/telegram/birthday/auto-run")
+def api_telegram_birthday_auto_run():
+    return maybe_auto_run_birthday_sender()
+
+# === /TELEGRAM BIRTHDAY BOT MODULE ===
+

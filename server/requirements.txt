@@ -5,3 +5,4 @@ requests
 python-multipart
 aiofiles
 jinja2
+Pillow
