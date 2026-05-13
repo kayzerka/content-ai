@@ -383,16 +383,30 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
     return str(out)
 
 
-def _get_bot_token() -> Optional[str]:
-    for key in ["TELEGRAM_BOT_TOKEN", "BOT_TOKEN", "TG_BOT_TOKEN", "TELEGRAM_TOKEN"]:
+def _get_bot_token(purpose: str = "planner") -> Optional[str]:
+    if purpose == "contact":
+        keys = [
+            "BIRTHDAY_TELEGRAM_BOT_TOKEN",
+            "DASHA_TELEGRAM_BOT_TOKEN",
+            "CLIENT_TELEGRAM_BOT_TOKEN",
+        ]
+    else:
+        keys = [
+            "TELEGRAM_BOT_TOKEN",
+            "BOT_TOKEN",
+            "TG_BOT_TOKEN",
+            "TELEGRAM_TOKEN",
+        ]
+
+    for key in keys:
         v = os.getenv(key)
         if v:
             return v
     return None
 
 
-def send_telegram_photo(chat_id: str, photo_path: str, caption: str = "") -> Dict[str, Any]:
-    token = _get_bot_token()
+def send_telegram_photo(chat_id: str, photo_path: str, caption: str = "", purpose: str = "planner") -> Dict[str, Any]:
+    token = _get_bot_token(purpose)
     if not token:
         return {"ok": False, "error": "telegram_token_not_found"}
 
@@ -413,8 +427,8 @@ def send_telegram_photo(chat_id: str, photo_path: str, caption: str = "") -> Dic
         return {"ok": False, "status_code": r.status_code, "text": r.text}
 
 
-def send_telegram_text(chat_id: str, text: str) -> Dict[str, Any]:
-    token = _get_bot_token()
+def send_telegram_text(chat_id: str, text: str, purpose: str = "planner") -> Dict[str, Any]:
+    token = _get_bot_token(purpose)
     if not token:
         return {"ok": False, "error": "telegram_token_not_found"}
 
@@ -487,7 +501,7 @@ def get_due_contacts() -> List[Dict[str, Any]]:
     return [dict(r) for r in rows]
 
 
-def run_birthday_sender(force_chat_id: Optional[str] = None) -> Dict[str, Any]:
+def run_birthday_sender(force_chat_id: Optional[str] = None, purpose: str = "planner") -> Dict[str, Any]:
     init_telegram_birthday_tables()
     settings = get_settings()
 
@@ -513,9 +527,9 @@ def run_birthday_sender(force_chat_id: Optional[str] = None) -> Dict[str, Any]:
             msg = build_message(row)
 
             if img:
-                res = send_telegram_photo(chat_id, img, caption=caption)
+                res = send_telegram_photo(chat_id, img, caption=caption, purpose=purpose)
             else:
-                res = send_telegram_text(chat_id, msg)
+                res = send_telegram_text(chat_id, msg, purpose=purpose)
 
             if not isinstance(res, dict) or not res.get("ok"):
                 raise RuntimeError(str(res))
@@ -572,7 +586,7 @@ def maybe_auto_run_birthday_sender() -> Dict[str, Any]:
     if (now_struct.tm_hour, now_struct.tm_min) < (hour, minute):
         return {"ok": True, "status": "not_time_yet"}
 
-    result = run_birthday_sender()
+    result = run_birthday_sender(purpose="planner")
 
     con = _db()
     con.execute("""
