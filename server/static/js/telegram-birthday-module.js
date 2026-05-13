@@ -87,6 +87,21 @@
     if ($('bdAutoMinute')) $('bdAutoMinute').value = s.auto_run_minute ?? 0;
     if ($('bdMessageTemplate')) $('bdMessageTemplate').value = s.message_template || defaultTemplate();
     if ($('bdCaptionTemplate')) $('bdCaptionTemplate').value = s.caption_template || '🎁 Ваш подарунок до Дня народження';
+    if ($('bdFontMessageFamily')) $('bdFontMessageFamily').value = s.font_message_family || 'Avenir';
+    if ($('bdFontMessageSize')) $('bdFontMessageSize').value = s.font_message_size || 22;
+    if ($('bdFontMessageColor')) $('bdFontMessageColor').value = s.font_message_color || '#463732';
+
+    if ($('bdFontDiscountFamily')) $('bdFontDiscountFamily').value = s.font_discount_family || 'Georgia';
+    if ($('bdFontDiscountSize')) $('bdFontDiscountSize').value = s.font_discount_size || 120;
+    if ($('bdFontDiscountColor')) $('bdFontDiscountColor').value = s.font_discount_color || '#a55d63';
+
+    if ($('bdFontServicesFamily')) $('bdFontServicesFamily').value = s.font_services_family || 'Georgia';
+    if ($('bdFontServicesSize')) $('bdFontServicesSize').value = s.font_services_size || 26;
+    if ($('bdFontServicesColor')) $('bdFontServicesColor').value = s.font_services_color || '#3a2d28';
+
+    if ($('bdFontDateFamily')) $('bdFontDateFamily').value = s.font_date_family || 'Georgia';
+    if ($('bdFontDateSize')) $('bdFontDateSize').value = s.font_date_size || 34;
+    if ($('bdFontDateColor')) $('bdFontDateColor').value = s.font_date_color || '#a55d63';
     if ($('bdServicesTemplate')) $('bdServicesTemplate').value = s.services_template || `📖 Навчання БВ
 ♡ 5 сеансів БВ
 ◎ Сеанс квантової регресії
@@ -334,7 +349,19 @@
       valid_until_short: `${dd}.${mm}`,
       message_template: $('bdMessageTemplate')?.value || defaultTemplate(),
       services_template: $('bdServicesTemplate')?.value || '',
-      template_image: $('bdTemplateImage')?.value || $('bdContactTemplateImage')?.value || ''
+      template_image: $('bdTemplateImage')?.value || $('bdContactTemplateImage')?.value || '',
+      font_message_family: $('bdFontMessageFamily')?.value || 'Avenir',
+      font_message_size: Number($('bdFontMessageSize')?.value || 22),
+      font_message_color: $('bdFontMessageColor')?.value || '#463732',
+      font_discount_family: $('bdFontDiscountFamily')?.value || 'Georgia',
+      font_discount_size: Number($('bdFontDiscountSize')?.value || 120),
+      font_discount_color: $('bdFontDiscountColor')?.value || '#a55d63',
+      font_services_family: $('bdFontServicesFamily')?.value || 'Georgia',
+      font_services_size: Number($('bdFontServicesSize')?.value || 26),
+      font_services_color: $('bdFontServicesColor')?.value || '#3a2d28',
+      font_date_family: $('bdFontDateFamily')?.value || 'Georgia',
+      font_date_size: Number($('bdFontDateSize')?.value || 34),
+      font_date_color: $('bdFontDateColor')?.value || '#a55d63'
     };
   }
 
@@ -396,8 +423,8 @@
       ctx.drawImage(img, 0, 0, w, h);
 
       // Лівий текст
-      ctx.fillStyle = '#4f3932';
-      ctx.font = `${Math.max(22, Math.floor(w * 0.0175))}px "Avenir Next", "Helvetica Neue", Arial, sans-serif`;
+      ctx.fillStyle = data.font_message_color;
+      ctx.font = `${data.font_message_size}px ${data.font_message_family}, "Avenir Next", "Helvetica Neue", Arial, sans-serif`;
       ctx.textBaseline = 'top';
 
       let msg = data.message_template ? tgBirthdayApplyVars(data.message_template, data) : '';
@@ -405,15 +432,15 @@
         ctx,
         msg,
         Math.floor(w * 0.040),
-        Math.floor(h * 0.305),
+        Math.floor(h * 0.300),
         Math.floor(w * 0.255),
-        Math.floor(h * 0.033)
+        Math.floor(h * 0.030)
       );
 
       // Знижка
       if (String(data.discount_percent || '').trim()) {
-        ctx.fillStyle = '#a55d63';
-        ctx.font = `${Math.max(90, Math.floor(w * 0.088))}px Georgia, "Times New Roman", serif`;
+        ctx.fillStyle = data.font_discount_color;
+        ctx.font = `${data.font_discount_size}px ${data.font_discount_family}, Georgia, "Times New Roman", serif`;
         ctx.fillText(
           `${data.discount_percent}%`,
           Math.floor(w * 0.565),
@@ -422,8 +449,8 @@
       }
 
       // Послуги
-      ctx.fillStyle = '#3a2d28';
-      ctx.font = `${Math.max(22, Math.floor(w * 0.020))}px Georgia, "Times New Roman", serif`;
+      ctx.fillStyle = data.font_services_color;
+      ctx.font = `${data.font_services_size}px ${data.font_services_family}, Georgia, "Times New Roman", serif`;
 
       const services = String(data.services_template || '')
         .split('\n')
@@ -431,9 +458,9 @@
         .filter(Boolean)
         .map(x => x.match(/^[•♡◎☼◌♧☆📖]/) ? x : '• ' + x);
 
-      let sy = Math.floor(h * 0.500);
+      let sy = Math.floor(h * 0.610);
       const sx = Math.floor(w * 0.565);
-      const lineH = Math.floor(h * 0.036);
+      const lineH = Math.floor(h * 0.030);
 
       services.forEach(line => {
         ctx.fillText(line, sx, sy);
@@ -441,8 +468,8 @@
       });
 
       // Дата в нижньому блоці
-      ctx.fillStyle = '#a55d63';
-      ctx.font = `${Math.max(28, Math.floor(w * 0.025))}px Georgia, "Times New Roman", serif`;
+      ctx.fillStyle = data.font_date_color;
+      ctx.font = `${data.font_date_size}px ${data.font_date_family}, Georgia, "Times New Roman", serif`;
       ctx.fillText(
         data.valid_until_short,
         Math.floor(w * 0.705),
@@ -464,7 +491,19 @@
       'bdServicesTemplate',
       'bdTemplateImage',
       'bdContactTemplateImage',
-      'bdBirthdayDate'
+      'bdBirthdayDate',
+      'bdFontMessageFamily',
+      'bdFontMessageSize',
+      'bdFontMessageColor',
+      'bdFontDiscountFamily',
+      'bdFontDiscountSize',
+      'bdFontDiscountColor',
+      'bdFontServicesFamily',
+      'bdFontServicesSize',
+      'bdFontServicesColor',
+      'bdFontDateFamily',
+      'bdFontDateSize',
+      'bdFontDateColor'
     ].forEach(id => {
       const el = $(id);
       if (!el || el.__bdPreviewBound) return;
@@ -475,6 +514,25 @@
   }
 
 
+
+
+  async function tgBirthdayBackupContacts(){
+    setStatus('⏳ Зберігаю backup контактів...');
+    const data = await apiPost(API.backupContacts, {});
+    setStatus(data.ok ? '✅ Backup контактів збережено' : '⚠️ Backup помилка', data);
+  }
+
+  async function tgBirthdayRestoreContacts(){
+    if (!confirm('Відновити контакти Birthday Bot з backup після деплою?')) return;
+    setStatus('⏳ Відновлюю контакти...');
+    const data = await apiPost(API.restoreContacts, {});
+    setStatus(data.ok ? '✅ Контакти відновлено' : '⚠️ Restore помилка', data);
+    await tgBirthdayLoadContacts();
+    await tgBirthdayLoadSettings();
+    await tgBirthdayRenderPreview();
+  }
+
+
   window.tgBirthdayLoad = tgBirthdayLoad;
   window.tgBirthdaySaveSettings = tgBirthdaySaveSettings;
   window.tgBirthdaySaveContact = tgBirthdaySaveContact;
@@ -482,6 +540,8 @@
   window.tgBirthdayTestSend = tgBirthdayTestSend;
   window.tgBirthdayFillContact = tgBirthdayFillContact;
   window.tgBirthdayUpdatePreview = tgBirthdayUpdatePreview;
+  window.tgBirthdayBackupContacts = tgBirthdayBackupContacts;
+  window.tgBirthdayRestoreContacts = tgBirthdayRestoreContacts;
 
   setInterval(tgBirthdayAutoRunCheck, 60000);
 })();

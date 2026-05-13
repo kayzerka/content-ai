@@ -16,7 +16,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 from pathlib import Path
-from telegram_birthday_module import init_telegram_birthday_tables, get_settings as tg_birthday_get_settings, save_settings as tg_birthday_save_settings, list_templates as tg_birthday_list_templates, upsert_birthday_contact as tg_birthday_upsert_contact, list_contacts as tg_birthday_list_contacts, list_logs as tg_birthday_list_logs, run_birthday_sender as tg_birthday_run_sender, maybe_auto_run_birthday_sender
+from telegram_birthday_module import init_telegram_birthday_tables, get_settings as tg_birthday_get_settings, save_settings as tg_birthday_save_settings, list_templates as tg_birthday_list_templates, upsert_birthday_contact as tg_birthday_upsert_contact, list_contacts as tg_birthday_list_contacts, list_logs as tg_birthday_list_logs, run_birthday_sender as tg_birthday_run_sender, maybe_auto_run_birthday_sender, export_birthday_contacts_backup, restore_birthday_contacts_backup
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
@@ -8668,6 +8668,17 @@ def api_telegram_birthday_test_send(payload: dict):
 @app.post("/api/telegram/birthday/auto-run")
 def api_telegram_birthday_auto_run():
     return maybe_auto_run_birthday_sender()
+
+
+
+@app.post("/api/telegram/birthday/contacts/backup-save")
+def api_telegram_birthday_contacts_backup_save():
+    return export_birthday_contacts_backup()
+
+
+@app.post("/api/telegram/birthday/contacts/restore")
+def api_telegram_birthday_contacts_restore():
+    return restore_birthday_contacts_backup()
 
 # === /TELEGRAM BIRTHDAY BOT MODULE ===
 

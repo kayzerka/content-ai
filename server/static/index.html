@@ -875,9 +875,83 @@
             </div>
           </div>
 
+          <div style="margin-top:12px;">
+            <h3>🎨 Налаштування шрифтів</h3>
+
+            <div class="birthday-form-row">
+              <div>
+                <label>Шрифт привітання</label>
+                <select id="bdFontMessageFamily">
+                  <option value="Avenir">Avenir / чистий</option>
+                  <option value="Georgia">Georgia / класичний</option>
+                  <option value="Apple Chancery">Apple Chancery / рукописний</option>
+                </select>
+              </div>
+              <div>
+                <label>Розмір привітання</label>
+                <input id="bdFontMessageSize" type="number" value="22">
+              </div>
+            </div>
+            <label>Колір привітання</label>
+            <input id="bdFontMessageColor" type="color" value="#463732">
+
+            <div class="birthday-form-row" style="margin-top:12px;">
+              <div>
+                <label>Шрифт знижки</label>
+                <select id="bdFontDiscountFamily">
+                  <option value="Georgia">Georgia</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Avenir">Avenir</option>
+                </select>
+              </div>
+              <div>
+                <label>Розмір знижки</label>
+                <input id="bdFontDiscountSize" type="number" value="120">
+              </div>
+            </div>
+            <label>Колір знижки</label>
+            <input id="bdFontDiscountColor" type="color" value="#a55d63">
+
+            <div class="birthday-form-row" style="margin-top:12px;">
+              <div>
+                <label>Шрифт послуг</label>
+                <select id="bdFontServicesFamily">
+                  <option value="Georgia">Georgia</option>
+                  <option value="Avenir">Avenir</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                </select>
+              </div>
+              <div>
+                <label>Розмір послуг</label>
+                <input id="bdFontServicesSize" type="number" value="26">
+              </div>
+            </div>
+            <label>Колір послуг</label>
+            <input id="bdFontServicesColor" type="color" value="#3a2d28">
+
+            <div class="birthday-form-row" style="margin-top:12px;">
+              <div>
+                <label>Шрифт дати</label>
+                <select id="bdFontDateFamily">
+                  <option value="Georgia">Georgia</option>
+                  <option value="Avenir">Avenir</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                </select>
+              </div>
+              <div>
+                <label>Розмір дати</label>
+                <input id="bdFontDateSize" type="number" value="34">
+              </div>
+            </div>
+            <label>Колір дати</label>
+            <input id="bdFontDateColor" type="color" value="#a55d63">
+
+
           <div class="birthday-actions">
             <button class="btn primary" onclick="tgBirthdaySaveSettings()">💾 Зберегти налаштування</button>
             <button class="btn" onclick="tgBirthdayRunDue()">▶️ Запустити перевірку зараз</button>
+            <button class="btn" onclick="tgBirthdayBackupContacts()">💾 Backup контактів</button>
+            <button class="btn" onclick="tgBirthdayRestoreContacts()">♻️ Відновити дані</button>
           </div>
 
           <div id="bdLastRun" class="birthday-status" style="margin-top:12px;">—</div>
