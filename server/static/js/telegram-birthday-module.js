@@ -141,7 +141,7 @@
       template_image: $('bdTemplateImage')?.value || '',
       message_template: $('bdMessageTemplate')?.value || defaultTemplate(),
       caption_template: $('bdCaptionTemplate')?.value || '',
-      services_template: $('bdServicesTemplate')?.value || '' ''
+      services_template: $('bdServicesTemplate')?.value || ''
     };
 
     const data = await apiPost(API.saveSettings, payload);
