@@ -54,6 +54,15 @@
 
   async function tgBirthdayLoad(){
     try {
+      document.querySelectorAll('main section, body > section').forEach(sec => {
+        sec.style.display = 'none';
+      });
+      const birthdaySection = document.getElementById('birthday');
+      if (birthdaySection) {
+        birthdaySection.style.display = 'block';
+        birthdaySection.style.visibility = 'visible';
+        birthdaySection.style.opacity = '1';
+      }
       await Promise.all([
         tgBirthdayLoadSettings(),
         tgBirthdayLoadTemplates(),
