@@ -249,7 +249,23 @@
     const box = $('bdContactsTable');
     if (!box) return;
 
-    const items = data.items || [];
+    let items = data.items || [];
+
+    const today = new Date();
+    const todayMMDD = String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+    function bdIsToday(x){
+      const d = String(x.birthday_date || '');
+      return d.length >= 10 && d.slice(5, 10) === todayMMDD;
+    }
+
+    items = items.slice().sort((a, b) => {
+      const ad = bdIsToday(a) ? 1 : 0;
+      const bd = bdIsToday(b) ? 1 : 0;
+      if (ad !== bd) return bd - ad;
+      return Number(b.updated_at || 0) - Number(a.updated_at || 0);
+    });
+
     if (!items.length) {
       box.innerHTML = '<div class="birthday-muted">Контактів ще немає.</div>';
       return;
@@ -265,18 +281,23 @@
               <th>ДН</th>
               <th>Знижка</th>
               <th>Шаблон</th>
+              <th>Бот</th>
               <th>Рік</th>
               <th>Дія</th>
             </tr>
           </thead>
           <tbody>
             ${items.map(x => `
-              <tr>
-                <td>${esc(x.first_name || '')}<br><span class="birthday-muted">@${esc(x.username || '')}</span></td>
+              <tr style="${bdIsToday(x) ? 'background:#fee2e2;border-left:5px solid #ef4444;' : ''}">
+                <td>
+                  ${bdIsToday(x) ? '<b style="color:#b91c1c;">🎂 СЬОГОДНІ ДН</b><br>' : ''}
+                  ${esc(x.first_name || '')}<br><span class="birthday-muted">@${esc(x.username || '')}</span>
+                </td>
                 <td>${esc(x.chat_id)}</td>
                 <td>${esc(x.birthday_date || '')}</td>
                 <td>${esc(x.discount_percent || 15)}%<br>${esc(x.discount_code || '')}</td>
                 <td>${esc(x.template_image || '')}</td>
+                <td>${Number(x.bot_started || 0) === 1 ? '✅ /start' : '⚠️ не активований'}</td>
                 <td>${esc(x.birthday_last_sent_year || '—')}</td>
                 <td><button class="btn" onclick="tgBirthdayFillContact('${esc(x.chat_id)}')">✏️</button></td>
               </tr>
@@ -353,7 +374,23 @@
     const box = $('bdLogs');
     if (!box) return;
 
-    const items = data.items || [];
+    let items = data.items || [];
+
+    const today = new Date();
+    const todayMMDD = String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+
+    function bdIsToday(x){
+      const d = String(x.birthday_date || '');
+      return d.length >= 10 && d.slice(5, 10) === todayMMDD;
+    }
+
+    items = items.slice().sort((a, b) => {
+      const ad = bdIsToday(a) ? 1 : 0;
+      const bd = bdIsToday(b) ? 1 : 0;
+      if (ad !== bd) return bd - ad;
+      return Number(b.updated_at || 0) - Number(a.updated_at || 0);
+    });
+
     if (!items.length) {
       box.innerHTML = '<div class="birthday-muted">Логів ще немає.</div>';
       return;
