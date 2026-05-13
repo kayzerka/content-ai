@@ -69,6 +69,8 @@
         tgBirthdayLoadContacts(),
         tgBirthdayLoadLogs()
       ]);
+      tgBirthdayBindPreviewInputs();
+      tgBirthdayRenderPreview();
       setStatus('✅ Birthday Bot модуль завантажено');
     } catch(e) {
       setStatus('❌ Помилка завантаження: ' + e.message);
@@ -125,6 +127,7 @@
     }
 
     tgBirthdayUpdatePreview();
+    tgBirthdayRenderPreview();
   }
 
   function tgBirthdayUpdatePreview(){
@@ -242,6 +245,7 @@
     if ($('bdDiscountCode')) $('bdDiscountCode').value = x.discount_code || 'BDAY15';
     if ($('bdContactTemplateImage')) $('bdContactTemplateImage').value = x.template_image || '';
 
+    tgBirthdayRenderPreview();
     setStatus('✏️ Контакт завантажено в форму');
   }
 
@@ -322,6 +326,156 @@
       </div>
     `;
   }
+
+
+
+  function tgBirthdayPreviewData(){
+    const valid = new Date();
+    valid.setDate(valid.getDate() + 7);
+    const dd = String(valid.getDate()).padStart(2, '0');
+    const mm = String(valid.getMonth() + 1).padStart(2, '0');
+    const yyyy = valid.getFullYear();
+
+    return {
+      first_name: $('bdFirstName')?.value?.trim() || 'Тест',
+      discount_percent: $('bdDiscountPercent')?.value || '15',
+      discount_code: $('bdDiscountCode')?.value?.trim() || 'BDAY15',
+      valid_until: `${dd}.${mm}.${yyyy}`,
+      valid_until_short: `${dd}.${mm}`,
+      message_template: $('bdMessageTemplate')?.value || defaultTemplate(),
+      services_template: $('bdServicesTemplate')?.value || '',
+      template_image: $('bdTemplateImage')?.value || $('bdContactTemplateImage')?.value || ''
+    };
+  }
+
+  function tgBirthdayApplyVars(text, data){
+    return String(text || '')
+      .replaceAll('{first_name}', data.first_name)
+      .replaceAll('{discount_percent}', data.discount_percent)
+      .replaceAll('{discount_code}', data.discount_code)
+      .replaceAll('{valid_until}', data.valid_until)
+      .replaceAll('{birthday_date}', $('bdBirthdayDate')?.value || '');
+  }
+
+  function tgBirthdayWrapCanvasText(ctx, text, x, y, maxWidth, lineHeight){
+    const words = String(text || '').replace(/[🎉💛🎁]/g, '').split(/\s+/).filter(Boolean);
+    let line = '';
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width <= maxWidth) {
+        line = test;
+      } else {
+        if (line) {
+          ctx.fillText(line, x, y);
+          y += lineHeight;
+        }
+        line = word;
+      }
+    }
+    if (line) ctx.fillText(line, x, y);
+    return y + lineHeight;
+  }
+
+  async function tgBirthdayRenderPreview(){
+    const canvas = $('bdLivePreviewCanvas');
+    if (!canvas) return;
+
+    const data = tgBirthdayPreviewData();
+    const ctx = canvas.getContext('2d');
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+
+    const template = data.template_image || 'birthday_offer_01.png';
+    img.src = '/static/birthday_templates/' + encodeURIComponent(template) + '?v=' + Date.now();
+
+    img.onload = function(){
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Лівий текст
+      ctx.fillStyle = '#4f3932';
+      ctx.font = `${Math.max(24, Math.floor(w * 0.018))}px Georgia, "Times New Roman", serif`;
+      ctx.textBaseline = 'top';
+
+      let msg = tgBirthdayApplyVars(data.message_template, data);
+      tgBirthdayWrapCanvasText(
+        ctx,
+        msg,
+        Math.floor(w * 0.040),
+        Math.floor(h * 0.305),
+        Math.floor(w * 0.255),
+        Math.floor(h * 0.033)
+      );
+
+      // Знижка
+      ctx.fillStyle = '#9e4e52';
+      ctx.font = `${Math.max(90, Math.floor(w * 0.090))}px Georgia, "Times New Roman", serif`;
+      ctx.fillText(
+        `${data.discount_percent}%`,
+        Math.floor(w * 0.565),
+        Math.floor(h * 0.205)
+      );
+
+      // Послуги
+      ctx.fillStyle = '#3a2d28';
+      ctx.font = `${Math.max(22, Math.floor(w * 0.020))}px Georgia, "Times New Roman", serif`;
+
+      const services = String(data.services_template || '')
+        .split('\n')
+        .map(x => x.trim())
+        .filter(Boolean)
+        .map(x => x.match(/^[•♡◎☼◌♧☆📖]/) ? x : '• ' + x);
+
+      let sy = Math.floor(h * 0.500);
+      const sx = Math.floor(w * 0.565);
+      const lineH = Math.floor(h * 0.036);
+
+      services.forEach(line => {
+        ctx.fillText(line, sx, sy);
+        sy += lineH;
+      });
+
+      // Дата в нижньому блоці
+      ctx.fillStyle = '#9e4e52';
+      ctx.font = `${Math.max(28, Math.floor(w * 0.025))}px Georgia, "Times New Roman", serif`;
+      ctx.fillText(
+        data.valid_until_short,
+        Math.floor(w * 0.705),
+        Math.floor(h * 0.842)
+      );
+    };
+
+    img.onerror = function(){
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    };
+  }
+
+  function tgBirthdayBindPreviewInputs(){
+    [
+      'bdFirstName',
+      'bdDiscountPercent',
+      'bdDiscountCode',
+      'bdMessageTemplate',
+      'bdServicesTemplate',
+      'bdTemplateImage',
+      'bdContactTemplateImage',
+      'bdBirthdayDate'
+    ].forEach(id => {
+      const el = $(id);
+      if (!el || el.__bdPreviewBound) return;
+      el.__bdPreviewBound = true;
+      el.addEventListener('input', tgBirthdayRenderPreview);
+      el.addEventListener('change', tgBirthdayRenderPreview);
+    });
+  }
+
 
   window.tgBirthdayLoad = tgBirthdayLoad;
   window.tgBirthdaySaveSettings = tgBirthdaySaveSettings;
