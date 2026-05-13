@@ -8714,5 +8714,14 @@ def api_telegram_birthday_debug():
             "traceback": traceback.format_exc(),
         }
 
+
+
+@app.post("/api/telegram/birthday/send-to-contact")
+def api_telegram_birthday_send_to_contact(payload: dict):
+    chat_id = str((payload or {}).get("chat_id") or "").strip()
+    if not chat_id:
+        return {"ok": False, "error": "chat_id_required"}
+    return tg_birthday_run_sender(force_chat_id=chat_id, purpose="contact")
+
 # === /TELEGRAM BIRTHDAY BOT MODULE ===
 

@@ -9,6 +9,7 @@
     logs: '/api/telegram/birthday/logs',
     runDue: '/api/telegram/birthday/run-due',
     testSend: '/api/telegram/birthday/test-send',
+    sendToContact: '/api/telegram/birthday/send-to-contact',
     autoRun: '/api/telegram/birthday/auto-run',
     backupContacts: '/api/telegram/birthday/contacts/backup-save',
     restoreContacts: '/api/telegram/birthday/contacts/restore'
@@ -298,7 +299,7 @@
     await tgBirthdaySaveContact();
 
     setStatus('⏳ Відправляю контакту поздравлялку...');
-    const data = await apiPost(API.testSend, {chat_id: chatId});
+    const data = await apiPost(API.sendToContact || '/api/telegram/birthday/send-to-contact', {chat_id: chatId});
     setStatus(data.ok ? '✅ Відправлено контакту' : '⚠️ Помилка тесту', data);
     await tgBirthdayLoadLogs();
   }
