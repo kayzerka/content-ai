@@ -131,17 +131,7 @@
   }
 
   function tgBirthdayUpdatePreview(){
-    const sel = $('bdTemplateImage');
-    const img = $('bdTemplatePreview');
-    if (!sel || !img) return;
-
-    if (sel.value) {
-      img.src = '/static/birthday_templates/' + encodeURIComponent(sel.value);
-      img.style.display = 'block';
-    } else {
-      img.removeAttribute('src');
-      img.style.display = 'none';
-    }
+    tgBirthdayRenderPreview();
   }
 
   async function tgBirthdaySaveSettings(){
@@ -377,7 +367,7 @@
   }
 
   async function tgBirthdayRenderPreview(){
-    const canvas = $('bdLivePreviewCanvas');
+    const canvas = $('bdTemplatePreviewCanvas');
     if (!canvas) return;
 
     const data = tgBirthdayPreviewData();
@@ -401,7 +391,7 @@
 
       // Лівий текст
       ctx.fillStyle = '#4f3932';
-      ctx.font = `${Math.max(24, Math.floor(w * 0.018))}px Georgia, "Times New Roman", serif`;
+      ctx.font = `italic ${Math.max(24, Math.floor(w * 0.020))}px "Snell Roundhand", "Apple Chancery", "Brush Script MT", Georgia, serif`;
       ctx.textBaseline = 'top';
 
       let msg = tgBirthdayApplyVars(data.message_template, data);

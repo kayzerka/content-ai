@@ -850,7 +850,7 @@
           <div>
             <label>Картинка-шаблон за замовчуванням</label>
             <select id="bdTemplateImage" onchange="tgBirthdayUpdatePreview()"></select>
-            <img id="bdTemplatePreview" class="birthday-template-preview" alt="Birthday template preview">
+            <canvas id="bdTemplatePreviewCanvas" class="birthday-template-preview" style="width:100%;display:block;"></canvas>
             <div class="birthday-muted">Картинки клади у <code>static/birthday_templates/</code>. Наприклад: <code>birthday_offer_01.png</code></div>
           </div>
 
@@ -941,12 +941,6 @@
         <div class="birthday-card">
           <h3>📡 Статус</h3>
           <div id="birthdayStatus" class="birthday-status">Birthday Bot готовий</div>
-        </div>
-
-        <div class="birthday-card">
-          <h3>🔥 Live Preview</h3>
-          <p class="birthday-muted">Тут одразу видно, як текст лягає поверх шаблону.</p>
-          <canvas id="bdLivePreviewCanvas" style="width:100%;border-radius:14px;border:1px solid #e2e8f0;background:#fff;"></canvas>
         </div>
 
         <div class="birthday-card">
