@@ -8692,5 +8692,27 @@ def api_telegram_birthday_contacts_backup_save():
 def api_telegram_birthday_contacts_restore():
     return restore_birthday_contacts_backup()
 
+
+
+@app.get("/api/telegram/birthday/debug")
+def api_telegram_birthday_debug():
+    import traceback
+    try:
+        settings = tg_birthday_get_settings()
+        templates = tg_birthday_list_templates()
+        contacts = tg_birthday_list_contacts()
+        return {
+            "ok": True,
+            "settings": settings,
+            "templates": templates,
+            "contacts_count": contacts.get("count"),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
+        }
+
 # === /TELEGRAM BIRTHDAY BOT MODULE ===
 
