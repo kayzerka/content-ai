@@ -69,10 +69,10 @@ def init_telegram_birthday_tables():
             font_discount_size INTEGER DEFAULT 120,
             font_discount_color TEXT DEFAULT '#a55d63',
             font_services_family TEXT,
-            font_services_size INTEGER DEFAULT 26,
+            font_services_size INTEGER DEFAULT 22,
             font_services_color TEXT DEFAULT '#3a2d28',
             font_date_family TEXT,
-            font_date_size INTEGER DEFAULT 34,
+            font_date_size INTEGER DEFAULT 30,
             font_date_color TEXT DEFAULT '#a55d63',
             pos_message_x REAL DEFAULT 0.040,
             pos_message_y REAL DEFAULT 0.300,
@@ -136,10 +136,10 @@ def init_telegram_birthday_tables():
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_discount_size INTEGER DEFAULT 120",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_discount_color TEXT DEFAULT '#a55d63'",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_services_family TEXT",
-        "ALTER TABLE telegram_birthday_settings ADD COLUMN font_services_size INTEGER DEFAULT 26",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN font_services_size INTEGER DEFAULT 22",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_services_color TEXT DEFAULT '#3a2d28'",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_date_family TEXT",
-        "ALTER TABLE telegram_birthday_settings ADD COLUMN font_date_size INTEGER DEFAULT 34",
+        "ALTER TABLE telegram_birthday_settings ADD COLUMN font_date_size INTEGER DEFAULT 30",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN font_date_color TEXT DEFAULT '#a55d63'",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_message_x REAL DEFAULT 0.040",
         "ALTER TABLE telegram_birthday_settings ADD COLUMN pos_message_y REAL DEFAULT 0.300",
@@ -171,8 +171,8 @@ def init_telegram_birthday_tables():
             ?, ?, ?,
             'Avenir', 22, '#463732',
             'Georgia', 120, '#a55d63',
-            'Georgia', 26, '#3a2d28',
-            'Georgia', 34, '#a55d63',
+            'Georgia', 22, '#3a2d28',
+            'Georgia', 30, '#a55d63',
             ?
         )
     """, (default_message, default_caption, default_services, _now()))
@@ -268,10 +268,10 @@ def save_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
         int(payload.get("font_discount_size", current.get("font_discount_size") or 120) or 120),
         payload.get("font_discount_color", current.get("font_discount_color") or "#a55d63"),
         payload.get("font_services_family", current.get("font_services_family") or "Georgia"),
-        int(payload.get("font_services_size", current.get("font_services_size") or 26) or 26),
+        int(payload.get("font_services_size", current.get("font_services_size") or 22) or 26),
         payload.get("font_services_color", current.get("font_services_color") or "#3a2d28"),
         payload.get("font_date_family", current.get("font_date_family") or "Georgia"),
-        int(payload.get("font_date_size", current.get("font_date_size") or 34) or 34),
+        int(payload.get("font_date_size", current.get("font_date_size") or 30) or 30),
         payload.get("font_date_color", current.get("font_date_color") or "#a55d63"),
         float(payload.get("pos_message_x", current.get("pos_message_x") or 0.040) or 0.040),
         float(payload.get("pos_message_y", current.get("pos_message_y") or 0.300) or 0.300),
@@ -587,7 +587,7 @@ def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
     valid_until = (date.today() + timedelta(days=7)).strftime("%d.%m")
     date_font = _font_from_family(
         settings.get("font_date_family") or "Georgia",
-        int(settings.get("font_date_size") or 34)
+        int(settings.get("font_date_size") or 30)
     )
     draw.text(
         (int(w * float(settings.get('pos_date_x') or 0.685)), int(h * float(settings.get('pos_date_y') or 0.846))),
@@ -1081,3 +1081,81 @@ def restore_birthday_contacts_backup() -> Dict[str, Any]:
     con.commit()
     con.close()
     return {"ok": True, "restored": restored, "from": str(backup_file)}
+
+
+def restore_birthday_contacts_from_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+    init_telegram_birthday_tables()
+
+    contacts = data.get("contacts") or []
+    settings = data.get("settings") or {}
+
+    con = _db()
+    restored = 0
+
+    for c in contacts:
+        chat_id = _normalize_chat_id(c.get("chat_id"))
+        if not chat_id:
+            continue
+
+        con.execute("""
+            INSERT INTO telegram_birthday_contacts
+            (chat_id, username, first_name, last_name, birthday_date, discount_percent, discount_code, birthday_last_sent_year, template_image, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET
+                username = excluded.username,
+                first_name = excluded.first_name,
+                last_name = excluded.last_name,
+                birthday_date = excluded.birthday_date,
+                discount_percent = excluded.discount_percent,
+                discount_code = excluded.discount_code,
+                birthday_last_sent_year = excluded.birthday_last_sent_year,
+                template_image = excluded.template_image,
+                updated_at = excluded.updated_at
+        """, (
+            chat_id,
+            c.get("username") or "",
+            c.get("first_name") or "",
+            c.get("last_name") or "",
+            c.get("birthday_date") or "",
+            int(c.get("discount_percent") or 15),
+            c.get("discount_code") or "BDAY15",
+            c.get("birthday_last_sent_year"),
+            c.get("template_image") or "",
+            int(c.get("created_at") or _now()),
+            _now(),
+        ))
+        restored += 1
+
+    if settings:
+        allowed = [
+            "enabled", "auto_run_enabled", "auto_run_hour", "auto_run_minute",
+            "template_image", "message_template", "caption_template", "services_template",
+            "font_message_family", "font_message_size", "font_message_color",
+            "font_discount_family", "font_discount_size", "font_discount_color",
+            "font_services_family", "font_services_size", "font_services_color",
+            "font_date_family", "font_date_size", "font_date_color",
+            "pos_message_x", "pos_message_y",
+            "pos_discount_x", "pos_discount_y",
+            "pos_services_x", "pos_services_y",
+            "pos_date_x", "pos_date_y",
+        ]
+
+        sets = []
+        vals = []
+        for k in allowed:
+            if k in settings:
+                sets.append(f"{k} = ?")
+                vals.append(settings.get(k))
+
+        if sets:
+            vals.append(_now())
+            con.execute(f"UPDATE telegram_birthday_settings SET {', '.join(sets)}, updated_at = ? WHERE id = 1", vals)
+
+    con.commit()
+    con.close()
+
+    return {
+        "ok": True,
+        "restored": restored,
+        "settings_restored": bool(settings),
+    }

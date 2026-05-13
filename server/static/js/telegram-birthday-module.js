@@ -12,7 +12,9 @@
     sendToContact: '/api/telegram/birthday/send-to-contact',
     autoRun: '/api/telegram/birthday/auto-run',
     backupContacts: '/api/telegram/birthday/contacts/backup-save',
-    restoreContacts: '/api/telegram/birthday/contacts/restore'
+    restoreContacts: '/api/telegram/birthday/contacts/restore',
+    backupDownload: '/api/telegram/birthday/contacts/backup-download',
+    restoreJson: '/api/telegram/birthday/contacts/restore-json'
 };
 
   function $(id){ return document.getElementById(id); }
@@ -183,7 +185,32 @@
       template_image: $('bdTemplateImage')?.value || '',
       message_template: $('bdMessageTemplate')?.value || defaultTemplate(),
       caption_template: $('bdCaptionTemplate')?.value || '',
-      services_template: $('bdServicesTemplate')?.value || ''
+      services_template: $('bdServicesTemplate')?.value || '',
+
+      font_message_family: $('bdFontMessageFamily')?.value || 'Avenir',
+      font_message_size: Number($('bdFontMessageSize')?.value || 22),
+      font_message_color: $('bdFontMessageColor')?.value || '#463732',
+
+      font_discount_family: $('bdFontDiscountFamily')?.value || 'Georgia',
+      font_discount_size: Number($('bdFontDiscountSize')?.value || 120),
+      font_discount_color: $('bdFontDiscountColor')?.value || '#a55d63',
+
+      font_services_family: $('bdFontServicesFamily')?.value || 'Georgia',
+      font_services_size: Number($('bdFontServicesSize')?.value || 20),
+      font_services_color: $('bdFontServicesColor')?.value || '#3a2d28',
+
+      font_date_family: $('bdFontDateFamily')?.value || 'Georgia',
+      font_date_size: Number($('bdFontDateSize')?.value || 30),
+      font_date_color: $('bdFontDateColor')?.value || '#a55d63',
+
+      pos_message_x: window.__bdPositions?.message?.x ?? 0.040,
+      pos_message_y: window.__bdPositions?.message?.y ?? 0.300,
+      pos_discount_x: window.__bdPositions?.discount?.x ?? 0.565,
+      pos_discount_y: window.__bdPositions?.discount?.y ?? 0.205,
+      pos_services_x: window.__bdPositions?.services?.x ?? 0.565,
+      pos_services_y: window.__bdPositions?.services?.y ?? 0.505,
+      pos_date_x: window.__bdPositions?.date?.x ?? 0.685,
+      pos_date_y: window.__bdPositions?.date?.y ?? 0.846
     };
 
     const data = await apiPost(API.saveSettings, payload);
@@ -549,18 +576,61 @@
 
 
   async function tgBirthdayBackupContacts(){
-    setStatus('⏳ Зберігаю backup контактів...');
-    const data = await apiPost(API.backupContacts || '/api/telegram/birthday/contacts/backup-save', {});
-    setStatus(data.ok ? '✅ Backup контактів збережено' : '⚠️ Backup помилка', data);
+    setStatus('⏳ Готую JSON backup контактів...');
+    const data = await apiGet(API.backupDownload || '/api/telegram/birthday/contacts/backup-download');
+
+    if (!data || data.ok === false) {
+      setStatus('⚠️ Backup помилка', data);
+      return;
+    }
+
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    const ts = new Date().toISOString().slice(0,19).replace(/[:T]/g, '-');
+    a.href = url;
+    a.download = `birthday-contacts-backup-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    URL.revokeObjectURL(url);
+
+    setStatus('✅ Backup скачано JSON файлом', {count: data.count || 0});
   }
 
   async function tgBirthdayRestoreContacts(){
-    setStatus('⏳ Відновлюю контакти...');
-    const data = await apiPost(API.restoreContacts || '/api/telegram/birthday/contacts/restore', {});
-    setStatus(data.ok ? '✅ Контакти відновлено' : '⚠️ Restore помилка', data);
-    await tgBirthdayLoadContacts();
-    await tgBirthdayLoadSettings();
-    await tgBirthdayRenderPreview();
+    const input = document.getElementById('bdRestoreJsonFile');
+    if (!input) {
+      setStatus('⚠️ Не знайдено input для JSON restore');
+      return;
+    }
+
+    input.value = '';
+    input.click();
+  }
+
+  async function tgBirthdayHandleRestoreFile(file){
+    if (!file) return;
+
+    setStatus('⏳ Читаю JSON backup...');
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      setStatus('⏳ Відновлюю контакти з JSON...');
+      const res = await apiPost(API.restoreJson || '/api/telegram/birthday/contacts/restore-json', data);
+
+      setStatus(res.ok ? '✅ Контакти відновлено з JSON' : '⚠️ Restore помилка', res);
+
+      await tgBirthdayLoadContacts();
+      await tgBirthdayLoadSettings();
+      await tgBirthdayRenderPreviewWithFrames();
+    } catch(e) {
+      setStatus('❌ Помилка читання JSON: ' + e.message);
+    }
   }
 
 
@@ -709,6 +779,7 @@
   window.tgBirthdayUpdatePreview = tgBirthdayUpdatePreview;
   window.tgBirthdayBackupContacts = tgBirthdayBackupContacts;
   window.tgBirthdayRestoreContacts = tgBirthdayRestoreContacts;
+  window.tgBirthdayHandleRestoreFile = tgBirthdayHandleRestoreFile;
 
   setInterval(tgBirthdayAutoRunCheck, 60000);
 })();

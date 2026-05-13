@@ -28,6 +28,7 @@ from telegram_birthday_module import (
     maybe_auto_run_birthday_sender,
     export_birthday_contacts_backup,
     restore_birthday_contacts_backup,
+    restore_birthday_contacts_from_payload,
 )
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
@@ -8722,6 +8723,17 @@ def api_telegram_birthday_send_to_contact(payload: dict):
     if not chat_id:
         return {"ok": False, "error": "chat_id_required"}
     return tg_birthday_run_sender(force_chat_id=chat_id, purpose="contact")
+
+
+
+@app.get("/api/telegram/birthday/contacts/backup-download")
+def api_telegram_birthday_contacts_backup_download():
+    return export_birthday_contacts_backup().get("backup")
+
+
+@app.post("/api/telegram/birthday/contacts/restore-json")
+def api_telegram_birthday_contacts_restore_json(payload: dict):
+    return restore_birthday_contacts_from_payload(payload or {})
 
 # === /TELEGRAM BIRTHDAY BOT MODULE ===
 
