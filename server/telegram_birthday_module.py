@@ -24,6 +24,10 @@ def _now() -> int:
     return int(time.time())
 
 
+def _normalize_chat_id(chat_id) -> str:
+    return str(chat_id or "").strip()
+
+
 def init_telegram_birthday_tables():
     TEMPLATE_DIR.mkdir(parents=True, exist_ok=True)
     GENERATED_DIR.mkdir(parents=True, exist_ok=True)
@@ -175,6 +179,24 @@ def init_telegram_birthday_tables():
         )
     """, (default_message, default_caption, default_services, _now()))
 
+    # normalize + dedupe contacts by chat_id
+    try:
+        con.execute("UPDATE telegram_birthday_contacts SET chat_id = TRIM(chat_id)")
+        con.execute("""
+            DELETE FROM telegram_birthday_contacts
+            WHERE id NOT IN (
+                SELECT MAX(id)
+                FROM telegram_birthday_contacts
+                GROUP BY TRIM(chat_id)
+            )
+        """)
+        con.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_telegram_birthday_contacts_chat_id
+            ON telegram_birthday_contacts(chat_id)
+        """)
+    except Exception as e:
+        print("[telegram_birthday] dedupe/index warning:", e)
+
     con.commit()
     con.close()
 
@@ -285,7 +307,7 @@ def list_templates() -> Dict[str, Any]:
 def upsert_birthday_contact(payload: Dict[str, Any]) -> Dict[str, Any]:
     init_telegram_birthday_tables()
 
-    chat_id = str(payload.get("chat_id") or "").strip()
+    chat_id = _normalize_chat_id(payload.get("chat_id"))
     birthday_date = str(payload.get("birthday_date") or "").strip()
 
     if not chat_id:
@@ -331,6 +353,11 @@ def list_contacts() -> Dict[str, Any]:
     rows = con.execute("""
         SELECT *
         FROM telegram_birthday_contacts
+        WHERE id IN (
+            SELECT MAX(id)
+            FROM telegram_birthday_contacts
+            GROUP BY TRIM(chat_id)
+        )
         ORDER BY updated_at DESC, id DESC
     """).fetchall()
     con.close()
@@ -472,18 +499,28 @@ def _wrap_text(draw, text: str, font, max_width: int) -> str:
     return "\n".join(lines)
 
 
+def _resolve_template_name(row: Dict[str, Any], settings: Dict[str, Any]) -> Optional[str]:
+    template_name = row.get("template_image") or settings.get("template_image")
+    if template_name:
+        template_name = Path(str(template_name)).name
+        if (TEMPLATE_DIR / template_name).exists():
+            return template_name
+
+    for p in TEMPLATE_DIR.glob("*"):
+        if p.is_file() and p.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
+            return p.name
+
+    return None
+
+
 def generate_birthday_card(row: Dict[str, Any]) -> Optional[str]:
     settings = get_settings()
-    template_name = row.get("template_image") or settings.get("template_image")
+    template_name = _resolve_template_name(row, settings)
 
     if not template_name:
         return None
 
-    template_name = Path(str(template_name)).name
     template_path = TEMPLATE_DIR / template_name
-
-    if not template_path.exists():
-        return None
 
     img = Image.open(template_path).convert("RGB")
     draw = ImageDraw.Draw(img)
@@ -585,13 +622,14 @@ def _get_bot_token(purpose: str = "planner") -> Optional[str]:
         v = os.getenv(key)
         if v:
             return v
+
     return None
 
 
 def send_telegram_photo(chat_id: str, photo_path: str, caption: str = "", purpose: str = "planner") -> Dict[str, Any]:
     token = _get_bot_token(purpose)
     if not token:
-        return {"ok": False, "error": "telegram_token_not_found"}
+        return {"ok": False, "error": f"telegram_token_not_found_for_purpose:{purpose}"}
 
     url = f"https://api.telegram.org/bot{token}/sendPhoto"
     with open(photo_path, "rb") as f:
@@ -613,7 +651,7 @@ def send_telegram_photo(chat_id: str, photo_path: str, caption: str = "", purpos
 def send_telegram_text(chat_id: str, text: str, purpose: str = "planner") -> Dict[str, Any]:
     token = _get_bot_token(purpose)
     if not token:
-        return {"ok": False, "error": "telegram_token_not_found"}
+        return {"ok": False, "error": f"telegram_token_not_found_for_purpose:{purpose}"}
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     r = requests.post(

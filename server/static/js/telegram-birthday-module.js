@@ -199,7 +199,7 @@
       birthday_date: $('bdBirthdayDate')?.value,
       discount_percent: Number($('bdDiscountPercent')?.value || 15),
       discount_code: $('bdDiscountCode')?.value?.trim() || 'BDAY15',
-      template_image: $('bdContactTemplateImage')?.value || ''
+      template_image: $('bdContactTemplateImage')?.value || $('bdTemplateImage')?.value || ''
     };
 
     if (!payload.chat_id) {
@@ -294,11 +294,12 @@
       return;
     }
 
+    await tgBirthdaySaveSettings();
     await tgBirthdaySaveContact();
 
-    setStatus('⏳ Відправляю тестову поздравлялку...');
+    setStatus('⏳ Відправляю контакту поздравлялку...');
     const data = await apiPost(API.testSend, {chat_id: chatId});
-    setStatus(data.ok ? '✅ Тест відправлено' : '⚠️ Помилка тесту', data);
+    setStatus(data.ok ? '✅ Відправлено контакту' : '⚠️ Помилка тесту', data);
     await tgBirthdayLoadLogs();
   }
 
