@@ -552,7 +552,6 @@
   }
 
   async function tgBirthdayRestoreContacts(){
-    if (!confirm('Відновити контакти Birthday Bot з backup після деплою?')) return;
     setStatus('⏳ Відновлюю контакти...');
     const data = await apiPost(API.restoreContacts || '/api/telegram/birthday/contacts/restore', {});
     setStatus(data.ok ? '✅ Контакти відновлено' : '⚠️ Restore помилка', data);
