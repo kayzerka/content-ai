@@ -11,6 +11,8 @@
     testSend: '/api/telegram/birthday/test-send',
     sendToContact: '/api/telegram/birthday/send-to-contact',
     autoRun: '/api/telegram/birthday/auto-run',
+    syncUpdates: '/api/telegram/birthday/sync-updates',
+    syncUpdates: '/api/telegram/birthday/sync-updates',
     backupContacts: '/api/telegram/birthday/contacts/backup-save',
     restoreContacts: '/api/telegram/birthday/contacts/restore',
     backupDownload: '/api/telegram/birthday/contacts/backup-download',
@@ -57,6 +59,21 @@
 Промокод діє до {valid_until}.`;
   }
 
+
+  async function tgBirthdaySyncStartedUsers(){
+    try {
+      const data = await apiPost(API.syncUpdates || '/api/telegram/birthday/sync-updates', {});
+      if (data && data.saved_count) {
+        setStatus(`✅ Автосинхронізація: додано ${data.saved_count} контакт(ів) після /start`, data);
+      }
+      return data;
+    } catch(e) {
+      console.warn('[birthday sync-updates error]', e);
+      return null;
+    }
+  }
+
+
   async function tgBirthdayLoad(){
     try {
       document.querySelectorAll('main section, body > section').forEach(sec => {
@@ -68,6 +85,8 @@
         birthdaySection.style.visibility = 'visible';
         birthdaySection.style.opacity = '1';
       }
+      await tgBirthdaySyncStartedUsers();
+      await tgBirthdaySyncStartedUsers();
       await Promise.all([
         tgBirthdayLoadSettings(),
         tgBirthdayLoadTemplates(),
@@ -328,7 +347,8 @@
   }
 
   async function tgBirthdayRunDue(){
-    setStatus('⏳ Запускаю перевірку днів народження...');
+    setStatus('⏳ Синхронізую /start і запускаю перевірку днів народження...');
+    await tgBirthdaySyncStartedUsers();
     const data = await apiPost(API.runDue, {});
     setStatus(data.ok ? '✅ Перевірку завершено' : '⚠️ Помилка перевірки', data);
     await tgBirthdayLoadSettings();
