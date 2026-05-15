@@ -942,7 +942,7 @@ def _telegram_polish_dasha_style(draft_text: str, original_prompt: str = ""):
 def _telegram_get_recent_messages_for_ai(chat_id: str, thread_id: str | None = None, limit: int = 80):
     import sqlite3
 
-    con = sqlite3.connect(_telegram_db_path_v1())
+    con = sqlite3.connect(TELEGRAM_DB_PATH)
     con.row_factory = sqlite3.Row
     try:
         con.execute("""
