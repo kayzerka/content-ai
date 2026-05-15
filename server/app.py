@@ -8490,54 +8490,63 @@ async def telegram_backup_import_v1(payload: dict = _tg_Body(...)):
 @app.post("/api/telegram/backup/seed_defaults")
 def telegram_backup_seed_defaults_v1():
     import json
+    import traceback
     from pathlib import Path
 
-    backup_path = Path(__file__).resolve().parent / "backups" / "telegram-latest.json"
-    if not backup_path.exists():
-        return {"ok": False, "error": f"backup_not_found:{backup_path}"}
-
-    payload = json.loads(backup_path.read_text(encoding="utf-8"))
-    chats = payload.get("chats") or []
-
-    con = sqlite3.connect(str(_telegram_db_path_v1()))
     try:
-        _ensure_telegram_backup_tables(con)
-        cur = con.cursor()
-        imported = 0
+        backup_path = Path(__file__).resolve().parent / "backups" / "telegram-latest.json"
+        if not backup_path.exists():
+            return {"ok": False, "error": f"backup_not_found:{backup_path}"}
 
-        for c in chats:
-            cur.execute("""
-                INSERT OR REPLACE INTO telegram_chats (
-                    chat_id, type, title, username, first_name, last_name,
-                    enabled, role, thread_id, parent_chat_id, created_at, updated_at, is_topic
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')), ?)
-            """, (
-                str(c.get("chat_id") or ""),
-                c.get("type") or "",
-                c.get("title") or "",
-                c.get("username") or "",
-                c.get("first_name"),
-                c.get("last_name"),
-                int(c.get("enabled", 1) or 0),
-                c.get("role") or "",
-                c.get("thread_id"),
-                c.get("parent_chat_id"),
-                c.get("created_at"),
-                c.get("updated_at"),
-                int(c.get("is_topic", 0) or 0),
-            ))
-            imported += 1
+        payload = json.loads(backup_path.read_text(encoding="utf-8"))
+        chats = payload.get("chats") or []
 
-        con.commit()
+        con = sqlite3.connect(str(_telegram_db_path_v1()))
+        try:
+            _ensure_telegram_backup_tables(con)
+            cur = con.cursor()
+            imported = 0
+
+            for c in chats:
+                cur.execute("""
+                    INSERT OR REPLACE INTO telegram_chats (
+                        chat_id, type, title, username, first_name, last_name,
+                        enabled, role, thread_id, parent_chat_id, created_at, updated_at, is_topic
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')), ?)
+                """, (
+                    str(c.get("chat_id") or ""),
+                    c.get("type") or "",
+                    c.get("title") or "",
+                    c.get("username") or "",
+                    c.get("first_name"),
+                    c.get("last_name"),
+                    int(c.get("enabled", 1) or 0),
+                    c.get("role") or "",
+                    c.get("thread_id"),
+                    c.get("parent_chat_id"),
+                    c.get("created_at"),
+                    c.get("updated_at"),
+                    int(c.get("is_topic", 0) or 0),
+                ))
+                imported += 1
+
+            con.commit()
+            return {
+                "ok": True,
+                "imported": imported,
+                "source": str(backup_path),
+                "backup_count": payload.get("count"),
+            }
+        finally:
+            con.close()
+
+    except Exception as e:
         return {
-            "ok": True,
-            "imported": imported,
-            "source": str(backup_path),
-            "backup_count": payload.get("count"),
+            "ok": False,
+            "error": repr(e),
+            "trace": traceback.format_exc()[-2000:],
         }
-    finally:
-        con.close()
 
 
 @app.on_event("startup")
