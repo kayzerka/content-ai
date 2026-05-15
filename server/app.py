@@ -5543,10 +5543,10 @@ import traceback
 
 
 @app.post("/api/telegram/ai/generate-plan")
-async def telegram_ai_generate_plan_alias(request: Request):
+def telegram_ai_generate_plan_alias(payload: dict = Body(default={})):
     import traceback
     try:
-        return await telegram_ai_generate_plan_debug(request)
+        return telegram_ai_generate_plan_debug(payload)
     except Exception as e:
         return {
             "ok": False,
