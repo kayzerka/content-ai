@@ -8489,143 +8489,56 @@ async def telegram_backup_import_v1(payload: dict = _tg_Body(...)):
 
 @app.post("/api/telegram/backup/seed_defaults")
 def telegram_backup_seed_defaults_v1():
-    payload = {
-        "chats": [
-            {
-                "chat_id": "-1003978692875",
-                "type": "channel",
-                "title": "🌿 Легке Тіло БВ | Простір відновлення",
-                "username": "",
-                "enabled": 1,
-                "role": "client_channel",
-                "thread_id": None,
-                "parent_chat_id": None
-            },
-            {
-                "chat_id": "-5294626884",
-                "type": "supergroup",
-                "title": "БВ Переднавчання",
-                "username": "",
-                "enabled": 1,
-                "role": "client_group",
-                "thread_id": None,
-                "parent_chat_id": None
-            },
-            {
-                "chat_id": "-1003977054867",
-                "type": "supergroup",
-                "title": "Легке Тіло БВ",
-                "username": "",
-                "enabled": 1,
-                "role": "client_group",
-                "thread_id": None,
-                "parent_chat_id": None
-            },
-            {
-                "chat_id": "-1003457886364",
-                "type": "supergroup",
-                "title": "𝒦𝓋𝒶𝓃𝓉𝑜𝓋𝒶_𝓎𝒶 ✨ / Коментарі",
-                "username": "",
-                "enabled": 1,
-                "role": "topic",
-                "thread_id": None,
-                "parent_chat_id": "-1003340506793"
-            },
-            {
-                "chat_id": "-1003570931644",
-                "type": "supergroup",
-                "title": "БВ 🔬 Лабораторія Чистої Карми🕊️",
-                "username": "",
-                "enabled": 1,
-                "role": "client_group",
-                "thread_id": None,
-                "parent_chat_id": None
-            },
-            {
-                "chat_id": "-1003340506793",
-                "type": "channel",
-                "title": "𝒦𝓋𝒶𝓃𝓉𝑜𝓋𝒶_𝓎𝒶 ✨",
-                "username": "",
-                "enabled": 1,
-                "role": "client_channel",
-                "thread_id": None,
-                "parent_chat_id": None
-            },
-            {
-                "chat_id": "-1003570931644:6",
-                "type": "supergroup",
-                "title": "БВ 🔬 Лабораторія / Балакалка",
-                "username": "",
-                "enabled": 1,
-                "role": "topic",
-                "thread_id": "6",
-                "parent_chat_id": "-1003570931644"
-            },
-            {
-                "chat_id": "330800472",
-                "type": "private",
-                "title": "",
-                "username": "Alex_Poberezhniy",
-                "enabled": 0,
-                "role": "internal_planner",
-                "thread_id": None,
-                "parent_chat_id": None
-            },
-            {
-                "chat_id": "697587340",
-                "type": "private",
-                "title": "",
-                "username": "Poberezhna_Dasha",
-                "enabled": 0,
-                "role": "internal_planner",
-                "thread_id": None,
-                "parent_chat_id": None
-            }
-        ]
-    }
-    return telegram_backup_import_v1_sync(payload)
+    import json
+    from pathlib import Path
 
-def telegram_backup_import_v1_sync(payload: dict):
-    _telegram_backup_ensure_schema_v1()
+    backup_path = Path(__file__).resolve().parent / "backups" / "telegram-latest.json"
+    if not backup_path.exists():
+        return {"ok": False, "error": f"backup_not_found:{backup_path}"}
+
+    payload = json.loads(backup_path.read_text(encoding="utf-8"))
     chats = payload.get("chats") or []
-    con = _telegram_backup_conn_v1()
-    imported = 0
+
+    con = sqlite3.connect(CONTENT_DB)
     try:
+        _ensure_telegram_backup_tables(con)
+        cur = con.cursor()
+        imported = 0
+
         for c in chats:
-            chat_id = str(c.get("chat_id") or "").strip()
-            if not chat_id:
-                continue
-            con.execute("""
-            INSERT INTO telegram_chats
-            (chat_id,type,title,username,first_name,last_name,enabled,role,thread_id,parent_chat_id,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-            ON CONFLICT(chat_id) DO UPDATE SET
-              type=excluded.type,
-              title=excluded.title,
-              username=excluded.username,
-              enabled=excluded.enabled,
-              role=excluded.role,
-              updated_at=CURRENT_TIMESTAMP
+            cur.execute("""
+                INSERT OR REPLACE INTO telegram_chats (
+                    chat_id, type, title, username, first_name, last_name,
+                    enabled, role, thread_id, parent_chat_id, created_at, updated_at, is_topic
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), COALESCE(?, datetime('now')), ?)
             """, (
-                chat_id,
-                c.get("type") or "supergroup",
+                str(c.get("chat_id") or ""),
+                c.get("type") or "",
                 c.get("title") or "",
                 c.get("username") or "",
                 c.get("first_name"),
                 c.get("last_name"),
-                int(c.get("enabled", 1)),
-                c.get("role") or "client_group",
+                int(c.get("enabled", 1) or 0),
+                c.get("role") or "",
                 c.get("thread_id"),
                 c.get("parent_chat_id"),
+                c.get("created_at"),
+                c.get("updated_at"),
+                int(c.get("is_topic", 0) or 0),
             ))
             imported += 1
+
         con.commit()
-        return {"ok": True, "imported": imported}
+        return {
+            "ok": True,
+            "imported": imported,
+            "source": str(backup_path),
+            "backup_count": payload.get("count"),
+        }
     finally:
         con.close()
-# ===== /TELEGRAM BACKUP / RESTORE API V1 =====
 
-# === TELEGRAM BIRTHDAY BOT MODULE ===
 
 @app.on_event("startup")
 def _telegram_birthday_startup_init():
