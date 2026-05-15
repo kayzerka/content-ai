@@ -394,8 +394,21 @@
   }
 
   function initCoursesUI() {
+    const section = document.getElementById("courses");
+    if (section) {
+      section.style.display = "block";
+      section.hidden = false;
+      section.classList.remove("hidden");
+      section.classList.add("active");
+    }
+
     const root = el("courses-root");
-    if (!root) return;
+    if (!root) {
+      console.warn("[Courses] courses-root not found");
+      return;
+    }
+
+    console.log("[Courses] initCoursesUI render start");
 
     root.innerHTML = `
       <div class="courses-layout">
