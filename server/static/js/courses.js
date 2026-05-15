@@ -239,6 +239,7 @@
         <div class="course-actions">
           <button id="lesson-save-btn">💾 Зберегти урок</button>
           <button id="lesson-publish-btn">🚀 Опублікувати у канал</button>
+          <button id="lesson-excel-btn">📊 Створити Excel</button>
           <button id="lesson-upload-btn">📎 Upload файл</button>
           <input id="lesson-file-input" type="file" style="display:none" multiple>
         </div>
@@ -251,6 +252,7 @@
 
     el("lesson-save-btn").addEventListener("click", saveLesson);
     el("lesson-publish-btn").addEventListener("click", publishLesson);
+    el("lesson-excel-btn").addEventListener("click", createLessonExcel);
     el("lesson-upload-btn").addEventListener("click", () => el("lesson-file-input").click());
     el("lesson-file-input").addEventListener("change", uploadLessonFiles);
   }
@@ -358,6 +360,27 @@
   }
 
 
+
+  async function createLessonExcel() {
+    if (!currentCourseKey || !currentLessonNo) return;
+
+    try {
+      await saveLesson();
+
+      const data = await apiPost(API + "/lesson/create-excel", {
+        course_key: currentCourseKey,
+        lesson_no: currentLessonNo,
+        file_name: "lesson_" + currentLessonNo + "_materials.xlsx"
+      });
+
+      await openCourse(currentCourseKey);
+      showStatus("Excel створено: " + (data.file_name || ""));
+    } catch (e) {
+      showStatus("Помилка створення Excel: " + e.message, true);
+      alert("Помилка Excel: " + e.message);
+    }
+  }
+
   async function publishLesson() {
     const chatId = el("course-telegram-chat-id") ? el("course-telegram-chat-id").value.trim() : "";
 
@@ -366,7 +389,7 @@
       return;
     }
 
-    if (!confirm("Опублікувати цей урок у Telegram канал?")) return;
+    // no confirm
 
     try {
       await saveLesson();
@@ -433,7 +456,7 @@
   }
 
   async function restoreBackup() {
-    if (!confirm("Відновити Courses з backups/courses/courses-latest.json? Поточні course таблиці будуть перезаписані.")) return;
+    // no confirm
 
     try {
       await apiPost(API + "/restore/from_static_backup", {});

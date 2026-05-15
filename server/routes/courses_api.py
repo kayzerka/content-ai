@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional, List
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
+from openpyxl import Workbook
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -375,6 +376,103 @@ def save_lesson(body: LessonSave):
 
     export_all_to_backup()
     return {"ok": True}
+
+
+
+
+class LessonExcelCreateRequest(BaseModel):
+    course_key: str
+    lesson_no: int
+    file_name: Optional[str] = None
+    title: Optional[str] = None
+
+
+@router.post("/lesson/create-excel")
+def create_lesson_excel(body: LessonExcelCreateRequest):
+    with db() as con:
+        c = con.execute("SELECT * FROM course_projects WHERE course_key=?", (body.course_key,)).fetchone()
+        if not c:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        l = con.execute(
+            "SELECT * FROM course_lessons WHERE course_key=? AND lesson_no=?",
+            (body.course_key, body.lesson_no)
+        ).fetchone()
+        if not l:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        course = dict(c)
+        lesson = dict(l)
+
+    safe_course = slugify(body.course_key)
+    lesson_dir = UPLOAD_DIR / safe_course / f"lesson_{body.lesson_no}"
+    lesson_dir.mkdir(parents=True, exist_ok=True)
+
+    file_name = body.file_name or f"lesson_{body.lesson_no}_materials.xlsx"
+    if not file_name.lower().endswith(".xlsx"):
+        file_name += ".xlsx"
+
+    file_name = re.sub(r"[^a-zA-Z0-9а-яА-ЯіїєґІЇЄҐ_.-]+", "_", file_name)
+    path = lesson_dir / file_name
+
+    wb = Workbook()
+
+    ws = wb.active
+    ws.title = "Lesson"
+    ws.append(["Course", course.get("title") or body.course_key])
+    ws.append(["Lesson No", body.lesson_no])
+    ws.append(["Lesson Title", lesson.get("title") or ""])
+    ws.append(["Topic", lesson.get("topic") or ""])
+    ws.append([])
+    ws.append(["Telegram Post"])
+    ws.append([lesson.get("telegram_post_text") or ""])
+    ws.append([])
+    ws.append(["Lecture"])
+    ws.append([lesson.get("lecture_text") or ""])
+
+    ws2 = wb.create_sheet("Homework")
+    ws2.append(["#", "Завдання", "Статус", "Коментар"])
+    ws2.append([1, "Опрацювати лекцію", "", ""])
+    ws2.append([2, "Виписати ключові інсайти", "", ""])
+    ws2.append([3, "Поставити питання по темі", "", ""])
+
+    ws3 = wb.create_sheet("Students")
+    ws3.append(["Імʼя", "Telegram", "Оплата", "Доступ", "Коментар"])
+
+    for sheet in wb.worksheets:
+        for col in range(1, 8):
+            sheet.column_dimensions[chr(64 + col)].width = 24
+
+    wb.save(path)
+
+    rel_path = str(path.relative_to(BASE_DIR))
+    size = path.stat().st_size
+
+    with db() as con:
+        con.execute("""
+            INSERT INTO course_assets
+            (course_key, lesson_no, asset_type, file_name, file_path, mime_type, size_bytes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            body.course_key,
+            body.lesson_no,
+            "spreadsheet",
+            file_name,
+            rel_path,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            size,
+            now_iso()
+        ))
+        con.commit()
+
+    export_all_to_backup()
+
+    return {
+        "ok": True,
+        "file_name": file_name,
+        "file_path": rel_path,
+        "size_bytes": size
+    }
 
 
 @router.post("/assets/upload")

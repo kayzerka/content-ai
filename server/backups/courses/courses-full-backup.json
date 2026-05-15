@@ -1,11 +1,11 @@
 {
   "format": "courses_full_v1",
-  "exported_at": "2026-05-15T20:39:32Z",
+  "exported_at": "2026-05-15T22:34:01Z",
   "counts": {
     "courses": 2,
     "lessons": 1,
-    "assets": 0,
-    "publications": 0
+    "assets": 1,
+    "publications": 1
   },
   "courses": [
     {
@@ -43,12 +43,35 @@
       "ai_prompt": "Створи вступну лекцію для курсу Арканалогія призначення. Поясни, що таке аркани, як вони можуть розкривати сильні сторони людини, її внутрішні задачі, таланти і напрям реалізації.",
       "lecture_text": "У цьому уроці ми знайомимося з арканалогією призначення як системою символів, архетипів і внутрішніх задач людини.",
       "telegram_post_text": "✨ Урок 1: Що таке арканалогія призначення\n\nУ цьому уроці ми розбираємо, як аркани можуть допомогти побачити свої таланти, внутрішні задачі та напрям реалізації.",
-      "status": "draft",
-      "published_at": null,
+      "status": "published",
+      "published_at": "2026-05-15T22:16:07Z",
       "created_at": "2026-05-15T20:39:32Z",
-      "updated_at": "2026-05-15T20:39:32Z"
+      "updated_at": "2026-05-15T22:16:07Z"
     }
   ],
-  "assets": [],
-  "publications": []
+  "assets": [
+    {
+      "id": 1,
+      "course_key": "арканалогія_призначення",
+      "lesson_no": 1,
+      "asset_type": "spreadsheet",
+      "file_name": "lesson_1_materials.xlsx",
+      "file_path": "uploads/courses/арканалогія_призначення/lesson_1/lesson_1_materials.xlsx",
+      "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "size_bytes": 6757,
+      "created_at": "2026-05-15T22:34:01Z"
+    }
+  ],
+  "publications": [
+    {
+      "id": 1,
+      "course_key": "арканалогія_призначення",
+      "lesson_no": 1,
+      "telegram_chat_id": "-1003800038060",
+      "telegram_message_id": "7",
+      "status": "published",
+      "error": "",
+      "created_at": "2026-05-15T22:16:07Z"
+    }
+  ]
 }
