@@ -941,6 +941,7 @@ def _telegram_polish_dasha_style(draft_text: str, original_prompt: str = ""):
 
 def _telegram_get_recent_messages_for_ai(chat_id: str, thread_id: str | None = None, limit: int = 80):
     import sqlite3
+    from pathlib import Path
 
     con = sqlite3.connect(str(Path(__file__).resolve().parent / 'db' / 'telegram.sqlite'))
     con.row_factory = sqlite3.Row
