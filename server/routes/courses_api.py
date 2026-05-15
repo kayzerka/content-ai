@@ -3,6 +3,8 @@ import re
 import json
 import shutil
 import sqlite3
+import ssl
+import urllib.request
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional, List
@@ -440,6 +442,136 @@ def restore_from_static_backup():
     return {"ok": True, "counts": restored.get("counts")}
 
 
+
+
+
+
+class LessonPublishRequest(BaseModel):
+    course_key: str
+    lesson_no: int
+    telegram_chat_id: Optional[str] = None
+
+
+@router.post("/publish/lesson")
+def publish_lesson(body: LessonPublishRequest):
+
+    with db() as con:
+        c = con.execute(
+            "SELECT * FROM course_projects WHERE course_key=?",
+            (body.course_key,)
+        ).fetchone()
+
+        if not c:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        l = con.execute(
+            "SELECT * FROM course_lessons WHERE course_key=? AND lesson_no=?",
+            (body.course_key, body.lesson_no)
+        ).fetchone()
+
+        if not l:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        course = dict(c)
+        lesson = dict(l)
+
+    token = (
+        os.getenv("CLIENT_TELEGRAM_BOT_TOKEN")
+        or os.getenv("TELEGRAM_BOT_TOKEN")
+        or os.getenv("BOT_TOKEN")
+        or ""
+    ).strip()
+
+    if not token:
+        raise HTTPException(status_code=400, detail="Telegram bot token missing")
+
+    chat_id = (
+        body.telegram_chat_id
+        or course.get("telegram_chat_id")
+        or ""
+    ).strip()
+
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="telegram_chat_id missing")
+
+    text = (
+        lesson.get("telegram_post_text")
+        or lesson.get("lecture_text")
+        or lesson.get("title")
+        or "Lesson"
+    )
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+    payload = json.dumps({
+        "chat_id": chat_id,
+        "text": text[:3900],
+        "disable_web_page_preview": False
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ssl._create_unverified_context()) as resp:
+            raw = resp.read().decode("utf-8")
+            tg = json.loads(raw)
+    except Exception as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8")
+        except Exception:
+            body = str(e)
+        raise HTTPException(status_code=502, detail=f"Telegram send error: {body}")
+
+    ok = bool(tg.get("ok"))
+
+    msg_id = ""
+    if ok:
+        msg_id = str((tg.get("result") or {}).get("message_id") or "")
+
+    with db() as con:
+        con.execute("""
+            INSERT INTO course_publications
+            (course_key, lesson_no, telegram_chat_id, telegram_message_id, status, error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            body.course_key,
+            body.lesson_no,
+            chat_id,
+            msg_id,
+            "published" if ok else "error",
+            "" if ok else json.dumps(tg, ensure_ascii=False),
+            now_iso()
+        ))
+
+        if ok:
+            con.execute("""
+                UPDATE course_lessons
+                SET status='published',
+                    published_at=?,
+                    updated_at=?
+                WHERE course_key=? AND lesson_no=?
+            """, (
+                now_iso(),
+                now_iso(),
+                body.course_key,
+                body.lesson_no
+            ))
+
+        con.commit()
+
+    export_all_to_backup()
+
+    return {
+        "ok": ok,
+        "telegram": tg,
+        "message_id": msg_id
+    }
 
 
 @router.get("/telegram/targets")
