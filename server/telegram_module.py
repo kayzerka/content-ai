@@ -939,40 +939,56 @@ def _telegram_polish_dasha_style(draft_text: str, original_prompt: str = ""):
 
 # === TELEGRAM AI GENERATE PLAN ROUTE V2 ===
 
-def _telegram_get_recent_messages_for_ai(chat_id: str, thread_id: str = None, limit: int = 80):
-    con = db()
-    where = ["chat_id=?"]
-    params = [str(chat_id)]
+def _telegram_get_recent_messages_for_ai(chat_id: str, thread_id: str | None = None, limit: int = 80):
+    import sqlite3
 
-    if thread_id:
-        where.append("thread_id=?")
-        params.append(str(thread_id))
+    con = sqlite3.connect(_telegram_db_path_v1())
+    con.row_factory = sqlite3.Row
+    try:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS telegram_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chat_id TEXT,
+                thread_id TEXT,
+                message_id TEXT,
+                from_id TEXT,
+                from_username TEXT,
+                text TEXT,
+                date TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
-    sql = f"""
-        SELECT from_name, username, text, date_iso
-        FROM telegram_messages
-        WHERE {' AND '.join(where)}
-        ORDER BY date_ts DESC, id DESC
-        LIMIT ?
-    """
-    params.append(int(limit))
+        params = [str(chat_id)]
+        sql = """
+            SELECT text, from_username, date, created_at
+            FROM telegram_messages
+            WHERE chat_id = ?
+        """
 
-    rows = con.execute(sql, params).fetchall()
-    con.close()
+        if thread_id:
+            sql += " AND thread_id = ?"
+            params.append(str(thread_id))
 
-    rows = list(reversed(rows))
-    lines = []
+        sql += " ORDER BY COALESCE(date, created_at) DESC LIMIT ?"
+        params.append(int(limit or 80))
 
-    for r in rows:
-        name = r["from_name"] or r["username"] or "Учасник"
-        txt = (r["text"] or "").strip()
-        if txt:
-            lines.append(f"{name}: {txt}")
+        rows = con.execute(sql, params).fetchall()
+        rows = list(reversed(rows))
 
-    return "\n".join(lines)
+        lines = []
+        for r in rows:
+            text = (r["text"] or "").strip()
+            if not text:
+                continue
+            who = r["from_username"] or "user"
+            lines.append(f"{who}: {text}")
+
+        return "\n".join(lines)
+    finally:
+        con.close()
 
 
-@router.post("/ai/generate-plan")
 def telegram_ai_generate_plan(payload: dict = Body(default={})):
     chat_id = payload.get("chat_id") or payload.get("target_chat_id")
     thread_id = payload.get("thread_id")
