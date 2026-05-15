@@ -238,6 +238,7 @@
 
         <div class="course-actions">
           <button id="lesson-save-btn">💾 Зберегти урок</button>
+          <button id="lesson-publish-btn">🚀 Опублікувати у канал</button>
           <button id="lesson-upload-btn">📎 Upload файл</button>
           <input id="lesson-file-input" type="file" style="display:none" multiple>
         </div>
@@ -249,6 +250,7 @@
     `;
 
     el("lesson-save-btn").addEventListener("click", saveLesson);
+    el("lesson-publish-btn").addEventListener("click", publishLesson);
     el("lesson-upload-btn").addEventListener("click", () => el("lesson-file-input").click());
     el("lesson-file-input").addEventListener("change", uploadLessonFiles);
   }
@@ -352,6 +354,34 @@
       showStatus("Урок додано");
     } catch (e) {
       showStatus("Помилка додавання уроку: " + e.message, true);
+    }
+  }
+
+
+  async function publishLesson() {
+    const chatId = el("course-telegram-chat-id") ? el("course-telegram-chat-id").value.trim() : "";
+
+    if (!chatId) {
+      alert("Спочатку вибери Telegram канал у налаштуваннях курсу і збережи курс.");
+      return;
+    }
+
+    if (!confirm("Опублікувати цей урок у Telegram канал?")) return;
+
+    try {
+      await saveLesson();
+
+      const data = await apiPost(API + "/publish/lesson", {
+        course_key: currentCourseKey,
+        lesson_no: currentLessonNo,
+        telegram_chat_id: chatId
+      });
+
+      await openCourse(currentCourseKey);
+      showStatus("Урок опубліковано у канал. message_id=" + (data.message_id || ""));
+    } catch (e) {
+      showStatus("Помилка публікації: " + e.message, true);
+      alert("Помилка публікації: " + e.message);
     }
   }
 
