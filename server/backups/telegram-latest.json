@@ -1,7 +1,7 @@
 {
   "ok": true,
   "type": "telegram_backup_v1",
-  "count": 11,
+  "count": 10,
   "chats": [
     {
       "chat_id": "330800472",
@@ -134,21 +134,6 @@
       "role": "client_channel",
       "created_at": "2026-05-09 12:05:18",
       "updated_at": "2026-05-09 12:05:18",
-      "thread_id": null,
-      "parent_chat_id": null,
-      "is_topic": 0
-    },
-    {
-      "chat_id": "-1003902202453",
-      "type": "channel",
-      "title": "Арканалогія призначення",
-      "username": "",
-      "first_name": null,
-      "last_name": null,
-      "enabled": 1,
-      "role": "client_channel",
-      "created_at": "2026-05-15 14:00:00",
-      "updated_at": "2026-05-15 14:00:00",
       "thread_id": null,
       "parent_chat_id": null,
       "is_topic": 0
