@@ -8499,7 +8499,7 @@ def telegram_backup_seed_defaults_v1():
     payload = json.loads(backup_path.read_text(encoding="utf-8"))
     chats = payload.get("chats") or []
 
-    con = sqlite3.connect(CONTENT_DB)
+    con = _telegram_db_connect()
     try:
         _ensure_telegram_backup_tables(con)
         cur = con.cursor()
