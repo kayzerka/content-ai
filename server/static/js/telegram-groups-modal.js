@@ -883,9 +883,13 @@ async function tgSendCalendarItemNow(id) {
   const res = await fetch('/api/telegram/send_client_target', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ purpose: "planner_internal",  
+    body: JSON.stringify({
+      target_chat_id: chatId,
+      target_chat: chatId,
+      chat_id: chatId,
       chat_ids: [chatId],
       thread_id: threadId,
+      purpose: "client_channel",
       text: item.text
     })
   });
