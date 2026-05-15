@@ -123,8 +123,13 @@
         <label>Опис</label>
         <textarea id="course-description">${escapeHtml(c.description || "")}</textarea>
 
-        <label>Telegram chat_id / channel id</label>
-        <input id="course-telegram-chat-id" value="${escapeHtml(c.telegram_chat_id || "")}">
+        <label>Telegram канал</label>
+        <select id="course-telegram-chat-id">
+          <option value="">-- вибрати Telegram канал --</option>
+        </select>
+        <div style="margin-top:6px;font-size:12px;color:#6b7280;">
+          Поточний: ${escapeHtml(c.telegram_chat_id || "")}
+        </div>
 
         <label>Telegram channel URL</label>
         <input id="course-telegram-url" value="${escapeHtml(c.telegram_channel_url || "")}">
@@ -152,6 +157,8 @@
         <div id="lesson-editor"></div>
       </div>
     `;
+
+    loadTelegramTargets(c.telegram_chat_id || "");
 
     el("course-save-btn").addEventListener("click", saveCourse);
     el("course-backup-btn").addEventListener("click", backupNow);
@@ -258,6 +265,31 @@
         `).join("")}
       </ul>
     `;
+  }
+
+
+  async function loadTelegramTargets(selectedValue) {
+    const select = el("course-telegram-chat-id");
+    if (!select) return;
+
+    try {
+      const data = await apiGet(API + "/telegram/targets");
+      const targets = data.targets || [];
+
+      select.innerHTML = `<option value="">-- вибрати Telegram канал --</option>` + targets.map(t => {
+        const label = [
+          t.title || "",
+          t.username ? ("@" + t.username) : "",
+          t.chat_id || ""
+        ].filter(Boolean).join(" · ");
+
+        return `<option value="${escapeHtml(t.chat_id)}">${escapeHtml(label)}</option>`;
+      }).join("");
+
+      if (selectedValue) select.value = selectedValue;
+    } catch (e) {
+      console.error("[Courses] telegram targets load error", e);
+    }
   }
 
   async function saveCourse() {

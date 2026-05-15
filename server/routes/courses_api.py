@@ -438,3 +438,68 @@ def restore_from_static_backup():
     payload = json.loads(p.read_text(encoding="utf-8"))
     restored = restore_from_payload(payload)
     return {"ok": True, "counts": restored.get("counts")}
+
+
+
+
+@router.get("/telegram/targets")
+def telegram_targets():
+    """
+    Повертає список Telegram каналів/чатів для select у Courses.
+    """
+
+    targets = []
+
+    try:
+        tg_backup = BASE_DIR / "backups" / "telegram-latest.json"
+
+        if tg_backup.exists():
+            payload = json.loads(tg_backup.read_text(encoding="utf-8"))
+
+            chats = (
+                payload.get("chats")
+                or payload.get("groups")
+                or payload.get("targets")
+                or payload.get("channels")
+                or []
+            )
+
+            for ch in chats:
+                title = (
+                    ch.get("title")
+                    or ch.get("name")
+                    or ch.get("chat_title")
+                    or ch.get("username")
+                    or "Telegram target"
+                )
+
+                chat_id = (
+                    ch.get("chat_id")
+                    or ch.get("target_chat_id")
+                    or ch.get("id")
+                    or ""
+                )
+
+                username = ch.get("username") or ""
+
+                if not chat_id:
+                    continue
+
+                targets.append({
+                    "title": title,
+                    "chat_id": str(chat_id),
+                    "username": username,
+                })
+
+    except Exception as e:
+        return {"ok": False, "error": str(e), "targets": []}
+
+    # dedupe
+    uniq = {}
+    for t in targets:
+        uniq[str(t["chat_id"])] = t
+
+    return {
+        "ok": True,
+        "targets": list(uniq.values())
+    }
