@@ -807,6 +807,19 @@ def telegram_list_messages(chat_id: str = None, thread_id: str = None, limit: in
     sql += " ORDER BY date_ts DESC, id DESC LIMIT ?"
     params.append(int(limit))
 
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id TEXT,
+            thread_id TEXT,
+            message_id TEXT,
+            from_id TEXT,
+            from_username TEXT,
+            text TEXT,
+            date TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     rows = con.execute(sql, params).fetchall()
     con.close()
 
