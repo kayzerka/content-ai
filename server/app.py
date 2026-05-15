@@ -8503,7 +8503,6 @@ def telegram_backup_seed_defaults_v1():
 
         con = sqlite3.connect(str(_telegram_db_path_v1()))
         try:
-            _ensure_telegram_backup_tables(con)
             cur = con.cursor()
             imported = 0
 
