@@ -404,6 +404,12 @@
             <h2>Courses</h2>
             <button id="course-create-btn">+ Курс</button>
           </div>
+
+          <div class="course-actions" style="margin-bottom:12px;">
+            <button id="courses-global-restore-btn">♻️ Відновити дані</button>
+            <button id="courses-global-backup-btn">🧷 Backup</button>
+          </div>
+
           <div id="courses-list"></div>
         </aside>
 
@@ -415,6 +421,8 @@
     `;
 
     el("course-create-btn").addEventListener("click", createCourse);
+    el("courses-global-restore-btn").addEventListener("click", restoreBackup);
+    el("courses-global-backup-btn").addEventListener("click", backupNow);
     loadCourses();
   }
 
