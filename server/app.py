@@ -4,6 +4,7 @@ from urllib.parse import parse_qs
 import tempfile
 from fastapi import Request,  FastAPI, Request, UploadFile, File, Form
 from routes.funnels_api import router as funnels_router
+from routes.courses_api import router as courses_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, PlainTextResponse
 import sqlite3
@@ -38,6 +39,7 @@ app = FastAPI()
 
 app.include_router(funnels_router)
 app.include_router(telegram_safe_router)
+app.include_router(courses_router)
 
 MODEL_PATH = "/Volumes/B/Regresolog/content_ai/models/model.gguf"
 DB_PATH = os.getenv("CONTENT_AI_DB_PATH", os.path.join(os.getcwd(), "data", "content.db"))

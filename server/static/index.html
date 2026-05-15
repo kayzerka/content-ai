@@ -562,6 +562,7 @@
 
 
   <link rel="stylesheet" href="/static/css/telegram-birthday-module.css">
+  <link rel="stylesheet" href="/static/css/courses.css">
 </head>
 <body>
   <header>
@@ -577,6 +578,8 @@
     <button id="nav_planner" onclick="showSection('planner')">📅 Планувальник (Trello+Календар)</button>
     <button id="nav_funnels" onclick="showSection('funnels'); window.renderFunnelsNativeTab && window.renderFunnelsNativeTab();">🧲 Воронки</button>
     <button id="nav_telegram" onclick="showSection('telegram'); tgLoadChats();">🤖 Telegram Center</button>
+    <button id="nav_courses" onclick="showSection('courses'); window.CoursesModule && window.CoursesModule.load();">📚 Courses</button>
+
     <button id="nav_birthday" onclick="showSection('birthday'); tgBirthdayLoad();">🎂 Birthday Bot</button>
 </nav>
 
@@ -813,6 +816,18 @@
         <pre id="tgSendResult">Готово до відправки.</pre>
       </div>
     </section>
+
+
+<section id="courses" class="section" style="display:none;">
+  <h2>📚 Courses</h2>
+  <p class="muted">
+    Конструктор курсів: уроки, AI-контент, медіа, Excel, backup/restore.
+  </p>
+
+  <div id="courses-root"></div>
+</section>
+
+
 
   <section id="birthday" style="display:none;">
     <h2>🎂 Birthday Bot</h2>
@@ -2034,5 +2049,6 @@ window.restoreFunnelsSeedData = restoreFunnelsSeedData;
 </footer>
 
   <script src="/static/js/telegram-birthday-module.js"></script>
+  <script src="/static/js/courses.js"></script>
 </body>
 </html>

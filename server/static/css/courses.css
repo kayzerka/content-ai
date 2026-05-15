@@ -1,0 +1,111 @@
+.courses-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  padding: 16px;
+}
+
+.courses-sidebar,
+.courses-main,
+.course-card,
+.lesson-editor-box {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.course-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.course-item,
+.lesson-tab {
+  width: 100%;
+  display: block;
+  text-align: left;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 10px;
+  padding: 10px;
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+.course-item span {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.course-item.active,
+.lesson-tab.active {
+  background: #eef2ff;
+  border-color: #6366f1;
+}
+
+.course-card {
+  margin-bottom: 16px;
+}
+
+.course-card label,
+.lesson-editor-box label {
+  display: block;
+  font-weight: 600;
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+
+.course-card input,
+.course-card textarea,
+.lesson-editor-box input,
+.lesson-editor-box textarea,
+.lesson-editor-box select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 10px;
+  font-size: 14px;
+}
+
+.course-card textarea {
+  min-height: 90px;
+}
+
+.big-textarea {
+  min-height: 220px;
+}
+
+.course-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.course-actions button,
+#course-create-btn,
+#lesson-add-btn {
+  border: 0;
+  background: #111827;
+  color: #fff;
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+#courses-status {
+  min-height: 22px;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.muted {
+  color: #6b7280;
+  padding: 10px;
+}
