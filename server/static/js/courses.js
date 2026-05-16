@@ -824,6 +824,7 @@
   document.addEventListener("DOMContentLoaded", initCoursesUI);
 })();
 
+
 window.openExcelModal = async function(assetId) {
   const API = "/api/courses";
 
@@ -832,6 +833,7 @@ window.openExcelModal = async function(assetId) {
     headers: {"Content-Type":"application/json"},
     body: JSON.stringify({asset_id: assetId})
   });
+
   const data = await r.json();
   if (!r.ok || data.ok === false) {
     alert("Excel read error: " + (data.detail || data.error || "unknown"));
@@ -852,8 +854,8 @@ window.openExcelModal = async function(assetId) {
   modal.style.display = "block";
   modal.style.left = modal.style.left || "80px";
   modal.style.top = modal.style.top || "80px";
-  modal.style.width = modal.style.width || "900px";
-  modal.style.height = modal.style.height || "620px";
+  modal.style.width = modal.style.width || "980px";
+  modal.style.height = modal.style.height || "680px";
 
   function esc(v) {
     return String(v ?? "")
@@ -874,9 +876,98 @@ window.openExcelModal = async function(assetId) {
     return s;
   }
 
+  function cellToRC(ref) {
+    const m = String(ref || "").toUpperCase().match(/^([A-Z]+)(\d+)$/);
+    if (!m) return null;
+
+    let col = 0;
+    for (const ch of m[1]) col = col * 26 + (ch.charCodeAt(0) - 64);
+
+    return { r: Number(m[2]) - 1, c: col - 1 };
+  }
+
+  function rawCell(sheet, r, c) {
+    return sheet.rows?.[r]?.[c] ?? "";
+  }
+
+  function numberValue(v) {
+    if (typeof v === "number") return v;
+    const s = String(v ?? "").replace(",", ".").trim();
+    const n = Number(s);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function rangeValues(sheet, range) {
+    const [a, b] = String(range || "").split(":");
+    const start = cellToRC(a);
+    const end = cellToRC(b || a);
+    if (!start || !end) return [];
+
+    const vals = [];
+    for (let r = Math.min(start.r, end.r); r <= Math.max(start.r, end.r); r++) {
+      for (let c = Math.min(start.c, end.c); c <= Math.max(start.c, end.c); c++) {
+        vals.push(evaluateCell(sheet, r, c, new Set()));
+      }
+    }
+    return vals;
+  }
+
+  function evaluateCell(sheet, r, c, seen) {
+    const key = r + ":" + c;
+    if (seen.has(key)) return "#CYCLE";
+    seen.add(key);
+
+    const raw = rawCell(sheet, r, c);
+    if (typeof raw !== "string" || !raw.trim().startsWith("=")) return raw;
+
+    try {
+      let expr = raw.trim().slice(1);
+
+      expr = expr.replace(/\b(SUM|AVERAGE|AVG|MIN|MAX|COUNT)\(([A-Z]+\d+(?::[A-Z]+\d+)?)\)/gi, function(_, fn, range) {
+        const vals = rangeValues(sheet, range).map(numberValue);
+        const name = fn.toUpperCase();
+
+        if (name === "SUM") return String(vals.reduce((a,b) => a + b, 0));
+        if (name === "AVERAGE" || name === "AVG") return String(vals.length ? vals.reduce((a,b) => a + b, 0) / vals.length : 0);
+        if (name === "MIN") return String(vals.length ? Math.min(...vals) : 0);
+        if (name === "MAX") return String(vals.length ? Math.max(...vals) : 0);
+        if (name === "COUNT") return String(vals.filter(v => v !== 0 && v !== "").length);
+
+        return "0";
+      });
+
+      expr = expr.replace(/\b([A-Z]+\d+)\b/g, function(ref) {
+        const pos = cellToRC(ref);
+        if (!pos) return "0";
+        return String(numberValue(evaluateCell(sheet, pos.r, pos.c, new Set(seen))));
+      });
+
+      if (!/^[0-9+\-*/().\s]+$/.test(expr)) return "#ERR";
+
+      const result = Function('"use strict"; return (' + expr + ')')();
+
+      if (typeof result === "number" && Number.isFinite(result)) {
+        return Math.round(result * 100000000) / 100000000;
+      }
+
+      return result;
+    } catch (e) {
+      return "#ERR";
+    }
+  }
+
+  function displayValue(sheet, r, c) {
+    const raw = rawCell(sheet, r, c);
+    if (typeof raw === "string" && raw.trim().startsWith("=")) {
+      return evaluateCell(sheet, r, c, new Set());
+    }
+    return raw;
+  }
+
   function render() {
     const sheet = sheets[active] || {name:"Sheet", rows:[]};
-    const rows = sheet.rows || [];
+    sheet.rows = sheet.rows || [];
+    const rows = sheet.rows;
     const maxCols = Math.max(8, ...rows.map(r => (r || []).length));
 
     let tabs = sheets.map((s, i) =>
@@ -889,10 +980,20 @@ window.openExcelModal = async function(assetId) {
         <div>
           <button id="excel-add-row">+ Row</button>
           <button id="excel-add-col">+ Col</button>
+          <button id="excel-recalc">🔢 Recalc</button>
           <button id="excel-save">💾 Save XLSX</button>
           <button id="excel-close">✕</button>
         </div>
       </div>
+
+      <div style="padding:8px;border-bottom:1px solid #e5e7eb;background:#f9fafb;">
+        <b>Формули:</b>
+        <code>=A1+B1</code>
+        <code>=A1*B1</code>
+        <code>=SUM(A1:A10)</code>
+        <code>=AVERAGE(B1:B5)</code>
+      </div>
+
       <div>${tabs}</div>
       <div class="excel-table-wrap">
         <table class="excel-grid"><thead><tr><th></th>`;
@@ -903,7 +1004,16 @@ window.openExcelModal = async function(assetId) {
     for (let r = 0; r < rows.length; r++) {
       html += `<tr><th>${r+1}</th>`;
       for (let c = 0; c < maxCols; c++) {
-        html += `<td contenteditable="true" data-r="${r}" data-c="${c}">${esc(rows[r]?.[c] ?? "")}</td>`;
+        const raw = rawCell(sheet, r, c);
+        const shown = displayValue(sheet, r, c);
+        const isFormula = typeof raw === "string" && raw.trim().startsWith("=");
+
+        html += `<td contenteditable="true"
+                     data-r="${r}"
+                     data-c="${c}"
+                     data-raw="${esc(raw)}"
+                     class="${isFormula ? "excel-formula-cell" : ""}"
+                     title="${isFormula ? esc(raw) : ""}">${esc(shown)}</td>`;
       }
       html += `</tr>`;
     }
@@ -916,23 +1026,41 @@ window.openExcelModal = async function(assetId) {
     });
 
     modal.querySelectorAll("td[contenteditable]").forEach(td => {
-      td.oninput = () => {
-        const r = Number(td.dataset.r), c = Number(td.dataset.c);
+      td.onfocus = () => {
+        const raw = td.dataset.raw || "";
+        if (raw.startsWith("=")) td.innerText = raw;
+      };
+
+      td.onblur = () => {
+        const r = Number(td.dataset.r);
+        const c = Number(td.dataset.c);
         if (!sheets[active].rows[r]) sheets[active].rows[r] = [];
-        sheets[active].rows[r][c] = td.innerText;
+        sheets[active].rows[r][c] = td.innerText.trim();
+        render();
+      };
+
+      td.onkeydown = e => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          td.blur();
+        }
       };
     });
 
     document.getElementById("excel-close").onclick = () => modal.style.display = "none";
+
     document.getElementById("excel-add-row").onclick = () => {
       const maxCols = Math.max(8, ...rows.map(r => (r || []).length));
       sheets[active].rows.push(Array(maxCols).fill(""));
       render();
     };
+
     document.getElementById("excel-add-col").onclick = () => {
       sheets[active].rows.forEach(r => r.push(""));
       render();
     };
+
+    document.getElementById("excel-recalc").onclick = render;
     document.getElementById("excel-save").onclick = save;
 
     enableDrag();
@@ -945,47 +1073,63 @@ window.openExcelModal = async function(assetId) {
       headers: {"Content-Type":"application/json"},
       body: JSON.stringify({asset_id: assetId, sheets})
     });
+
     const j = await r.json();
     if (!r.ok || j.ok === false) {
       alert("Excel save error: " + (j.detail || j.error || "unknown"));
       return;
     }
+
     alert("Excel збережено");
   }
 
   function enableDrag() {
     const header = document.getElementById("excel-modal-header");
     let dragging = false, sx=0, sy=0, sl=0, st=0;
+
     header.onmousedown = e => {
       if (e.target.tagName === "BUTTON") return;
-      dragging = true; sx=e.clientX; sy=e.clientY;
-      sl=parseInt(modal.style.left || "80",10); st=parseInt(modal.style.top || "80",10);
+      dragging = true;
+      sx=e.clientX;
+      sy=e.clientY;
+      sl=parseInt(modal.style.left || "80",10);
+      st=parseInt(modal.style.top || "80",10);
     };
+
     window.onmousemove = e => {
       if (!dragging) return;
       modal.style.left = (sl + e.clientX - sx) + "px";
       modal.style.top = (st + e.clientY - sy) + "px";
     };
+
     window.onmouseup = () => dragging = false;
   }
 
   function enableResize() {
     const handle = document.getElementById("excel-resize-handle");
     let resizing = false, sx=0, sy=0, sw=0, sh=0;
+
     handle.onmousedown = e => {
-      resizing = true; sx=e.clientX; sy=e.clientY; sw=modal.offsetWidth; sh=modal.offsetHeight;
+      resizing = true;
+      sx=e.clientX;
+      sy=e.clientY;
+      sw=modal.offsetWidth;
+      sh=modal.offsetHeight;
       e.preventDefault();
     };
+
     window.addEventListener("mousemove", e => {
       if (!resizing) return;
       modal.style.width = Math.max(520, sw + e.clientX - sx) + "px";
       modal.style.height = Math.max(360, sh + e.clientY - sy) + "px";
     });
+
     window.addEventListener("mouseup", () => resizing = false);
   }
 
   render();
 };
+
 
 window.openLessonTablesManager = function() {
   const spreadsheets = (currentCourse?.assets || []).filter(a =>

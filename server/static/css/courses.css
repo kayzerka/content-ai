@@ -194,3 +194,15 @@
   padding: 7px 10px;
   cursor: pointer;
 }
+
+.excel-formula-cell {
+  background: #fff7ed;
+  font-weight: 600;
+}
+
+.excel-modal code {
+  background: #eef2ff;
+  padding: 3px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
+}
