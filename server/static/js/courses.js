@@ -239,6 +239,7 @@
         <div class="course-actions">
           <button id="lesson-save-btn">💾 Зберегти урок</button>
           <button id="lesson-publish-btn">🚀 Опублікувати у канал</button>
+          <button id="course-invite-btn">📨 Відправити запрошення</button>
           <button id="lesson-excel-btn">📊 Створити Excel</button>
           <button id="lesson-tables-btn">📊 Таблиці уроку</button>
           <button id="lesson-upload-btn">📎 Upload файл</button>
@@ -257,6 +258,7 @@
 
     el("lesson-save-btn").addEventListener("click", saveLesson);
     el("lesson-publish-btn").addEventListener("click", publishLesson);
+    el("course-invite-btn").addEventListener("click", sendCourseInviteToPlanner);
     el("lesson-excel-btn").addEventListener("click", createLessonExcel);
     el("lesson-tables-btn").addEventListener("click", openLessonTablesManager);
     el("lesson-upload-btn").addEventListener("click", () => el("lesson-file-input").click());
@@ -390,6 +392,92 @@
       alert("Помилка Excel: " + e.message);
     }
   }
+
+
+  async function sendCourseInviteToPlanner() {
+    if (!currentCourseKey) return;
+
+    try {
+      await saveCourse();
+
+      const data = await apiPost(API + "/invite/send-to-planner", {
+        course_key: currentCourseKey,
+        lesson_no: currentLessonNo
+      });
+
+      showStatus("Запрошення відправлено в planner chat");
+      openInviteCopyModal(data.invite_text || "");
+    } catch (e) {
+      showStatus("Помилка запрошення: " + e.message, true);
+      alert("Помилка запрошення: " + e.message);
+    }
+  }
+
+
+
+  function openInviteCopyModal(inviteText) {
+    let modal = document.getElementById("invite-copy-modal");
+
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "invite-copy-modal";
+      modal.className = "excel-modal";
+      document.body.appendChild(modal);
+    }
+
+    modal.style.display = "block";
+    modal.style.left = modal.style.left || "160px";
+    modal.style.top = modal.style.top || "120px";
+    modal.style.width = modal.style.width || "640px";
+    modal.style.height = modal.style.height || "460px";
+
+    modal.innerHTML = `
+      <div class="excel-modal-header" id="invite-copy-header">
+        <b>📨 Запрошення для клієнта</b>
+        <div>
+          <button id="invite-copy-btn">📋 Скопіювати запрошення</button>
+          <button id="invite-close-btn">✕</button>
+        </div>
+      </div>
+
+      <div style="padding:12px;height:calc(100% - 48px);box-sizing:border-box;">
+        <p style="margin:0 0 8px 0;color:#6b7280;">
+          Цей текст можна скопіювати і відправити клієнту в Telegram.
+        </p>
+        <textarea id="invite-copy-text" style="width:100%;height:calc(100% - 48px);box-sizing:border-box;border:1px solid #d1d5db;border-radius:10px;padding:10px;font-size:14px;">${escapeHtml(inviteText)}</textarea>
+      </div>
+
+      <div class="excel-resize-handle" id="invite-copy-resize"></div>
+    `;
+
+    document.getElementById("invite-close-btn").onclick = () => {
+      modal.style.display = "none";
+    };
+
+    document.getElementById("invite-copy-btn").onclick = async () => {
+      const txt = document.getElementById("invite-copy-text").value;
+
+      try {
+        await navigator.clipboard.writeText(txt);
+        showStatus("Запрошення скопійовано");
+        document.getElementById("invite-copy-btn").textContent = "✅ Скопійовано";
+        setTimeout(() => {
+          const b = document.getElementById("invite-copy-btn");
+          if (b) b.textContent = "📋 Скопіювати запрошення";
+        }, 1500);
+      } catch (e) {
+        const ta = document.getElementById("invite-copy-text");
+        ta.focus();
+        ta.select();
+        document.execCommand("copy");
+        showStatus("Запрошення скопійовано");
+      }
+    };
+
+    makeTablesManagerDraggable(modal, "invite-copy-header");
+    makeTablesManagerResizable(modal, "invite-copy-resize");
+  }
+
 
   async function publishLesson() {
     const chatId = el("course-telegram-chat-id") ? el("course-telegram-chat-id").value.trim() : "";
