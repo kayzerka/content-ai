@@ -265,7 +265,7 @@
       <h4>Матеріали уроку</h4>
       <ul>
         ${assets.map(a => `
-          <li>${safeText(a.asset_type)} · ${safeText(a.file_name)} · ${safeText(a.mime_type || "")}</li>
+          <li>${safeText(a.asset_type)} · ${safeText(a.file_name)} · ${safeText(a.mime_type || "")} ${a.asset_type === "spreadsheet" ? `<button onclick="window.openExcelModal(${a.id})">📊 Відкрити</button>` : ""}</li>
         `).join("")}
       </ul>
     `;
@@ -531,3 +531,166 @@
 
   document.addEventListener("DOMContentLoaded", initCoursesUI);
 })();
+
+window.openExcelModal = async function(assetId) {
+  const API = "/api/courses";
+
+  const r = await fetch(API + "/assets/excel/read", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({asset_id: assetId})
+  });
+  const data = await r.json();
+  if (!r.ok || data.ok === false) {
+    alert("Excel read error: " + (data.detail || data.error || "unknown"));
+    return;
+  }
+
+  let sheets = data.sheets || [];
+  let active = 0;
+
+  let modal = document.getElementById("excel-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "excel-modal";
+    modal.className = "excel-modal";
+    document.body.appendChild(modal);
+  }
+
+  modal.style.display = "block";
+  modal.style.left = modal.style.left || "80px";
+  modal.style.top = modal.style.top || "80px";
+  modal.style.width = modal.style.width || "900px";
+  modal.style.height = modal.style.height || "620px";
+
+  function esc(v) {
+    return String(v ?? "")
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;");
+  }
+
+  function colName(i) {
+    let s = "";
+    let n = i + 1;
+    while (n > 0) {
+      let r = (n - 1) % 26;
+      s = String.fromCharCode(65 + r) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+
+  function render() {
+    const sheet = sheets[active] || {name:"Sheet", rows:[]};
+    const rows = sheet.rows || [];
+    const maxCols = Math.max(8, ...rows.map(r => (r || []).length));
+
+    let tabs = sheets.map((s, i) =>
+      `<button data-sheet="${i}" style="margin:6px;padding:6px;border-radius:8px;${i===active?'background:#eef2ff;border:1px solid #6366f1;':''}">${esc(s.name)}</button>`
+    ).join("");
+
+    let html = `
+      <div class="excel-modal-header" id="excel-modal-header">
+        <b>📊 ${esc(data.asset.file_name || "Excel")}</b>
+        <div>
+          <button id="excel-add-row">+ Row</button>
+          <button id="excel-add-col">+ Col</button>
+          <button id="excel-save">💾 Save XLSX</button>
+          <button id="excel-close">✕</button>
+        </div>
+      </div>
+      <div>${tabs}</div>
+      <div class="excel-table-wrap">
+        <table class="excel-grid"><thead><tr><th></th>`;
+
+    for (let c = 0; c < maxCols; c++) html += `<th>${colName(c)}</th>`;
+    html += `</tr></thead><tbody>`;
+
+    for (let r = 0; r < rows.length; r++) {
+      html += `<tr><th>${r+1}</th>`;
+      for (let c = 0; c < maxCols; c++) {
+        html += `<td contenteditable="true" data-r="${r}" data-c="${c}">${esc(rows[r]?.[c] ?? "")}</td>`;
+      }
+      html += `</tr>`;
+    }
+
+    html += `</tbody></table></div><div class="excel-resize-handle" id="excel-resize-handle"></div>`;
+    modal.innerHTML = html;
+
+    modal.querySelectorAll("[data-sheet]").forEach(btn => {
+      btn.onclick = () => { active = Number(btn.dataset.sheet); render(); };
+    });
+
+    modal.querySelectorAll("td[contenteditable]").forEach(td => {
+      td.oninput = () => {
+        const r = Number(td.dataset.r), c = Number(td.dataset.c);
+        if (!sheets[active].rows[r]) sheets[active].rows[r] = [];
+        sheets[active].rows[r][c] = td.innerText;
+      };
+    });
+
+    document.getElementById("excel-close").onclick = () => modal.style.display = "none";
+    document.getElementById("excel-add-row").onclick = () => {
+      const maxCols = Math.max(8, ...rows.map(r => (r || []).length));
+      sheets[active].rows.push(Array(maxCols).fill(""));
+      render();
+    };
+    document.getElementById("excel-add-col").onclick = () => {
+      sheets[active].rows.forEach(r => r.push(""));
+      render();
+    };
+    document.getElementById("excel-save").onclick = save;
+
+    enableDrag();
+    enableResize();
+  }
+
+  async function save() {
+    const r = await fetch(API + "/assets/excel/save", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({asset_id: assetId, sheets})
+    });
+    const j = await r.json();
+    if (!r.ok || j.ok === false) {
+      alert("Excel save error: " + (j.detail || j.error || "unknown"));
+      return;
+    }
+    alert("Excel збережено");
+  }
+
+  function enableDrag() {
+    const header = document.getElementById("excel-modal-header");
+    let dragging = false, sx=0, sy=0, sl=0, st=0;
+    header.onmousedown = e => {
+      if (e.target.tagName === "BUTTON") return;
+      dragging = true; sx=e.clientX; sy=e.clientY;
+      sl=parseInt(modal.style.left || "80",10); st=parseInt(modal.style.top || "80",10);
+    };
+    window.onmousemove = e => {
+      if (!dragging) return;
+      modal.style.left = (sl + e.clientX - sx) + "px";
+      modal.style.top = (st + e.clientY - sy) + "px";
+    };
+    window.onmouseup = () => dragging = false;
+  }
+
+  function enableResize() {
+    const handle = document.getElementById("excel-resize-handle");
+    let resizing = false, sx=0, sy=0, sw=0, sh=0;
+    handle.onmousedown = e => {
+      resizing = true; sx=e.clientX; sy=e.clientY; sw=modal.offsetWidth; sh=modal.offsetHeight;
+      e.preventDefault();
+    };
+    window.addEventListener("mousemove", e => {
+      if (!resizing) return;
+      modal.style.width = Math.max(520, sw + e.clientX - sx) + "px";
+      modal.style.height = Math.max(360, sh + e.clientY - sy) + "px";
+    });
+    window.addEventListener("mouseup", () => resizing = false);
+  }
+
+  render();
+};

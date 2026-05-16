@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, List
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -513,6 +513,99 @@ async def upload_asset(
 def backup_export():
     payload = export_all_to_backup()
     return {"ok": True, "backup": payload}
+
+
+
+
+class ExcelAssetRequest(BaseModel):
+    asset_id: int
+
+
+class ExcelSaveRequest(BaseModel):
+    asset_id: int
+    sheets: List[Dict[str, Any]]
+
+
+def _get_asset_by_id(asset_id: int) -> Dict[str, Any]:
+    with db() as con:
+        row = con.execute("SELECT * FROM course_assets WHERE id=?", (asset_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        return dict(row)
+
+
+@router.post("/assets/excel/read")
+def read_excel_asset(body: ExcelAssetRequest):
+    asset = _get_asset_by_id(body.asset_id)
+    path = BASE_DIR / asset.get("file_path", "")
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Excel file not found")
+
+    wb = load_workbook(path)
+    sheets = []
+
+    for ws in wb.worksheets:
+        rows = []
+        max_row = max(ws.max_row or 1, 20)
+        max_col = max(ws.max_column or 1, 8)
+
+        for r in range(1, max_row + 1):
+            row = []
+            for c in range(1, max_col + 1):
+                v = ws.cell(row=r, column=c).value
+                row.append("" if v is None else v)
+            rows.append(row)
+
+        sheets.append({"name": ws.title, "rows": rows})
+
+    return {"ok": True, "asset": asset, "sheets": sheets}
+
+
+@router.post("/assets/excel/save")
+def save_excel_asset(body: ExcelSaveRequest):
+    asset = _get_asset_by_id(body.asset_id)
+    path = BASE_DIR / asset.get("file_path", "")
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Excel file not found")
+
+    wb = Workbook()
+    default = wb.active
+    wb.remove(default)
+
+    for sheet in body.sheets:
+        name = str(sheet.get("name") or "Sheet")[:31]
+        ws = wb.create_sheet(title=name)
+        rows = sheet.get("rows") or []
+
+        for r_idx, row in enumerate(rows, start=1):
+            for c_idx, value in enumerate(row, start=1):
+                ws.cell(row=r_idx, column=c_idx).value = value
+
+        for col in range(1, 12):
+            ws.column_dimensions[chr(64 + col)].width = 24
+
+    if not wb.worksheets:
+        wb.create_sheet("Sheet1")
+
+    wb.save(path)
+
+    with db() as con:
+        con.execute(
+            "UPDATE course_assets SET size_bytes=? WHERE id=?",
+            (path.stat().st_size, body.asset_id)
+        )
+        con.commit()
+
+    export_all_to_backup()
+
+    return {
+        "ok": True,
+        "asset_id": body.asset_id,
+        "file_path": asset.get("file_path"),
+        "size_bytes": path.stat().st_size
+    }
 
 
 @router.post("/backup/auto_save_all")
