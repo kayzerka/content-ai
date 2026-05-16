@@ -534,6 +534,32 @@ def _get_asset_by_id(asset_id: int) -> Dict[str, Any]:
         return dict(row)
 
 
+
+
+class AssetDeleteRequest(BaseModel):
+    asset_id: int
+
+
+@router.post("/assets/delete")
+def delete_course_asset(body: AssetDeleteRequest):
+    asset = _get_asset_by_id(body.asset_id)
+    path = BASE_DIR / asset.get("file_path", "")
+
+    if path.exists() and path.is_file():
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+    with db() as con:
+        con.execute("DELETE FROM course_assets WHERE id=?", (body.asset_id,))
+        con.commit()
+
+    export_all_to_backup()
+
+    return {"ok": True, "deleted_asset_id": body.asset_id}
+
+
 @router.post("/assets/excel/read")
 def read_excel_asset(body: ExcelAssetRequest):
     asset = _get_asset_by_id(body.asset_id)
