@@ -243,8 +243,10 @@
           <button id="lesson-tables-btn">📊 Таблиці уроку</button>
           <button id="lesson-upload-btn">📎 Upload файл</button>
           <button id="lesson-video-upload-btn">🎥 Upload відео</button>
+          <button id="lesson-image-upload-btn">🖼 Upload зображення</button>
           <input id="lesson-file-input" type="file" style="display:none" multiple>
           <input id="lesson-video-input" type="file" accept="video/*" style="display:none" multiple>
+          <input id="lesson-image-input" type="file" accept="image/*" style="display:none" multiple>
         </div>
 
         <div id="lesson-assets">
@@ -261,6 +263,8 @@
     el("lesson-file-input").addEventListener("change", uploadLessonFiles);
     el("lesson-video-upload-btn").addEventListener("click", () => el("lesson-video-input").click());
     el("lesson-video-input").addEventListener("change", uploadLessonVideos);
+    el("lesson-image-upload-btn").addEventListener("click", () => el("lesson-image-input").click());
+    el("lesson-image-input").addEventListener("change", uploadLessonImages);
   }
 
   function renderAssets(lessonNo) {
@@ -411,6 +415,37 @@
     } catch (e) {
       showStatus("Помилка публікації: " + e.message, true);
       alert("Помилка публікації: " + e.message);
+    }
+  }
+
+
+
+  async function uploadLessonImages(ev) {
+    const files = Array.from(ev.target.files || []);
+    if (!files.length) return;
+
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("course_key", currentCourseKey);
+        fd.append("lesson_no", currentLessonNo);
+        fd.append("asset_type", "image");
+        fd.append("file", file);
+
+        const r = await fetch(API + "/assets/upload", {
+          method: "POST",
+          body: fd
+        });
+
+        const j = await r.json();
+        if (!r.ok || j.ok === false) throw new Error(j.detail || j.error || "image upload error");
+      }
+
+      await openCourse(currentCourseKey);
+      showStatus("Зображення завантажено + backup оновлено");
+    } catch (e) {
+      showStatus("Помилка upload зображення: " + e.message, true);
+      alert("Помилка upload зображення: " + e.message);
     }
   }
 

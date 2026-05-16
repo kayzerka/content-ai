@@ -788,10 +788,57 @@ def publish_lesson(body: LessonPublishRequest):
         if str(a.get("asset_type") or "").lower() == "video"
     ]
 
+    images = [
+        a for a in assets
+        if str(a.get("asset_type") or "").lower() in ("image", "photo")
+    ]
+
     sent_messages = []
 
     try:
-        if videos:
+        if images:
+            for idx, a in enumerate(images):
+                fpath = BASE_DIR / (a.get("file_path") or "")
+                if not fpath.exists():
+                    continue
+
+                caption = text[:950] if idx == 0 else ""
+
+                tg = _telegram_send_file(
+                    token=token,
+                    method="sendPhoto",
+                    chat_id=chat_id,
+                    file_field="photo",
+                    file_path=fpath,
+                    extra={
+                        "caption": caption
+                    }
+                )
+
+                sent_messages.append(tg)
+
+            if len(text) > 950:
+                real_chat_id, thread_id = _split_chat_id_and_thread(chat_id)
+
+                payload = {
+                    "chat_id": real_chat_id,
+                    "text": text[:3900],
+                    "disable_web_page_preview": False
+                }
+                if thread_id:
+                    payload["message_thread_id"] = thread_id
+
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=30, context=ssl._create_unverified_context()) as resp:
+                    sent_messages.append(json.loads(resp.read().decode("utf-8")))
+
+        elif videos:
             for idx, a in enumerate(videos):
                 fpath = BASE_DIR / (a.get("file_path") or "")
                 if not fpath.exists():
@@ -905,6 +952,7 @@ def publish_lesson(body: LessonPublishRequest):
         "message_id": msg_id,
         "sent_count": len(sent_messages),
         "videos_count": len(videos),
+        "images_count": len(images),
         "telegram": sent_messages
     }
 
