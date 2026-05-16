@@ -923,6 +923,37 @@ window.openExcelModal = async function(assetId) {
     try {
       let expr = raw.trim().slice(1);
 
+      
+      expr = expr.replace(/\b(ARCAN_DAY|ARCAN_MONTH|ARCAN_YEAR)\(([A-Z]+\d+)\)/gi, function(_, fn, ref) {
+        const pos = cellToRC(ref);
+        if (!pos) return "0";
+
+        const dateRaw = String(rawCell(sheet, pos.r, pos.c) ?? "").trim();
+        const m = dateRaw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+
+        if (!m) return "0";
+
+        const day = Number(m[1]);
+        const month = Number(m[2]);
+        const yearDigits = String(m[3]).split("").map(Number);
+        let yearSum = yearDigits.reduce((a,b) => a + b, 0);
+
+        function reduce22(n) {
+          n = Number(n || 0);
+          while (n > 22) n = n - 22;
+          return n;
+        }
+
+        const name = fn.toUpperCase();
+
+        if (name === "ARCAN_DAY") return String(reduce22(day));
+        if (name === "ARCAN_MONTH") return String(month);
+        if (name === "ARCAN_YEAR") return String(reduce22(yearSum));
+
+        return "0";
+      });
+
+
       expr = expr.replace(/\b(SUM|AVERAGE|AVG|MIN|MAX|COUNT)\(([A-Z]+\d+(?::[A-Z]+\d+)?)\)/gi, function(_, fn, range) {
         const vals = rangeValues(sheet, range).map(numberValue);
         const name = fn.toUpperCase();
@@ -992,6 +1023,9 @@ window.openExcelModal = async function(assetId) {
         <code>=A1*B1</code>
         <code>=SUM(A1:A10)</code>
         <code>=AVERAGE(B1:B5)</code>
+        <code>=ARCAN_DAY(A1)</code>
+        <code>=ARCAN_MONTH(A1)</code>
+        <code>=ARCAN_YEAR(A1)</code>
       </div>
 
       <div>${tabs}</div>
