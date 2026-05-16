@@ -242,7 +242,9 @@
           <button id="lesson-excel-btn">📊 Створити Excel</button>
           <button id="lesson-tables-btn">📊 Таблиці уроку</button>
           <button id="lesson-upload-btn">📎 Upload файл</button>
+          <button id="lesson-video-upload-btn">🎥 Upload відео</button>
           <input id="lesson-file-input" type="file" style="display:none" multiple>
+          <input id="lesson-video-input" type="file" accept="video/*" style="display:none" multiple>
         </div>
 
         <div id="lesson-assets">
@@ -257,6 +259,8 @@
     el("lesson-tables-btn").addEventListener("click", openLessonTablesManager);
     el("lesson-upload-btn").addEventListener("click", () => el("lesson-file-input").click());
     el("lesson-file-input").addEventListener("change", uploadLessonFiles);
+    el("lesson-video-upload-btn").addEventListener("click", () => el("lesson-video-input").click());
+    el("lesson-video-input").addEventListener("change", uploadLessonVideos);
   }
 
   function renderAssets(lessonNo) {
@@ -410,6 +414,37 @@
     }
   }
 
+
+  async function uploadLessonVideos(ev) {
+    const files = Array.from(ev.target.files || []);
+    if (!files.length) return;
+
+    try {
+      for (const file of files) {
+        const fd = new FormData();
+        fd.append("course_key", currentCourseKey);
+        fd.append("lesson_no", currentLessonNo);
+        fd.append("asset_type", "video");
+        fd.append("file", file);
+
+        const r = await fetch(API + "/assets/upload", {
+          method: "POST",
+          body: fd
+        });
+
+        const j = await r.json();
+        if (!r.ok || j.ok === false) throw new Error(j.detail || j.error || "video upload error");
+      }
+
+      await openCourse(currentCourseKey);
+      showStatus("Відео завантажено + backup оновлено");
+    } catch (e) {
+      showStatus("Помилка upload відео: " + e.message, true);
+      alert("Помилка upload відео: " + e.message);
+    }
+  }
+
+
   async function uploadLessonFiles(ev) {
     const files = Array.from(ev.target.files || []);
     if (!files.length) return;
@@ -526,9 +561,141 @@
     loadCourses();
   }
 
+
+
+  function openLessonTablesManager() {
+    const spreadsheets = (currentCourse?.assets || []).filter(a =>
+      Number(a.lesson_no) === Number(currentLessonNo) && a.asset_type === "spreadsheet"
+    );
+
+    let modal = document.getElementById("tables-manager-modal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "tables-manager-modal";
+      modal.className = "excel-modal";
+      document.body.appendChild(modal);
+    }
+
+    modal.style.display = "block";
+    modal.style.left = modal.style.left || "120px";
+    modal.style.top = modal.style.top || "100px";
+    modal.style.width = modal.style.width || "760px";
+    modal.style.height = modal.style.height || "440px";
+
+    const listHtml = spreadsheets.length
+      ? spreadsheets.map(a => `
+          <div class="table-manager-row">
+            <div>
+              <b>${escapeHtml(a.file_name || "")}</b>
+              <div style="font-size:12px;color:#6b7280;">asset_id=${a.id} · ${escapeHtml(a.file_path || "")}</div>
+            </div>
+            <div class="table-manager-actions">
+              <button onclick="window.openExcelModal(${a.id})">📊 Редагувати</button>
+              <button onclick="window.CoursesModule.deleteLessonTable(${a.id})">🗑 Видалити</button>
+            </div>
+          </div>
+        `).join("")
+      : `<div class="muted">У цьому уроці ще немає Excel-таблиць.</div>`;
+
+    modal.innerHTML = `
+      <div class="excel-modal-header" id="tables-manager-header">
+        <b>📊 Таблиці уроку ${currentLessonNo}</b>
+        <div>
+          <button id="tables-manager-create-btn">+ Створити Excel</button>
+          <button id="tables-manager-close-btn">✕</button>
+        </div>
+      </div>
+
+      <div style="padding:12px;overflow:auto;height:calc(100% - 48px);">
+        ${listHtml}
+      </div>
+
+      <div class="excel-resize-handle" id="tables-manager-resize"></div>
+    `;
+
+    document.getElementById("tables-manager-close-btn").onclick = () => {
+      modal.style.display = "none";
+    };
+
+    document.getElementById("tables-manager-create-btn").onclick = async () => {
+      await createLessonExcel();
+      await openCourse(currentCourseKey);
+      openLessonTablesManager();
+    };
+
+    makeTablesManagerDraggable(modal, "tables-manager-header");
+    makeTablesManagerResizable(modal, "tables-manager-resize");
+  }
+
+  async function deleteLessonTable(assetId) {
+    try {
+      const data = await apiPost(API + "/assets/delete", { asset_id: assetId });
+      await openCourse(currentCourseKey);
+      openLessonTablesManager();
+      showStatus("Таблицю видалено: " + assetId);
+    } catch (e) {
+      showStatus("Помилка видалення таблиці: " + e.message, true);
+      alert("Delete error: " + e.message);
+    }
+  }
+
+  function makeTablesManagerDraggable(modal, headerId) {
+    const header = document.getElementById(headerId);
+    if (!header) return;
+
+    let dragging = false, sx = 0, sy = 0, sl = 0, st = 0;
+
+    header.onmousedown = e => {
+      if (e.target.tagName === "BUTTON") return;
+      dragging = true;
+      sx = e.clientX;
+      sy = e.clientY;
+      sl = parseInt(modal.style.left || "120", 10);
+      st = parseInt(modal.style.top || "100", 10);
+    };
+
+    window.addEventListener("mousemove", e => {
+      if (!dragging) return;
+      modal.style.left = (sl + e.clientX - sx) + "px";
+      modal.style.top = (st + e.clientY - sy) + "px";
+    });
+
+    window.addEventListener("mouseup", () => {
+      dragging = false;
+    });
+  }
+
+  function makeTablesManagerResizable(modal, handleId) {
+    const handle = document.getElementById(handleId);
+    if (!handle) return;
+
+    let resizing = false, sx = 0, sy = 0, sw = 0, sh = 0;
+
+    handle.onmousedown = e => {
+      resizing = true;
+      sx = e.clientX;
+      sy = e.clientY;
+      sw = modal.offsetWidth;
+      sh = modal.offsetHeight;
+      e.preventDefault();
+    };
+
+    window.addEventListener("mousemove", e => {
+      if (!resizing) return;
+      modal.style.width = Math.max(520, sw + e.clientX - sx) + "px";
+      modal.style.height = Math.max(320, sh + e.clientY - sy) + "px";
+    });
+
+    window.addEventListener("mouseup", () => {
+      resizing = false;
+    });
+  }
+
+
   window.CoursesModule = {
     init: initCoursesUI,
-    load: loadCourses
+    load: loadCourses,
+    deleteLessonTable: deleteLessonTable
   };
 
   document.addEventListener("DOMContentLoaded", initCoursesUI);

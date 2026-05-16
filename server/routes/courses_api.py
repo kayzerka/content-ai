@@ -1,6 +1,8 @@
 import os
 import re
 import json
+import uuid
+import mimetypes
 import shutil
 import sqlite3
 import ssl
@@ -663,6 +665,63 @@ def restore_from_static_backup():
 
 
 
+
+
+def _split_chat_id_and_thread(chat_id: str):
+    chat_id = str(chat_id or "").strip()
+    if ":" in chat_id:
+        base, thread = chat_id.split(":", 1)
+        try:
+            return base, int(thread)
+        except Exception:
+            return base, None
+    return chat_id, None
+
+
+def _telegram_send_file(token: str, method: str, chat_id: str, file_field: str, file_path: Path, extra: Dict[str, Any]):
+    import urllib.request
+
+    real_chat_id, thread_id = _split_chat_id_and_thread(chat_id)
+
+    boundary = "----CourseBoundary" + uuid.uuid4().hex
+    body = bytearray()
+
+    fields = {"chat_id": real_chat_id}
+    if thread_id:
+        fields["message_thread_id"] = str(thread_id)
+
+    for k, v in {**fields, **extra}.items():
+        if v is None:
+            continue
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(f'Content-Disposition: form-data; name="{k}"\r\n\r\n'.encode())
+        body.extend(str(v).encode("utf-8"))
+        body.extend(b"\r\n")
+
+    filename = file_path.name
+    mime = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(
+        f'Content-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'.encode()
+    )
+    body.extend(f"Content-Type: {mime}\r\n\r\n".encode())
+    body.extend(file_path.read_bytes())
+    body.extend(b"\r\n")
+    body.extend(f"--{boundary}--\r\n".encode())
+
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    req = urllib.request.Request(
+        url,
+        data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST"
+    )
+
+    with urllib.request.urlopen(req, timeout=120, context=ssl._create_unverified_context()) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
 class LessonPublishRequest(BaseModel):
     course_key: str
     lesson_no: int
@@ -688,6 +747,12 @@ def publish_lesson(body: LessonPublishRequest):
 
         if not l:
             raise HTTPException(status_code=404, detail="Lesson not found")
+
+        assets = rows_to_dicts(con.execute("""
+            SELECT * FROM course_assets
+            WHERE course_key=? AND lesson_no=?
+            ORDER BY id
+        """, (body.course_key, body.lesson_no)).fetchall())
 
         course = dict(c)
         lesson = dict(l)
@@ -718,38 +783,89 @@ def publish_lesson(body: LessonPublishRequest):
         or "Lesson"
     )
 
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    videos = [
+        a for a in assets
+        if str(a.get("asset_type") or "").lower() == "video"
+    ]
 
-    payload = json.dumps({
-        "chat_id": chat_id,
-        "text": text[:3900],
-        "disable_web_page_preview": False
-    }).encode("utf-8")
-
-    req = urllib.request.Request(
-        url,
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
+    sent_messages = []
 
     try:
-        with urllib.request.urlopen(req, timeout=30, context=ssl._create_unverified_context()) as resp:
-            raw = resp.read().decode("utf-8")
-            tg = json.loads(raw)
+        if videos:
+            for idx, a in enumerate(videos):
+                fpath = BASE_DIR / (a.get("file_path") or "")
+                if not fpath.exists():
+                    continue
+
+                caption = text[:950] if idx == 0 else ""
+
+                tg = _telegram_send_file(
+                    token=token,
+                    method="sendVideo",
+                    chat_id=chat_id,
+                    file_field="video",
+                    file_path=fpath,
+                    extra={
+                        "caption": caption,
+                        "supports_streaming": "true"
+                    }
+                )
+
+                sent_messages.append(tg)
+
+            if len(text) > 950:
+                real_chat_id, thread_id = _split_chat_id_and_thread(chat_id)
+
+                payload = {
+                    "chat_id": real_chat_id,
+                    "text": text[:3900],
+                    "disable_web_page_preview": False
+                }
+                if thread_id:
+                    payload["message_thread_id"] = thread_id
+
+                url = f"https://api.telegram.org/bot{token}/sendMessage"
+                req = urllib.request.Request(
+                    url,
+                    data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=30, context=ssl._create_unverified_context()) as resp:
+                    sent_messages.append(json.loads(resp.read().decode("utf-8")))
+
+        else:
+            real_chat_id, thread_id = _split_chat_id_and_thread(chat_id)
+
+            payload = {
+                "chat_id": real_chat_id,
+                "text": text[:3900],
+                "disable_web_page_preview": False
+            }
+            if thread_id:
+                payload["message_thread_id"] = thread_id
+
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=30, context=ssl._create_unverified_context()) as resp:
+                sent_messages.append(json.loads(resp.read().decode("utf-8")))
+
     except Exception as e:
-        body = ""
+        body_text = ""
         try:
-            body = e.read().decode("utf-8")
+            body_text = e.read().decode("utf-8")
         except Exception:
-            body = str(e)
-        raise HTTPException(status_code=502, detail=f"Telegram send error: {body}")
+            body_text = str(e)
+        raise HTTPException(status_code=502, detail=f"Telegram send error: {body_text}")
 
-    ok = bool(tg.get("ok"))
-
-    msg_id = ""
-    if ok:
-        msg_id = str((tg.get("result") or {}).get("message_id") or "")
+    ok = any(bool(x.get("ok")) for x in sent_messages)
+    first_ok = next((x for x in sent_messages if x.get("ok")), {})
+    msg_id = str((first_ok.get("result") or {}).get("message_id") or "")
 
     with db() as con:
         con.execute("""
@@ -762,7 +878,7 @@ def publish_lesson(body: LessonPublishRequest):
             chat_id,
             msg_id,
             "published" if ok else "error",
-            "" if ok else json.dumps(tg, ensure_ascii=False),
+            "" if ok else json.dumps(sent_messages, ensure_ascii=False),
             now_iso()
         ))
 
@@ -786,9 +902,13 @@ def publish_lesson(body: LessonPublishRequest):
 
     return {
         "ok": ok,
-        "telegram": tg,
-        "message_id": msg_id
+        "message_id": msg_id,
+        "sent_count": len(sent_messages),
+        "videos_count": len(videos),
+        "telegram": sent_messages
     }
+
+
 
 
 @router.get("/telegram/targets")
