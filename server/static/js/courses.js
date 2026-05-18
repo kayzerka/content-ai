@@ -330,34 +330,72 @@
   }
 
 
+  
   async function generateLessonAI() {
-    try {
+    const btn = el("lesson-generate-btn");
 
+    try {
       const payload = {
         course_key: currentCourseKey,
         lesson_no: currentLessonNo,
-        title: el("lesson-title").value,
-        topic: el("lesson-topic").value,
-        ai_prompt: el("lesson-ai-prompt").value
+        title: el("lesson-title")?.value || "",
+        topic: el("lesson-topic")?.value || "",
+        ai_prompt: el("lesson-ai-prompt")?.value || ""
       };
 
-      showStatus("AI генерує урок...");
+      if (!payload.ai_prompt.trim()) {
+        alert("Спочатку заповни поле “Опис уроку / завдання для AI”.");
+        return;
+      }
+
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "⏳ Генерується...";
+      }
+
+      showStatus("⏳ AI генерує урок. Зачекай...");
 
       const data = await apiPost(API + "/lesson/generate", payload);
 
-      if (data.lecture_text) {
-        el("lesson-lecture-text").value = data.lecture_text;
+      console.log("[Courses AI generated]", data);
+
+      const lectureEl = document.getElementById("lesson-lecture");
+      const postEl = document.getElementById("lesson-telegram-post");
+
+      if (!lectureEl) {
+        throw new Error("Поле lesson-lecture не знайдено на фронті");
       }
 
-      if (data.telegram_post_text) {
-        el("lesson-telegram-post").value = data.telegram_post_text;
+      if (!postEl) {
+        throw new Error("Поле lesson-telegram-post не знайдено на фронті");
       }
 
-      showStatus("AI урок згенеровано");
+      lectureEl.value = data.lecture_text || "";
+      postEl.value = data.telegram_post_text || "";
 
+      await apiPost(API + "/lesson/save", {
+        course_key: currentCourseKey,
+        lesson_no: currentLessonNo,
+        title: payload.title,
+        topic: payload.topic,
+        ai_prompt: payload.ai_prompt,
+        lecture_text: lectureEl.value,
+        telegram_post_text: postEl.value,
+        status: el("lesson-status")?.value || "draft"
+      });
+
+      await openCourse(currentCourseKey);
+
+      showStatus("✅ AI урок згенеровано і збережено");
     } catch (e) {
-      showStatus("AI generation error: " + e.message, true);
+      console.error("[Courses AI generation error]", e);
+      showStatus("❌ AI generation error: " + e.message, true);
       alert("AI generation error: " + e.message);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "🤖 Згенерувати урок AI";
+      }
     }
   }
 
