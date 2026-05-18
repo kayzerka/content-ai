@@ -11,6 +11,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
+from openai import OpenAI
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from openpyxl import Workbook, load_workbook
@@ -345,6 +346,97 @@ def get_course(course_key: str):
         "lessons": lessons,
         "assets": assets,
     }
+
+
+
+
+class LessonGenerateRequest(BaseModel):
+    course_key: str
+    lesson_no: int
+    title: Optional[str] = ""
+    topic: Optional[str] = ""
+    ai_prompt: Optional[str] = ""
+
+
+@router.post("/lesson/generate")
+def generate_lesson_ai(body: LessonGenerateRequest):
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY missing")
+
+    with db() as con:
+        c = con.execute(
+            "SELECT * FROM course_projects WHERE course_key=?",
+            (body.course_key,)
+        ).fetchone()
+
+        if not c:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        course = dict(c)
+
+    system_prompt = course.get("ai_system_prompt") or "Пиши українською."
+
+    user_prompt = f"""
+Курс: {course.get("title")}
+
+Урок: {body.title}
+Тема: {body.topic}
+
+Завдання:
+{body.ai_prompt}
+
+Поверни JSON:
+
+{{
+  "lecture_text": "...",
+  "telegram_post_text": "..."
+}}
+
+lecture_text:
+- структурований
+- великий текст уроку
+- з підзаголовками
+- українською
+
+telegram_post_text:
+- коротший
+- емоційний
+- для Telegram
+"""
+
+    try:
+        client = OpenAI(api_key=api_key)
+
+        resp = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[
+                {"role":"system","content":system_prompt},
+                {"role":"user","content":user_prompt}
+            ],
+            temperature=0.7
+        )
+
+        txt = resp.choices[0].message.content.strip()
+
+        try:
+            parsed = json.loads(txt)
+        except Exception:
+            parsed = {
+                "lecture_text": txt,
+                "telegram_post_text": txt[:1500]
+            }
+
+        return {
+            "ok": True,
+            "lecture_text": parsed.get("lecture_text", ""),
+            "telegram_post_text": parsed.get("telegram_post_text", "")
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.post("/lesson/save")
@@ -726,6 +818,135 @@ class LessonPublishRequest(BaseModel):
     course_key: str
     lesson_no: int
     telegram_chat_id: Optional[str] = None
+
+
+
+
+class CourseInviteRequest(BaseModel):
+    course_key: str
+    lesson_no: Optional[int] = None
+    planner_chat_id: Optional[str] = None
+
+
+@router.post("/invite/send-to-planner")
+def send_course_invite_to_planner(body: CourseInviteRequest):
+    with db() as con:
+        c = con.execute(
+            "SELECT * FROM course_projects WHERE course_key=?",
+            (body.course_key,)
+        ).fetchone()
+
+        if not c:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        course = dict(c)
+
+        lesson = None
+        if body.lesson_no:
+            l = con.execute(
+                "SELECT * FROM course_lessons WHERE course_key=? AND lesson_no=?",
+                (body.course_key, body.lesson_no)
+            ).fetchone()
+            lesson = dict(l) if l else None
+
+    token = (
+        os.getenv("TELEGRAM_BOT_TOKEN")
+        or os.getenv("BOT_TOKEN")
+        or ""
+    ).strip()
+
+    if not token:
+        raise HTTPException(status_code=400, detail="Planner bot token missing")
+
+    planner_chat_id = (
+        body.planner_chat_id
+        or os.getenv("TELEGRAM_CHAT_ID")
+        or os.getenv("PLANNER_CHAT_ID")
+        or "330800472"
+    )
+
+    course_title = course.get("title") or body.course_key
+    channel_url = (
+        course.get("telegram_channel_url")
+        or course.get("telegram_chat_id")
+        or ""
+    )
+
+    lesson_title = ""
+    if lesson:
+        lesson_title = lesson.get("title") or f"Урок {body.lesson_no}"
+
+    invite_text = f"""✨ Запрошення на курс: {course_title}
+
+Вітаю! Запрошую тебе до навчального простору курсу «{course_title}».
+
+{("Тема уроку: " + lesson_title) if lesson_title else ""}
+
+Тут ти зможеш отримати матеріали, уроки та практики у зручному форматі.
+
+Приєднатися можна тут:
+{channel_url}
+""".strip()
+
+    admin_text = f"""📨 ГОТОВЕ ЗАПРОШЕННЯ ДЛЯ КЛІЄНТА
+
+Скопіюй текст нижче і відправ клієнту в Telegram:
+
+————————————
+
+{invite_text}
+
+————————————
+
+Курс: {course_title}
+{("Урок: " + lesson_title) if lesson_title else ""}
+""".strip()
+
+    real_chat_id, thread_id = _split_chat_id_and_thread(str(planner_chat_id))
+
+    payload = {
+        "chat_id": real_chat_id,
+        "text": admin_text,
+        "disable_web_page_preview": False,
+    }
+
+    if thread_id:
+        payload["message_thread_id"] = thread_id
+
+    if channel_url:
+        payload["reply_markup"] = {
+            "inline_keyboard": [[
+                {
+                    "text": "🔗 Відкрити курс / канал",
+                    "url": channel_url if channel_url.startswith("http") else "https://t.me/" + channel_url.lstrip("@")
+                }
+            ]]
+        }
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=ssl._create_unverified_context()) as resp:
+            tg = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        body_text = ""
+        try:
+            body_text = e.read().decode("utf-8")
+        except Exception:
+            body_text = str(e)
+        raise HTTPException(status_code=502, detail=f"Telegram invite error: {body_text}")
+
+    return {
+        "ok": bool(tg.get("ok")),
+        "telegram": tg,
+        "invite_text": invite_text
+    }
 
 
 @router.post("/publish/lesson")

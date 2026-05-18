@@ -238,6 +238,7 @@
 
         <div class="course-actions">
           <button id="lesson-save-btn">💾 Зберегти урок</button>
+          <button id="lesson-generate-btn">🤖 Згенерувати урок AI</button>
           <button id="lesson-publish-btn">🚀 Опублікувати у канал</button>
           <button id="course-invite-btn">📨 Відправити запрошення</button>
           <button id="lesson-excel-btn">📊 Створити Excel</button>
@@ -257,6 +258,7 @@
     `;
 
     el("lesson-save-btn").addEventListener("click", saveLesson);
+    el("lesson-generate-btn").addEventListener("click", generateLessonAI);
     el("lesson-publish-btn").addEventListener("click", publishLesson);
     el("course-invite-btn").addEventListener("click", sendCourseInviteToPlanner);
     el("lesson-excel-btn").addEventListener("click", createLessonExcel);
@@ -326,6 +328,39 @@
       showStatus("Помилка збереження курсу: " + e.message, true);
     }
   }
+
+
+  async function generateLessonAI() {
+    try {
+
+      const payload = {
+        course_key: currentCourseKey,
+        lesson_no: currentLessonNo,
+        title: el("lesson-title").value,
+        topic: el("lesson-topic").value,
+        ai_prompt: el("lesson-ai-prompt").value
+      };
+
+      showStatus("AI генерує урок...");
+
+      const data = await apiPost(API + "/lesson/generate", payload);
+
+      if (data.lecture_text) {
+        el("lesson-lecture-text").value = data.lecture_text;
+      }
+
+      if (data.telegram_post_text) {
+        el("lesson-telegram-post").value = data.telegram_post_text;
+      }
+
+      showStatus("AI урок згенеровано");
+
+    } catch (e) {
+      showStatus("AI generation error: " + e.message, true);
+      alert("AI generation error: " + e.message);
+    }
+  }
+
 
   async function saveLesson() {
     try {
