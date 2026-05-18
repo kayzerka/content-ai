@@ -414,8 +414,7 @@ telegram_post_text:
             messages=[
                 {"role":"system","content":system_prompt},
                 {"role":"user","content":user_prompt}
-            ],
-            temperature=0.7
+            ]
         )
 
         txt = resp.choices[0].message.content.strip()
