@@ -46,7 +46,7 @@ def _init_db():
         con.commit()
 
 
-def _main_keyboard():
+def _inline_calendar_keyboard():
     return {
         "keyboard": [
             [{"text": "📅 Сьогодні"}, {"text": "📆 7 днів"}],
@@ -56,6 +56,36 @@ def _main_keyboard():
         "resize_keyboard": True,
         "one_time_keyboard": False,
     }
+
+def _inline_calendar_keyboard():
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "📅 Сьогодні", "callback_data": "astranova:today"},
+                {"text": "📆 7 днів", "callback_data": "astranova:7"},
+            ],
+            [
+                {"text": "🗓 15 днів", "callback_data": "astranova:15"},
+                {"text": "🌙 Місяць", "callback_data": "astranova:month"},
+            ],
+            [
+                {"text": "⚙️ Мій профіль", "callback_data": "astranova:profile"},
+            ],
+        ]
+    }
+
+
+
+def _tg_answer_callback(callback_query_id: str):
+    token = os.getenv("ASTRANOVA_BOT_TOKEN")
+    if not token:
+        return
+
+    url = f"https://api.telegram.org/bot{token}/answerCallbackQuery"
+    try:
+        requests.post(url, json={"callback_query_id": callback_query_id}, timeout=10)
+    except Exception as e:
+        print("ASTRANOVA answerCallback error:", repr(e))
 
 
 def _tg_send_message(chat_id: int | str, text: str, reply_markup: dict | None = None):
@@ -161,7 +191,7 @@ def _send_today(chat_id: int | str, telegram_user_id: str):
 
     report = data.get("report") if isinstance(data, dict) else None
     if not report:
-        _tg_send_message(chat_id, "Поки не можу знайти прогноз на сьогодні. Спробуйте 📆 7 днів.", _main_keyboard())
+        _tg_send_message(chat_id, "Поки не можу знайти прогноз на сьогодні. Спробуйте 📆 7 днів.", _inline_calendar_keyboard())
         return
 
     text = report.get("report_text") or (
@@ -172,7 +202,7 @@ def _send_today(chat_id: int | str, telegram_user_id: str):
         f"🧭 <b>Рекомендація:</b>\n{report.get('recommendation')}"
     )
 
-    _tg_send_message(chat_id, text, _main_keyboard())
+    _tg_send_message(chat_id, text, _inline_calendar_keyboard())
 
 
 def _send_period(chat_id: int | str, telegram_user_id: str, period: str):
@@ -182,12 +212,12 @@ def _send_period(chat_id: int | str, telegram_user_id: str, period: str):
         _tg_send_message(
             chat_id,
             "Не можу сформувати календар. Можливо, ще не збережена дата народження.",
-            _main_keyboard()
+            _inline_calendar_keyboard()
         )
         return
 
     text = data.get("text") or "Календар поки порожній."
-    _tg_send_message(chat_id, text, _main_keyboard())
+    _tg_send_message(chat_id, text, _inline_calendar_keyboard())
 
 
 def _send_profile(chat_id: int | str, user: dict):
@@ -202,7 +232,7 @@ def _send_profile(chat_id: int | str, user: dict):
         f"Поточне місце: <b>{user.get('current_location') or '—'}</b>\n\n"
         "Далі підключимо зміну профілю і час щоденного повідомлення."
     )
-    _tg_send_message(chat_id, text, _main_keyboard())
+    _tg_send_message(chat_id, text, _inline_calendar_keyboard())
 
 
 def _parse_birth_date(text: str) -> str | None:
@@ -234,6 +264,54 @@ async def astranova_webhook(request: Request):
     data = await request.json()
     print("ASTRANOVA UPDATE:", data)
 
+    callback = data.get("callback_query") or {}
+    if callback:
+        callback_id = callback.get("id")
+        callback_data = callback.get("data") or ""
+        cb_message = callback.get("message") or {}
+        cb_chat = cb_message.get("chat") or {}
+        cb_chat_id = cb_chat.get("id")
+        cb_from = callback.get("from") or {}
+        cb_user_id = str(cb_from.get("id") or "")
+
+        if callback_id:
+            _tg_answer_callback(callback_id)
+
+        user = _get_user(cb_user_id) if cb_user_id else None
+
+        if not cb_chat_id or not cb_user_id:
+            return {"ok": True, "reason": "bad_callback"}
+
+        if not user:
+            _tg_send_message(
+                cb_chat_id,
+                "Спочатку натисніть /start і введіть дату народження.",
+                _inline_calendar_keyboard()
+            )
+            return {"ok": True}
+
+        if callback_data == "astranova:today":
+            _send_today(cb_chat_id, cb_user_id)
+            return {"ok": True}
+
+        if callback_data == "astranova:7":
+            _send_period(cb_chat_id, cb_user_id, "7")
+            return {"ok": True}
+
+        if callback_data == "astranova:15":
+            _send_period(cb_chat_id, cb_user_id, "15")
+            return {"ok": True}
+
+        if callback_data == "astranova:month":
+            _send_period(cb_chat_id, cb_user_id, "month")
+            return {"ok": True}
+
+        if callback_data == "astranova:profile":
+            _send_profile(cb_chat_id, user)
+            return {"ok": True}
+
+        return {"ok": True, "reason": "unknown_callback"}
+
     message = data.get("message") or {}
     chat = message.get("chat") or {}
     chat_id = chat.get("id")
@@ -261,7 +339,7 @@ async def astranova_webhook(request: Request):
             "Для початку введіть дату народження у форматі:\n"
             "<b>ДД.ММ.РРРР</b>\n\n"
             "Наприклад: <b>12.05.1990</b>",
-            _main_keyboard()
+            _inline_calendar_keyboard()
         )
         return {"ok": True}
 
@@ -304,7 +382,7 @@ async def astranova_webhook(request: Request):
             f"<b>{birth_date}</b>\n\n"
             "Я вже сформував перший календар на 7 днів.\n\n"
             "Оберіть дію нижче:",
-            _main_keyboard()
+            _inline_calendar_keyboard()
         )
         return {"ok": True}
 
@@ -350,7 +428,7 @@ def astranova_debug_send(chat_id: str):
         "chat_id": chat_id,
         "text": "✅ AstraNova debug-send працює",
         "parse_mode": "HTML",
-        "reply_markup": _main_keyboard(),
+        "reply_markup": _inline_calendar_keyboard(),
     }
 
     try:
