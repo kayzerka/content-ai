@@ -9,6 +9,7 @@ from datetime import datetime
 import requests
 from fastapi import APIRouter, Request
 from routes.astranova_reports_api import generate_and_save_reports
+from routes.astranova_backup_api import export_users_to_file_and_github
 
 router = APIRouter(tags=["astranova-bot"])
 
@@ -238,6 +239,19 @@ def _get_reports(telegram_user_id: str, period: str = "7"):
     )
 
 
+def _send_processing(chat_id: int | str, period_label: str = "прогноз"):
+    _tg_send_message(
+        chat_id,
+        "🔎 <b>Аналізую ваші персональні дані...</b>\n\n"
+        f"Формую {period_label}:\n"
+        "🌙 цикли дня\n"
+        "🔢 нумерологічний код\n"
+        "🌀 кармічний фон\n"
+        "📍 персональний контекст\n\n"
+        "Зачекайте кілька секунд."
+    )
+
+
 def _send_today(chat_id: int | str, telegram_user_id: str):
     data = _get_reports(telegram_user_id, "today")
 
@@ -354,18 +368,22 @@ async def astranova_webhook(request: Request):
             return {"ok": True}
 
         if callback_data == "astranova:today":
+            _send_processing(cb_chat_id, "прогноз на сьогодні")
             _send_today(cb_chat_id, cb_user_id)
             return {"ok": True}
 
         if callback_data == "astranova:7":
+            _send_processing(cb_chat_id, "календар на 7 днів")
             _send_period(cb_chat_id, cb_user_id, "7")
             return {"ok": True}
 
         if callback_data == "astranova:15":
+            _send_processing(cb_chat_id, "календар на 15 днів")
             _send_period(cb_chat_id, cb_user_id, "15")
             return {"ok": True}
 
         if callback_data == "astranova:month":
+            _send_processing(cb_chat_id, "календар на поточний місяць")
             _send_period(cb_chat_id, cb_user_id, "month")
             return {"ok": True}
 
@@ -390,6 +408,7 @@ async def astranova_webhook(request: Request):
     if text.startswith("/start"):
         payload = text.replace("/start", "", 1).strip() or None
         _upsert_user(message, payload)
+        _safe_backup_users("start")
         user = _get_user(tg_user_id) or {}
 
         if not user.get("birth_date"):
@@ -466,6 +485,7 @@ async def astranova_webhook(request: Request):
             return {"ok": True}
 
         _set_birth_date(tg_user_id, birth_date)
+        _safe_backup_users("birth_date_saved")
 
         _tg_send_message(
             chat_id,
@@ -488,6 +508,7 @@ async def astranova_webhook(request: Request):
             return {"ok": True}
 
         _set_birth_time(tg_user_id, birth_time)
+        _safe_backup_users("birth_time_saved")
 
         _tg_send_message(
             chat_id,
@@ -503,6 +524,7 @@ async def astranova_webhook(request: Request):
             return {"ok": True}
 
         _set_birth_place(tg_user_id, text)
+        _safe_backup_users("birth_place_saved")
 
         _tg_send_message(
             chat_id,
@@ -518,6 +540,7 @@ async def astranova_webhook(request: Request):
             return {"ok": True}
 
         _set_current_location(tg_user_id, text)
+        _safe_backup_users("current_location_saved")
 
         generate_and_save_reports(
             telegram_user_id=tg_user_id,
@@ -535,18 +558,22 @@ async def astranova_webhook(request: Request):
 
 
     if text in ("📅 Сьогодні", "сьогодні", "Сегодня", "/today"):
+        _send_processing(chat_id, "прогноз на сьогодні")
         _send_today(chat_id, tg_user_id)
         return {"ok": True}
 
     if text in ("📆 7 днів", "7", "7 днів", "/calendar", "/week"):
+        _send_processing(chat_id, "календар на 7 днів")
         _send_period(chat_id, tg_user_id, "7")
         return {"ok": True}
 
     if text in ("🗓 15 днів", "15", "15 днів"):
+        _send_processing(chat_id, "календар на 15 днів")
         _send_period(chat_id, tg_user_id, "15")
         return {"ok": True}
 
     if text in ("🌙 Місяць", "місяць", "Місяць", "month"):
+        _send_processing(chat_id, "календар на поточний місяць")
         _send_period(chat_id, tg_user_id, "month")
         return {"ok": True}
 

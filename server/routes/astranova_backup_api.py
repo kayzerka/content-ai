@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import base64
+import requests
 import os
 import sqlite3
 from pathlib import Path
@@ -47,29 +49,49 @@ def _init_db():
         con.commit()
 
 
-@router.get("/counts")
-def counts():
-    _init_db()
-    with _db() as con:
-        total = con.execute("SELECT COUNT(*) FROM astranova_users").fetchone()[0]
-        with_birth = con.execute(
-            "SELECT COUNT(*) FROM astranova_users WHERE birth_date IS NOT NULL AND birth_date != ''"
-        ).fetchone()[0]
+
+
+def _github_put_file(path: str, content_text: str, message: str):
+    token = os.getenv("GITHUB_TOKEN")
+    repo = os.getenv("GITHUB_REPO", "kayzerka/content-ai")
+    branch = os.getenv("GITHUB_BRANCH", "main")
+
+    if not token:
+        return {"ok": False, "error": "GITHUB_TOKEN missing"}
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    sha = None
+    get_r = requests.get(api_url, headers=headers, params={"ref": branch}, timeout=20)
+    if get_r.status_code == 200:
+        sha = get_r.json().get("sha")
+
+    payload = {
+        "message": message,
+        "content": base64.b64encode(content_text.encode("utf-8")).decode("ascii"),
+        "branch": branch,
+    }
+
+    if sha:
+        payload["sha"] = sha
+
+    put_r = requests.put(api_url, headers=headers, json=payload, timeout=30)
 
     return {
-        "ok": True,
-        "db_path": str(DB_PATH),
-        "total_users": total,
-        "users_with_birth_date": with_birth,
-        "backup_file": str(BACKUP_FILE),
-        "backup_exists": BACKUP_FILE.exists(),
+        "ok": put_r.status_code in (200, 201),
+        "status_code": put_r.status_code,
+        "response": put_r.text[:1000],
+        "path": path,
     }
 
 
-@router.get("/export")
-def export_users():
+def export_users_payload():
     _init_db()
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
     with _db() as con:
         con.row_factory = sqlite3.Row
@@ -92,7 +114,7 @@ def export_users():
             ORDER BY id ASC
         """).fetchall()
 
-    data: Dict[str, Any] = {
+    return {
         "ok": True,
         "kind": "astranova_users_backup_v1",
         "exported_at": datetime.utcnow().isoformat() + "Z",
@@ -100,17 +122,58 @@ def export_users():
         "users": [dict(r) for r in rows],
     }
 
-    BACKUP_FILE.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8"
+
+def export_users_to_file_and_github(reason: str = "manual"):
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+    data = export_users_payload()
+    text = json.dumps(data, ensure_ascii=False, indent=2)
+
+    BACKUP_FILE.write_text(text, encoding="utf-8")
+
+    github = _github_put_file(
+        "server/backups/astranova-users-latest.json",
+        text,
+        f"backup AstraNova users: {reason}",
     )
 
     return {
         "ok": True,
-        "count": len(rows),
+        "count": data.get("count", 0),
         "backup_file": str(BACKUP_FILE),
+        "github": github,
         "data": data,
     }
+
+
+@router.get("/counts")
+def counts():
+    _init_db()
+    with _db() as con:
+        total = con.execute("SELECT COUNT(*) FROM astranova_users").fetchone()[0]
+        with_birth = con.execute(
+            "SELECT COUNT(*) FROM astranova_users WHERE birth_date IS NOT NULL AND birth_date != ''"
+        ).fetchone()[0]
+
+    return {
+        "ok": True,
+        "db_path": str(DB_PATH),
+        "total_users": total,
+        "users_with_birth_date": with_birth,
+        "backup_file": str(BACKUP_FILE),
+        "backup_exists": BACKUP_FILE.exists(),
+    }
+
+
+@router.get("/export")
+def export_users():
+    return export_users_to_file_and_github("manual_export")
+
+
+
+@router.get("/github/export")
+def github_export():
+    return export_users_to_file_and_github("manual_github_export")
 
 
 @router.post("/restore")
