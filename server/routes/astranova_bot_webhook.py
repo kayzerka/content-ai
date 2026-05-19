@@ -337,3 +337,28 @@ async def astranova_webhook(request: Request):
     )
 
     return {"ok": True}
+
+
+@router.get("/api/astranova/bot/debug-send")
+def astranova_debug_send(chat_id: str):
+    token = os.getenv("ASTRANOVA_BOT_TOKEN")
+    if not token:
+        return {"ok": False, "error": "ASTRANOVA_BOT_TOKEN missing"}
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": "✅ AstraNova debug-send працює",
+        "parse_mode": "HTML",
+        "reply_markup": _main_keyboard(),
+    }
+
+    try:
+        r = requests.post(url, json=payload, timeout=15)
+        return {
+            "ok": r.ok,
+            "status_code": r.status_code,
+            "telegram_response": r.text[:1000],
+        }
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
