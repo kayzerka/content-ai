@@ -165,6 +165,58 @@ def _set_birth_date(telegram_user_id: str, birth_date_iso: str):
         con.commit()
 
 
+def _set_birth_time(telegram_user_id: str, birth_time: str | None):
+    with _db() as con:
+        con.execute("""
+        UPDATE astranova_users
+        SET birth_time=?,
+            onboarding_state='awaiting_birth_place',
+            updated_at=CURRENT_TIMESTAMP
+        WHERE telegram_user_id=?
+        """, (birth_time, telegram_user_id))
+        con.commit()
+
+
+def _set_birth_place(telegram_user_id: str, birth_place: str):
+    with _db() as con:
+        con.execute("""
+        UPDATE astranova_users
+        SET birth_place=?,
+            onboarding_state='awaiting_current_location',
+            updated_at=CURRENT_TIMESTAMP
+        WHERE telegram_user_id=?
+        """, (birth_place, telegram_user_id))
+        con.commit()
+
+
+def _set_current_location(telegram_user_id: str, current_location: str):
+    with _db() as con:
+        con.execute("""
+        UPDATE astranova_users
+        SET current_location=?,
+            onboarding_state='completed',
+            updated_at=CURRENT_TIMESTAMP
+        WHERE telegram_user_id=?
+        """, (current_location, telegram_user_id))
+        con.commit()
+
+
+def _parse_birth_time(text: str) -> str | None:
+    t = (text or "").strip().lower()
+    if t in ("не знаю", "незнаю", "не знаю.", "нема", "-", "skip"):
+        return None
+
+    m = re.match(r"^(\d{1,2})[:.](\d{2})$", t)
+    if not m:
+        return None
+
+    hh, mm = int(m.group(1)), int(m.group(2))
+    if 0 <= hh <= 23 and 0 <= mm <= 59:
+        return f"{hh:02d}:{mm:02d}"
+
+    return None
+
+
 
 def _get_reports(telegram_user_id: str, period: str = "7"):
     _init_db()
@@ -285,8 +337,19 @@ async def astranova_webhook(request: Request):
         if not user:
             _tg_send_message(
                 cb_chat_id,
-                "Спочатку натисніть /start і введіть дату народження.",
-                _inline_calendar_keyboard()
+                "Спочатку натисніть /start і введіть дату народження."
+            )
+            return {"ok": True}
+
+        if not user.get("birth_date") or not user.get("birth_place") or not user.get("current_location"):
+            _tg_send_message(
+                cb_chat_id,
+                "Профіль ще не заповнений повністю.\n\n"
+                "Натисніть /start і пройдіть кроки:\n"
+                "1) дата народження\n"
+                "2) час народження\n"
+                "3) місце народження\n"
+                "4) поточне місце"
             )
             return {"ok": True}
 
@@ -327,18 +390,51 @@ async def astranova_webhook(request: Request):
     if text.startswith("/start"):
         payload = text.replace("/start", "", 1).strip() or None
         _upsert_user(message, payload)
+        user = _get_user(tg_user_id) or {}
+
+        if not user.get("birth_date"):
+            _tg_send_message(
+                chat_id,
+                "✨ <b>Вітаю в AstraNova</b>\n\n"
+                "Я створю персональний календар безпеки на основі:\n"
+                "🌙 астрологічних циклів\n"
+                "🔢 нумерології\n"
+                "🌀 кармології\n"
+                "📍 місця перебування\n\n"
+                "Щоб почати, введіть дату народження у форматі:\n"
+                "<b>ДД.ММ.РРРР</b>\n\n"
+                "Наприклад: <b>12.05.1990</b>"
+            )
+            return {"ok": True}
+
+        if not user.get("birth_time") and user.get("onboarding_state") == "awaiting_birth_time":
+            _tg_send_message(
+                chat_id,
+                "Введіть час народження у форматі <b>ГГ:ХХ</b>.\n"
+                "Якщо не знаєте — напишіть <b>не знаю</b>."
+            )
+            return {"ok": True}
+
+        if not user.get("birth_place"):
+            _tg_send_message(
+                chat_id,
+                "Введіть місце народження.\n\n"
+                "Наприклад: <b>Київ, Україна</b>"
+            )
+            return {"ok": True}
+
+        if not user.get("current_location"):
+            _tg_send_message(
+                chat_id,
+                "Введіть поточне місце перебування.\n\n"
+                "Наприклад: <b>Wesel, Germany</b>"
+            )
+            return {"ok": True}
 
         _tg_send_message(
             chat_id,
-            "✨ <b>Вітаю в AstraNova</b>\n\n"
-            "Я створю персональний календар безпеки на основі:\n"
-            "🌙 астрологічних циклів\n"
-            "🔢 нумерології\n"
-            "🌀 кармології\n"
-            "📍 місця перебування\n\n"
-            "Для початку введіть дату народження у форматі:\n"
-            "<b>ДД.ММ.РРРР</b>\n\n"
-            "Наприклад: <b>12.05.1990</b>",
+            "✅ Профіль AstraNova вже заповнений.\n\n"
+            "Оберіть, який календар показати:",
             _inline_calendar_keyboard()
         )
         return {"ok": True}
@@ -371,6 +467,58 @@ async def astranova_webhook(request: Request):
 
         _set_birth_date(tg_user_id, birth_date)
 
+        _tg_send_message(
+            chat_id,
+            f"Дата народження збережена ✅\n\n"
+            f"<b>{birth_date}</b>\n\n"
+            "Тепер введіть час народження у форматі <b>ГГ:ХХ</b>.\n"
+            "Якщо не знаєте — напишіть <b>не знаю</b>."
+        )
+        return {"ok": True}
+
+    if state == "awaiting_birth_time":
+        birth_time = _parse_birth_time(text)
+
+        if birth_time is None and text.strip().lower() not in ("не знаю", "незнаю", "нема", "-", "skip"):
+            _tg_send_message(
+                chat_id,
+                "Введіть час у форматі <b>ГГ:ХХ</b>, наприклад <b>14:30</b>.\n"
+                "Якщо не знаєте — напишіть <b>не знаю</b>."
+            )
+            return {"ok": True}
+
+        _set_birth_time(tg_user_id, birth_time)
+
+        _tg_send_message(
+            chat_id,
+            "Час народження збережено ✅\n\n"
+            "Тепер введіть місце народження.\n"
+            "Наприклад: <b>Київ, Україна</b>"
+        )
+        return {"ok": True}
+
+    if state == "awaiting_birth_place":
+        if len(text) < 2:
+            _tg_send_message(chat_id, "Введіть місто і країну народження.")
+            return {"ok": True}
+
+        _set_birth_place(tg_user_id, text)
+
+        _tg_send_message(
+            chat_id,
+            "Місце народження збережено ✅\n\n"
+            "Тепер введіть поточне місце перебування.\n"
+            "Наприклад: <b>Wesel, Germany</b>"
+        )
+        return {"ok": True}
+
+    if state == "awaiting_current_location":
+        if len(text) < 2:
+            _tg_send_message(chat_id, "Введіть поточне місто і країну.")
+            return {"ok": True}
+
+        _set_current_location(tg_user_id, text)
+
         generate_and_save_reports(
             telegram_user_id=tg_user_id,
             period="7",
@@ -378,13 +526,13 @@ async def astranova_webhook(request: Request):
 
         _tg_send_message(
             chat_id,
-            f"Дата народження збережена ✅\n\n"
-            f"<b>{birth_date}</b>\n\n"
-            "Я вже сформував перший календар на 7 днів.\n\n"
-            "Оберіть дію нижче:",
+            "✅ Профіль заповнено.\n\n"
+            "Я сформував перший календар на 7 днів.\n"
+            "Тепер можна обрати потрібний прогноз:",
             _inline_calendar_keyboard()
         )
         return {"ok": True}
+
 
     if text in ("📅 Сьогодні", "сьогодні", "Сегодня", "/today"):
         _send_today(chat_id, tg_user_id)
