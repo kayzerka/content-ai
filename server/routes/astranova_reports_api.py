@@ -118,7 +118,10 @@ def _format_calendar_summary(days: List[Dict[str, Any]], title: str) -> str:
     lines = [f"✨ <b>AstraNova · {title}</b>", ""]
 
     for d in days:
-        ds = datetime.strptime(d["date"], "%Y-%m-%d").strftime("%d.%m")
+        raw_date = d.get("date") or d.get("report_date")
+        if not raw_date:
+            continue
+        ds = datetime.strptime(raw_date, "%Y-%m-%d").strftime("%d.%m")
         level = d.get("level") or ""
         emoji = "⚪️"
         if "🔴" in level:
