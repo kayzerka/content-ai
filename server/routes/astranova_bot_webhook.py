@@ -204,7 +204,7 @@ def _set_current_location(telegram_user_id: str, current_location: str):
 def _parse_birth_time(text: str) -> str | None:
     t = (text or "").strip().lower()
     if t in ("не знаю", "незнаю", "не знаю.", "нема", "-", "skip"):
-        return None
+        return "unknown"
 
     m = re.match(r"^(\d{1,2})[:.](\d{2})$", t)
     if not m:
@@ -407,7 +407,7 @@ async def astranova_webhook(request: Request):
             )
             return {"ok": True}
 
-        if not user.get("birth_time") and user.get("onboarding_state") == "awaiting_birth_time":
+        if user.get("onboarding_state") == "awaiting_birth_time":
             _tg_send_message(
                 chat_id,
                 "Введіть час народження у форматі <b>ГГ:ХХ</b>.\n"
@@ -479,7 +479,7 @@ async def astranova_webhook(request: Request):
     if state == "awaiting_birth_time":
         birth_time = _parse_birth_time(text)
 
-        if birth_time is None and text.strip().lower() not in ("не знаю", "незнаю", "нема", "-", "skip"):
+        if birth_time is None:
             _tg_send_message(
                 chat_id,
                 "Введіть час у форматі <b>ГГ:ХХ</b>, наприклад <b>14:30</b>.\n"
