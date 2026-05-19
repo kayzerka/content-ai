@@ -52,9 +52,9 @@ def _init_db():
 
 
 def _github_put_file(path: str, content_text: str, message: str):
-    token = os.getenv("GITHUB_TOKEN")
-    repo = os.getenv("GITHUB_REPO", "kayzerka/content-ai")
-    branch = os.getenv("GITHUB_BRANCH", "main")
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_BACKUP_TOKEN")
+    repo = os.getenv("GITHUB_REPO") or os.getenv("GITHUB_BACKUP_REPO") or "kayzerka/content-ai"
+    branch = os.getenv("GITHUB_BRANCH") or os.getenv("GITHUB_BACKUP_BRANCH") or "main"
 
     if not token:
         return {"ok": False, "error": "GITHUB_TOKEN missing"}
@@ -132,7 +132,7 @@ def export_users_to_file_and_github(reason: str = "manual"):
     BACKUP_FILE.write_text(text, encoding="utf-8")
 
     github = _github_put_file(
-        "server/backups/astranova-users-latest.json",
+        os.getenv("ASTRANOVA_BACKUP_PATH") or "server/backups/astranova-users-latest.json",
         text,
         f"backup AstraNova users: {reason}",
     )
