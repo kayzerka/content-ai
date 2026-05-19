@@ -1,7 +1,7 @@
 {
   "ok": true,
   "kind": "astranova_users_backup_v1",
-  "exported_at": "2026-05-19T17:14:34.786173Z",
+  "exported_at": "2026-05-19T17:14:43.546977Z",
   "count": 1,
   "users": [
     {
@@ -13,11 +13,11 @@
       "birth_date": "1979-10-30",
       "birth_time": "08:20",
       "birth_place": "Київ, Україна",
-      "current_location": null,
-      "onboarding_state": "awaiting_current_location",
+      "current_location": "Wesel, Germany",
+      "onboarding_state": "completed",
       "notifications_enabled": 1,
       "created_at": "2026-05-19 17:13:46",
-      "updated_at": "2026-05-19 17:14:34"
+      "updated_at": "2026-05-19 17:14:43"
     }
   ]
 }
