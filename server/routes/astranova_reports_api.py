@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body
 
 from services.safety_calendar.generator import generate_safety_calendar
+from services.safety_calendar.text_engine import generate_ai_batch_texts, fallback_day_text
 
 router = APIRouter(prefix="/api/astranova/reports", tags=["astranova-reports"])
 
@@ -171,10 +172,12 @@ def generate_and_save_reports(
     })
 
     saved = 0
+    days = result.get("days", []) or []
+    ai_texts = generate_ai_batch_texts(user, days)
 
     with _db() as con:
-        for day in result.get("days", []):
-            report_text = _format_day_message(day)
+        for day in days:
+            report_text = ai_texts.get(str(day.get("date"))) or fallback_day_text(user, day)
 
             con.execute("""
             INSERT INTO astranova_daily_reports (
