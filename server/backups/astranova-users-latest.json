@@ -1,13 +1,13 @@
 {
   "ok": true,
   "kind": "astranova_users_backup_v1",
-  "exported_at": "2026-05-19T17:00:40.546526Z",
+  "exported_at": "2026-05-19T17:02:00.161807Z",
   "count": 1,
   "users": [
     {
       "telegram_user_id": "330800472",
-      "username": "Alex_Poberezhniy",
-      "first_name": "Олексій",
+      "username": null,
+      "first_name": "Test",
       "last_name": null,
       "source_payload": null,
       "birth_date": null,
@@ -16,8 +16,8 @@
       "current_location": null,
       "onboarding_state": "awaiting_birth_date",
       "notifications_enabled": 1,
-      "created_at": "2026-05-19 17:00:39",
-      "updated_at": "2026-05-19 17:00:40"
+      "created_at": "2026-05-19 17:02:00",
+      "updated_at": "2026-05-19 17:02:00"
     }
   ]
 }
