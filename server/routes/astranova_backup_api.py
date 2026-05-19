@@ -131,6 +131,19 @@ def export_users_to_file_and_github(reason: str = "manual"):
 
     BACKUP_FILE.write_text(text, encoding="utf-8")
 
+    if int(data.get("count") or 0) <= 0 and reason not in ("allow_empty_manual",):
+        return {
+            "ok": False,
+            "error": "blocked_empty_backup",
+            "count": data.get("count", 0),
+            "backup_file": str(BACKUP_FILE),
+            "github": {
+                "ok": False,
+                "error": "empty backup was not pushed to GitHub"
+            },
+            "data": data,
+        }
+
     github = _github_put_file(
         os.getenv("ASTRANOVA_BACKUP_PATH") or "server/backups/astranova-users-latest.json",
         text,
