@@ -1,3 +1,4 @@
+from routes.astranova_reports_api import router as astranova_reports_router
 from routes.astranova_backup_api import router as astranova_backup_router
 from routes.astranova_bot_webhook import router as astranova_bot_router
 from telegram_safe_router import router as telegram_safe_router
@@ -38,6 +39,7 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 app = FastAPI()
+app.include_router(astranova_reports_router)
 app.include_router(astranova_backup_router)
 app.include_router(astranova_bot_router)
 app.include_router(safety_calendar_router)
