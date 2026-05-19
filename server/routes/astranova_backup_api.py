@@ -273,3 +273,69 @@ def restore_from_file():
 
     payload = json.loads(BACKUP_FILE.read_text(encoding="utf-8"))
     return restore_users(payload)
+
+
+def _github_get_file(path: str):
+    token = os.getenv("GITHUB_TOKEN") or os.getenv("GITHUB_BACKUP_TOKEN")
+    repo = os.getenv("GITHUB_REPO") or os.getenv("GITHUB_BACKUP_REPO") or "kayzerka/content-ai"
+    branch = os.getenv("GITHUB_BRANCH") or os.getenv("GITHUB_BACKUP_BRANCH") or "main"
+
+    if not token:
+        return {"ok": False, "error": "GITHUB_TOKEN missing"}
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    r = requests.get(api_url, headers=headers, params={"ref": branch}, timeout=30)
+
+    if r.status_code != 200:
+        return {
+            "ok": False,
+            "status_code": r.status_code,
+            "response": r.text[:1000],
+        }
+
+    data = r.json()
+
+    try:
+        raw = base64.b64decode(data.get("content") or "").decode("utf-8")
+        payload = json.loads(raw)
+        return {
+            "ok": True,
+            "path": path,
+            "sha": data.get("sha"),
+            "payload": payload,
+        }
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+
+
+@router.post("/github/restore")
+def github_restore():
+    path = os.getenv("ASTRANOVA_BACKUP_PATH") or "server/backups/astranova-users-latest.json"
+    gh = _github_get_file(path)
+
+    if not gh.get("ok"):
+        return {
+            "ok": False,
+            "stage": "github_get",
+            "github": gh,
+        }
+
+    payload = gh.get("payload") or {}
+    restored = restore_users(payload)
+
+    return {
+        "ok": bool(restored.get("ok")),
+        "github": {
+            "ok": True,
+            "path": gh.get("path"),
+            "sha": gh.get("sha"),
+            "count": len((payload.get("users") or [])),
+        },
+        "restore": restored,
+    }
