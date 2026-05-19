@@ -1,7 +1,7 @@
 {
   "ok": true,
   "kind": "astranova_users_backup_v1",
-  "exported_at": "2026-05-19T17:13:46.042659Z",
+  "exported_at": "2026-05-19T17:14:05.855919Z",
   "count": 1,
   "users": [
     {
@@ -10,14 +10,14 @@
       "first_name": "Олексій",
       "last_name": null,
       "source_payload": null,
-      "birth_date": null,
+      "birth_date": "1979-10-30",
       "birth_time": null,
       "birth_place": null,
       "current_location": null,
-      "onboarding_state": "awaiting_birth_date",
+      "onboarding_state": "awaiting_birth_time",
       "notifications_enabled": 1,
       "created_at": "2026-05-19 17:13:46",
-      "updated_at": "2026-05-19 17:13:46"
+      "updated_at": "2026-05-19 17:14:05"
     }
   ]
 }
