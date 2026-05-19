@@ -578,7 +578,7 @@
     <button id="nav_planner" onclick="showSection('planner')">📅 Планувальник (Trello+Календар)</button>
     <button id="nav_funnels" onclick="showSection('funnels'); window.renderFunnelsNativeTab && window.renderFunnelsNativeTab();">🧲 Воронки</button>
     <button id="nav_telegram" onclick="showSection('telegram'); tgLoadChats();">🤖 Telegram Center</button>
-    <button id="nav_astranova" onclick="showSection('astranova'); loadAstraNovaCounts();">✨ AstraNova</button>
+    <button id="nav_astranova" onclick="showSection('astranova'); window.loadAstraNovaCounts && window.loadAstraNovaCounts();">✨ AstraNova</button>
     <button id="nav_courses" onclick="showSection('courses'); setTimeout(function(){ if(window.CoursesModule){ window.CoursesModule.init(); } }, 50);">📚 Courses</button>
 
     <button id="nav_birthday" onclick="showSection('birthday'); tgBirthdayLoad();">🎂 Birthday Bot</button>
@@ -783,7 +783,6 @@
       </div>
     </section>
 
-    
     <section id="astranova">
       <h2>✨ AstraNova AI Calendar</h2>
       <p class="muted">Персональний календар безпеки: Telegram-бот, контакти, backup/restore.</p>
@@ -795,15 +794,15 @@
           🚀 Відкрити AstraNovaAppBot
         </a>
 
-        <button class="btn" onclick="loadAstraNovaCounts()">
+        <button class="btn" onclick="window.loadAstraNovaCounts && window.loadAstraNovaCounts()">
           📊 Оновити статистику
         </button>
 
-        <button class="btn" onclick="exportAstraNovaBackup()">
+        <button class="btn" onclick="window.exportAstraNovaBackup && window.exportAstraNovaBackup()">
           💾 Backup users
         </button>
 
-        <button class="btn" onclick="restoreAstraNovaBackup()">
+        <button class="btn" onclick="window.restoreAstraNovaBackup && window.restoreAstraNovaBackup()">
           ♻️ Restore backup
         </button>
       </div>
@@ -814,7 +813,7 @@
       </div>
     </section>
 
-<section id="telegram">
+    <section id="telegram">
       <h2>🤖 Telegram Center</h2>
 
       <div class="card">
@@ -1116,53 +1115,6 @@
 
   <!-- Підключаємо JavaScript модулі модалок (оригінальні) -->
   <script src="/static/js/calendar-modal.js">
-    async function loadAstraNovaCounts() {
-      const out = document.getElementById('astranova_output');
-      if (!out) return;
-
-      out.textContent = 'Loading...';
-
-      try {
-        const r = await fetch('/api/astranova/backup/counts');
-        const data = await r.json();
-        out.textContent = JSON.stringify(data, null, 2);
-      } catch (e) {
-        out.textContent = 'ERROR: ' + e;
-      }
-    }
-
-    async function exportAstraNovaBackup() {
-      const out = document.getElementById('astranova_output');
-
-      try {
-        const r = await fetch('/api/astranova/backup/export');
-        const data = await r.json();
-
-        if (out) out.textContent = JSON.stringify(data, null, 2);
-
-        if (data && data.data) {
-          const blob = new Blob([JSON.stringify(data.data, null, 2)], {type: 'application/json'});
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'astranova-users-latest.json';
-          a.click();
-          URL.revokeObjectURL(url);
-        }
-
-        alert('✅ Backup exported: ' + (data.count || 0) + ' users');
-      } catch (e) {
-        alert('ERROR: ' + e);
-        if (out) out.textContent = 'ERROR: ' + e;
-      }
-    }
-
-    async function restoreAstraNovaBackup() {
-      const out = document.getElementById('astranova_output');
-
-      if (!confirm('Restore AstraNova backup from server file?')) {
-        return;
-      }
 
       try {
         const r = await fetch('/api/astranova/backup/restore-from-file', {
@@ -1174,13 +1126,55 @@
         if (out) out.textContent = JSON.stringify(data, null, 2);
 
         alert('✅ Restored: ' + (data.restored || 0));
-        await loadAstraNovaCounts();
+        await window.loadAstraNovaCounts();
       } catch (e) {
         alert('ERROR: ' + e);
         if (out) out.textContent = 'ERROR: ' + e;
       }
     }
 
+
+  
+    window.loadAstraNovaCounts = async function() {
+      const out = document.getElementById('astranova_output');
+      if (!out) return;
+      out.textContent = 'Loading...';
+      try {
+        const r = await fetch('/api/astranova/backup/counts');
+        const data = await r.json();
+        out.textContent = JSON.stringify(data, null, 2);
+      } catch (e) {
+        out.textContent = 'ERROR: ' + e;
+      }
+    };
+
+    window.exportAstraNovaBackup = async function() {
+      const out = document.getElementById('astranova_output');
+      try {
+        const r = await fetch('/api/astranova/backup/export');
+        const data = await r.json();
+        if (out) out.textContent = JSON.stringify(data, null, 2);
+        alert('✅ Backup exported: ' + (data.count || 0) + ' users');
+      } catch (e) {
+        alert('ERROR: ' + e);
+        if (out) out.textContent = 'ERROR: ' + e;
+      }
+    };
+
+    window.restoreAstraNovaBackup = async function() {
+      const out = document.getElementById('astranova_output');
+      if (!confirm('Restore AstraNova backup from server file?')) return;
+      try {
+        const r = await fetch('/api/astranova/backup/restore-from-file', { method: 'POST' });
+        const data = await r.json();
+        if (out) out.textContent = JSON.stringify(data, null, 2);
+        alert('✅ Restored: ' + (data.restored || 0));
+        await window.loadAstraNovaCounts();
+      } catch (e) {
+        alert('ERROR: ' + e);
+        if (out) out.textContent = 'ERROR: ' + e;
+      }
+    };
 
   </script>
   <script src="/static/js/platform-posting-settings.js"></script>
