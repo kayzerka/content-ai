@@ -1191,18 +1191,43 @@
     let DASHBOARD_ROWS = [];
     let ACTIVE_PLATFORM = 'ALL';
 
+    
     function showSection(id) {
-      document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
-      document.getElementById(id)?.classList.add('active');
-      document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active'));
+      const sections = document.querySelectorAll('main section');
+
+      sections.forEach(sec => {
+        sec.style.display = 'none';
+        sec.classList.remove('active');
+      });
+
+      const target = document.getElementById(id);
+
+      if (target) {
+        target.style.display = 'block';
+        target.classList.add('active');
+      }
+
+      document.querySelectorAll('nav button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+
       const navBtn = document.getElementById('nav_' + id);
-      if (navBtn) navBtn.classList.add('active');
+      if (navBtn) {
+        navBtn.classList.add('active');
+      }
 
       document.body.classList.toggle('tg-active', id === 'telegram');
       document.body.classList.toggle('planner-active', id === 'planner');
-// Ініціалізація планувальника при переході на вкладку planner
-      if (id === 'planner' && typeof initPlanner === 'function') initPlanner();
+
+      if (id === 'planner' && typeof initPlanner === 'function') {
+        initPlanner();
+      }
+
+      if (id === 'astranova' && window.loadAstraNovaCounts) {
+        window.loadAstraNovaCounts();
+      }
     }
+
 
 
     function formatPlatformPublishedAt(value) {
