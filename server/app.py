@@ -1,8 +1,10 @@
+from routes.astranova_bot_webhook import router as astranova_bot_router
 from telegram_safe_router import router as telegram_safe_router
 import traceback
 from urllib.parse import parse_qs
 import tempfile
 from fastapi import Request,  FastAPI, Request, UploadFile, File, Form
+from routes.safety_calendar_api import router as safety_calendar_router
 from routes.funnels_api import router as funnels_router
 from routes.courses_api import router as courses_router
 from fastapi.staticfiles import StaticFiles
@@ -35,6 +37,8 @@ BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
 app = FastAPI()
+app.include_router(astranova_bot_router)
+app.include_router(safety_calendar_router)
 
 
 app.include_router(funnels_router)
