@@ -8,6 +8,7 @@ from datetime import datetime
 
 import requests
 from fastapi import APIRouter, Request
+from routes.astranova_reports_api import generate_and_save_reports
 
 router = APIRouter(tags=["astranova-bot"])
 
@@ -45,14 +46,34 @@ def _init_db():
         con.commit()
 
 
-def _tg_send_message(chat_id: int | str, text: str):
+def _main_keyboard():
+    return {
+        "keyboard": [
+            [{"text": "📅 Сьогодні"}, {"text": "📆 7 днів"}],
+            [{"text": "🗓 15 днів"}, {"text": "🌙 Місяць"}],
+            [{"text": "⚙️ Мій профіль"}],
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False,
+    }
+
+
+def _tg_send_message(chat_id: int | str, text: str, reply_markup: dict | None = None):
     token = os.getenv("ASTRANOVA_BOT_TOKEN")
     if not token:
         print("ASTRANOVA_BOT_TOKEN missing")
         return
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": True,
+    }
+
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
 
     try:
         r = requests.post(url, json=payload, timeout=15)
@@ -114,6 +135,76 @@ def _set_birth_date(telegram_user_id: str, birth_date_iso: str):
         con.commit()
 
 
+
+def _get_reports(telegram_user_id: str, period: str = "7"):
+    _init_db()
+
+    # якщо reports ще нема — генеруємо
+    generate_and_save_reports(
+        telegram_user_id=str(telegram_user_id),
+        period=str(period),
+    )
+
+    from routes.astranova_reports_api import summary_report, today_report
+
+    if period == "today":
+        return today_report(str(telegram_user_id))
+
+    return summary_report(
+        telegram_user_id=str(telegram_user_id),
+        period=str(period),
+    )
+
+
+def _send_today(chat_id: int | str, telegram_user_id: str):
+    data = _get_reports(telegram_user_id, "today")
+
+    report = data.get("report") if isinstance(data, dict) else None
+    if not report:
+        _tg_send_message(chat_id, "Поки не можу знайти прогноз на сьогодні. Спробуйте 📆 7 днів.", _main_keyboard())
+        return
+
+    text = report.get("report_text") or (
+        f"✨ <b>AstraNova · сьогодні</b>\n\n"
+        f"{report.get('level')}\n"
+        f"Індекс: <b>{report.get('score')}/100</b>\n\n"
+        f"🌙 <b>Фокус:</b>\n{report.get('focus')}\n\n"
+        f"🧭 <b>Рекомендація:</b>\n{report.get('recommendation')}"
+    )
+
+    _tg_send_message(chat_id, text, _main_keyboard())
+
+
+def _send_period(chat_id: int | str, telegram_user_id: str, period: str):
+    data = _get_reports(telegram_user_id, period)
+
+    if not data.get("ok"):
+        _tg_send_message(
+            chat_id,
+            "Не можу сформувати календар. Можливо, ще не збережена дата народження.",
+            _main_keyboard()
+        )
+        return
+
+    text = data.get("text") or "Календар поки порожній."
+    _tg_send_message(chat_id, text, _main_keyboard())
+
+
+def _send_profile(chat_id: int | str, user: dict):
+    text = (
+        "⚙️ <b>Мій профіль AstraNova</b>\n\n"
+        f"Telegram ID: <code>{user.get('telegram_user_id')}</code>\n"
+        f"Імʼя: <b>{user.get('first_name') or '—'}</b>\n"
+        f"Username: <b>{user.get('username') or '—'}</b>\n"
+        f"Дата народження: <b>{user.get('birth_date') or '—'}</b>\n"
+        f"Час народження: <b>{user.get('birth_time') or '—'}</b>\n"
+        f"Місце народження: <b>{user.get('birth_place') or '—'}</b>\n"
+        f"Поточне місце: <b>{user.get('current_location') or '—'}</b>\n\n"
+        "Далі підключимо зміну профілю і час щоденного повідомлення."
+    )
+    _tg_send_message(chat_id, text, _main_keyboard())
+
+
 def _parse_birth_date(text: str) -> str | None:
     text = text.strip()
 
@@ -169,7 +260,8 @@ async def astranova_webhook(request: Request):
             "📍 місця перебування\n\n"
             "Для початку введіть дату народження у форматі:\n"
             "<b>ДД.ММ.РРРР</b>\n\n"
-            "Наприклад: <b>12.05.1990</b>"
+            "Наприклад: <b>12.05.1990</b>",
+            _main_keyboard()
         )
         return {"ok": True}
 
@@ -201,14 +293,41 @@ async def astranova_webhook(request: Request):
 
         _set_birth_date(tg_user_id, birth_date)
 
+        generate_and_save_reports(
+            telegram_user_id=tg_user_id,
+            period="7",
+        )
+
         _tg_send_message(
             chat_id,
             f"Дата народження збережена ✅\n\n"
             f"<b>{birth_date}</b>\n\n"
-            "Тепер введіть час народження у форматі <b>ГГ:ХХ</b>.\n"
-            "Якщо не знаєте — напишіть <b>не знаю</b>."
+            "Я вже сформував перший календар на 7 днів.\n\n"
+            "Оберіть дію нижче:",
+            _main_keyboard()
         )
         return {"ok": True}
+
+    if text in ("📅 Сьогодні", "сьогодні", "Сегодня", "/today"):
+        _send_today(chat_id, tg_user_id)
+        return {"ok": True}
+
+    if text in ("📆 7 днів", "7", "7 днів", "/calendar", "/week"):
+        _send_period(chat_id, tg_user_id, "7")
+        return {"ok": True}
+
+    if text in ("🗓 15 днів", "15", "15 днів"):
+        _send_period(chat_id, tg_user_id, "15")
+        return {"ok": True}
+
+    if text in ("🌙 Місяць", "місяць", "Місяць", "month"):
+        _send_period(chat_id, tg_user_id, "month")
+        return {"ok": True}
+
+    if text in ("⚙️ Мій профіль", "профіль", "/profile"):
+        _send_profile(chat_id, user)
+        return {"ok": True}
+
 
     _tg_send_message(
         chat_id,
