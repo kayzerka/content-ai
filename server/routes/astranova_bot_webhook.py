@@ -89,6 +89,21 @@ def _tg_answer_callback(callback_query_id: str):
         print("ASTRANOVA answerCallback error:", repr(e))
 
 
+
+
+def _safe_backup_users(reason: str):
+    try:
+        result = export_users_to_file_and_github(reason)
+        print(
+            "ASTRANOVA AUTO BACKUP:",
+            result.get("ok"),
+            result.get("count"),
+            result.get("github"),
+        )
+    except Exception as e:
+        print("ASTRANOVA AUTO BACKUP ERROR:", repr(e))
+
+
 def _tg_send_message(chat_id: int | str, text: str, reply_markup: dict | None = None):
     token = os.getenv("ASTRANOVA_BOT_TOKEN")
     if not token:
