@@ -283,7 +283,6 @@
           <button id="lesson-save-btn">💾 Зберегти урок</button>
           <button id="lesson-generate-btn">🤖 Згенерувати урок AI</button>
           <button id="lesson-publish-btn">🚀 Опублікувати у канал</button>
-          <button id="course-invite-btn">📨 Відправити запрошення</button>
           <button id="lesson-excel-btn">📊 Створити Excel</button>
           <button id="lesson-tables-btn">📊 Таблиці уроку</button>
           <button id="lesson-upload-btn">📎 Upload файл</button>
@@ -303,7 +302,6 @@
     el("lesson-save-btn").addEventListener("click", saveLesson);
     el("lesson-generate-btn").addEventListener("click", generateLessonAI);
     el("lesson-publish-btn").addEventListener("click", publishLesson);
-    el("course-invite-btn").addEventListener("click", sendCourseInviteToPlanner);
     el("lesson-excel-btn").addEventListener("click", createLessonExcel);
     el("lesson-tables-btn").addEventListener("click", openLessonTablesManager);
     el("lesson-upload-btn").addEventListener("click", () => el("lesson-file-input").click());
