@@ -929,6 +929,43 @@
   }
 
 
+
+  document.addEventListener("click", function(ev) {
+    const btn = ev.target && ev.target.closest ? ev.target.closest("button") : null;
+    if (!btn) return;
+
+    const ids = {
+      "course-save-btn": saveCourse,
+      "lesson-save-btn": saveLesson,
+      "course-backup-btn": backupNow,
+      "course-restore-btn": restoreBackup,
+      "course-invite-btn": openCourseInviteModal,
+      "lesson-generate-btn": generateLessonAI,
+      "lesson-publish-btn": publishLesson,
+      "lesson-add-btn": addLesson,
+      "lesson-excel-btn": createLessonExcel,
+      "lesson-tables-btn": openLessonTablesManager,
+      "lesson-upload-btn": function(){ el("lesson-file-input").click(); },
+      "lesson-video-upload-btn": function(){ el("lesson-video-input").click(); },
+      "lesson-image-upload-btn": function(){ el("lesson-image-input").click(); },
+      "courses-global-backup-btn": backupNow,
+      "courses-global-restore-btn": restoreBackup
+    };
+
+    if (!ids[btn.id]) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    try {
+      ids[btn.id]();
+    } catch (e) {
+      console.error("[Courses button error]", btn.id, e);
+      alert("Помилка кнопки " + btn.id + ": " + e.message);
+    }
+  }, true);
+
+
   window.CoursesModule = {
     init: initCoursesUI,
     load: loadCourses,
