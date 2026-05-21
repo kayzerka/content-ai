@@ -827,6 +827,72 @@ class CourseInviteRequest(BaseModel):
     planner_chat_id: Optional[str] = None
 
 
+class CourseInviteGenerateRequest(BaseModel):
+    course_key: str
+    target: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+
+
+def _course_bot_username() -> str:
+    return (
+        os.getenv("COURSE_TELEGRAM_BOT_USERNAME")
+        or os.getenv("TELEGRAM_BOT_USERNAME")
+        or os.getenv("BOT_USERNAME")
+        or ""
+    ).strip().lstrip("@")
+
+
+def _course_start_url(course_key: str) -> str:
+    bot = _course_bot_username()
+    if not bot:
+        return ""
+    safe_key = str(course_key or "").strip()
+    return f"https://t.me/{bot}?start=course_{safe_key}"
+
+
+def _course_invite_message(course_title: str, start_url: str) -> str:
+    return f"""Вітаю 🌿
+
+Вам відкрито доступ до курсу «{course_title}».
+
+Щоб почати навчання, перейдіть за посиланням нижче та натисніть START у Telegram-боті:
+
+{start_url}""".strip()
+
+
+@router.post("/invite/generate")
+def generate_course_invite(body: CourseInviteGenerateRequest):
+    with db() as con:
+        row = con.execute(
+            "SELECT * FROM course_projects WHERE course_key=?",
+            (body.course_key,)
+        ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    course = dict(row)
+    course_title = course.get("title") or body.course_key
+    start_url = _course_start_url(body.course_key)
+
+    if not start_url:
+        raise HTTPException(
+            status_code=400,
+            detail="COURSE_TELEGRAM_BOT_USERNAME or TELEGRAM_BOT_USERNAME missing"
+        )
+
+    msg = _course_invite_message(course_title, start_url)
+
+    return {
+        "ok": True,
+        "course_key": body.course_key,
+        "target": body.target or "",
+        "can_send_direct": bool(body.telegram_chat_id),
+        "start_url": start_url,
+        "message": msg,
+    }
+
+
 @router.post("/invite/send-to-planner")
 def send_course_invite_to_planner(body: CourseInviteRequest):
     with db() as con:

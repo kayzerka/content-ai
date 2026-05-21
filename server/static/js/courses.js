@@ -139,6 +139,7 @@
 
         <div class="course-actions">
           <button id="course-save-btn">💾 Зберегти курс</button>
+          <button id="course-invite-btn">💌 Запросити на курс</button>
           <button id="course-backup-btn">🧷 Backup now</button>
           <button id="course-restore-btn">♻️ Restore backup</button>
         </div>
@@ -161,6 +162,7 @@
     loadTelegramTargets(c.telegram_chat_id || "");
 
     el("course-save-btn").addEventListener("click", saveCourse);
+    el("course-invite-btn").addEventListener("click", openCourseInviteModal);
     el("course-backup-btn").addEventListener("click", backupNow);
     el("course-restore-btn").addEventListener("click", restoreBackup);
     el("lesson-add-btn").addEventListener("click", addLesson);
@@ -176,6 +178,47 @@
       });
     });
   }
+
+  async function openCourseInviteModal() {
+    if (!currentCourseKey || !currentCourse || !currentCourse.course) {
+      showStatus("Спочатку відкрий курс", true);
+      return;
+    }
+
+    const rawTarget = prompt("Введи Telegram контакт: @username, t.me/username або chat_id. Якщо залишити пусто — буде тільки стартовий лінк.");
+    const target = (rawTarget || "").trim();
+
+    try {
+      const r = await fetch(API + "/invite/generate", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          course_key: currentCourseKey,
+          target: target
+        })
+      });
+
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.detail || data.error || "invite failed");
+
+      const text = data.message || "";
+      const startUrl = data.start_url || "";
+
+      const fullText = text + (startUrl ? "\n\n" + startUrl : "");
+
+      if (navigator.clipboard && fullText) {
+        await navigator.clipboard.writeText(fullText);
+        alert("✅ Запрошення скопійовано в буфер обміну:\n\n" + fullText);
+      } else {
+        prompt("Скопіюй запрошення:", fullText);
+      }
+
+      showStatus("Запрошення згенеровано");
+    } catch (e) {
+      showStatus("Помилка запрошення: " + e.message, true);
+    }
+  }
+
 
   function renderLessonsTabs(lessons) {
     if (!lessons.length) {
