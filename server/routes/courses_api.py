@@ -1062,12 +1062,13 @@ def publish_lesson(body: LessonPublishRequest):
     if not chat_id:
         raise HTTPException(status_code=400, detail="telegram_chat_id missing")
 
-    text = (
-        lesson.get("telegram_post_text")
-        or lesson.get("lecture_text")
-        or lesson.get("title")
-        or "Lesson"
-    )
+    post_text = str(lesson.get("telegram_post_text") or "").strip()
+    lecture_text = str(lesson.get("lecture_text") or "").strip()
+
+    if post_text and lecture_text and lecture_text not in post_text:
+        text = f"{post_text}\n\n📚 Текст лекції:\n\n{lecture_text}"
+    else:
+        text = post_text or lecture_text or lesson.get("title") or "Lesson"
 
     videos = [
         a for a in assets
