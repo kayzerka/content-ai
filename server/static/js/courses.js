@@ -243,6 +243,7 @@
       ai_prompt: "",
       lecture_text: "",
       telegram_post_text: "",
+      telegram_parts_json: "",
       status: "draft"
     };
   }
@@ -271,6 +272,9 @@
 
         <label>Telegram пост</label>
         <textarea id="lesson-telegram-post" class="big-textarea">${escapeHtml(l.telegram_post_text || "")}</textarea>
+
+        <label>Telegram частини уроку JSON</label>
+        <textarea id="lesson-telegram-parts" class="big-textarea">${escapeHtml(l.telegram_parts_json || "")}</textarea>
 
         <label>Статус</label>
         <select id="lesson-status">
@@ -413,6 +417,8 @@
 
       lectureEl.value = data.lecture_text || "";
       postEl.value = data.telegram_post_text || "";
+      const partsEl = document.getElementById("lesson-telegram-parts");
+      if (partsEl) partsEl.value = data.telegram_parts_json || "[]";
 
       await apiPost(API + "/lesson/save", {
         course_key: currentCourseKey,
@@ -422,6 +428,7 @@
         ai_prompt: payload.ai_prompt,
         lecture_text: lectureEl.value,
         telegram_post_text: postEl.value,
+        telegram_parts_json: (document.getElementById("lesson-telegram-parts") || {}).value || "",
         status: el("lesson-status")?.value || "draft"
       });
 
@@ -451,6 +458,7 @@
         ai_prompt: el("lesson-ai-prompt").value,
         lecture_text: el("lesson-lecture").value,
         telegram_post_text: el("lesson-telegram-post").value,
+        telegram_parts_json: el("lesson-telegram-parts") ? el("lesson-telegram-parts").value : "",
         status: el("lesson-status").value
       });
       await openCourse(currentCourseKey);
