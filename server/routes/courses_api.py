@@ -982,6 +982,9 @@ def course_backup_import_v1(
             "safety_backup": str(safety_path),
         }
 
+    except HTTPException:
+        raise
+
     except Exception as e:
         return {
             "ok": False,
