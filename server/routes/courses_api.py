@@ -78,6 +78,24 @@ def ensure_schema(con: sqlite3.Connection):
       UNIQUE(course_key, lesson_no)
     );
 
+    -- LESSON_PARTS_V1
+    CREATE TABLE IF NOT EXISTS course_lesson_parts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      course_key TEXT NOT NULL,
+      lesson_no INTEGER NOT NULL,
+      part_no INTEGER NOT NULL,
+      title TEXT,
+      topic TEXT,
+      ai_prompt TEXT,
+      lecture_text TEXT,
+      telegram_post_text TEXT,
+      status TEXT DEFAULT 'draft',
+      published_at TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(course_key, lesson_no, part_no)
+    );
+
     CREATE TABLE IF NOT EXISTS course_assets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       course_key TEXT NOT NULL,
@@ -101,6 +119,24 @@ def ensure_schema(con: sqlite3.Connection):
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     """)
+
+    # LESSON_PARTS_V1 — backward-compatible migrations
+    asset_cols = {
+        r["name"] for r in con.execute("PRAGMA table_info(course_assets)").fetchall()
+    }
+    if "part_no" not in asset_cols:
+        con.execute(
+            "ALTER TABLE course_assets ADD COLUMN part_no INTEGER NOT NULL DEFAULT 1"
+        )
+
+    publication_cols = {
+        r["name"] for r in con.execute("PRAGMA table_info(course_publications)").fetchall()
+    }
+    if "part_no" not in publication_cols:
+        con.execute(
+            "ALTER TABLE course_publications ADD COLUMN part_no INTEGER NOT NULL DEFAULT 1"
+        )
+
     con.commit()
 
 
@@ -112,20 +148,25 @@ def export_all_to_backup() -> Dict[str, Any]:
     with db() as con:
         courses = rows_to_dicts(con.execute("SELECT * FROM course_projects ORDER BY id").fetchall())
         lessons = rows_to_dicts(con.execute("SELECT * FROM course_lessons ORDER BY course_key, lesson_no").fetchall())
-        assets = rows_to_dicts(con.execute("SELECT * FROM course_assets ORDER BY course_key, lesson_no, id").fetchall())
+        lesson_parts = rows_to_dicts(con.execute(
+            "SELECT * FROM course_lesson_parts ORDER BY course_key, lesson_no, part_no"
+        ).fetchall())
+        assets = rows_to_dicts(con.execute("SELECT * FROM course_assets ORDER BY course_key, lesson_no, part_no, id").fetchall())
         publications = rows_to_dicts(con.execute("SELECT * FROM course_publications ORDER BY id").fetchall())
 
     payload = {
-        "format": "courses_full_v1",
+        "format": "courses_full_v2",
         "exported_at": now_iso(),
         "counts": {
             "courses": len(courses),
             "lessons": len(lessons),
+            "lesson_parts": len(lesson_parts),
             "assets": len(assets),
             "publications": len(publications),
         },
         "courses": courses,
         "lessons": lessons,
+        "lesson_parts": lesson_parts,
         "assets": assets,
         "publications": publications,
     }
@@ -168,12 +209,13 @@ def export_all_to_backup() -> Dict[str, Any]:
 
 
 def restore_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not payload or payload.get("format") != "courses_full_v1":
+    if not payload or payload.get("format") not in ("courses_full_v1", "courses_full_v2"):
         raise HTTPException(status_code=400, detail="Invalid courses backup format")
 
     with db() as con:
         con.execute("DELETE FROM course_publications")
         con.execute("DELETE FROM course_assets")
+        con.execute("DELETE FROM course_lesson_parts")
         con.execute("DELETE FROM course_lessons")
         con.execute("DELETE FROM course_projects")
 
@@ -201,25 +243,49 @@ def restore_from_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
                 l.get("created_at") or now_iso(), l.get("updated_at") or now_iso()
             ))
 
+        for part in payload.get("lesson_parts", []):
+            con.execute("""
+                INSERT OR REPLACE INTO course_lesson_parts
+                (course_key, lesson_no, part_no, title, topic, ai_prompt,
+                 lecture_text, telegram_post_text, status, published_at,
+                 created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                part.get("course_key"),
+                part.get("lesson_no"),
+                part.get("part_no"),
+                part.get("title"),
+                part.get("topic"),
+                part.get("ai_prompt"),
+                part.get("lecture_text"),
+                part.get("telegram_post_text"),
+                part.get("status") or "draft",
+                part.get("published_at"),
+                part.get("created_at") or now_iso(),
+                part.get("updated_at") or now_iso(),
+            ))
+
         for a in payload.get("assets", []):
             con.execute("""
                 INSERT INTO course_assets
-                (course_key, lesson_no, asset_type, file_name, file_path, mime_type, size_bytes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (course_key, lesson_no, part_no, asset_type, file_name, file_path, mime_type, size_bytes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                a.get("course_key"), a.get("lesson_no"), a.get("asset_type"),
-                a.get("file_name"), a.get("file_path"), a.get("mime_type"),
-                a.get("size_bytes"), a.get("created_at") or now_iso()
+                a.get("course_key"), a.get("lesson_no"), a.get("part_no", 1),
+                a.get("asset_type"), a.get("file_name"), a.get("file_path"),
+                a.get("mime_type"), a.get("size_bytes"),
+                a.get("created_at") or now_iso()
             ))
 
         for p in payload.get("publications", []):
             con.execute("""
                 INSERT INTO course_publications
-                (course_key, lesson_no, telegram_chat_id, telegram_message_id, status, error, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (course_key, lesson_no, part_no, telegram_chat_id, telegram_message_id, status, error, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                p.get("course_key"), p.get("lesson_no"), p.get("telegram_chat_id"),
-                p.get("telegram_message_id"), p.get("status"), p.get("error"),
+                p.get("course_key"), p.get("lesson_no"), p.get("part_no", 1),
+                p.get("telegram_chat_id"), p.get("telegram_message_id"),
+                p.get("status"), p.get("error"),
                 p.get("created_at") or now_iso()
             ))
 
@@ -336,14 +402,23 @@ def get_course(course_key: str):
             SELECT * FROM course_lessons WHERE course_key=? ORDER BY lesson_no
         """, (course_key,)).fetchall())
 
+        lesson_parts = rows_to_dicts(con.execute("""
+            SELECT * FROM course_lesson_parts
+            WHERE course_key=?
+            ORDER BY lesson_no, part_no
+        """, (course_key,)).fetchall())
+
         assets = rows_to_dicts(con.execute("""
-            SELECT * FROM course_assets WHERE course_key=? ORDER BY lesson_no, id
+            SELECT * FROM course_assets
+            WHERE course_key=?
+            ORDER BY lesson_no, part_no, id
         """, (course_key,)).fetchall())
 
     return {
         "ok": True,
         "course": dict(course),
         "lessons": lessons,
+        "lesson_parts": lesson_parts,
         "assets": assets,
     }
 
@@ -473,9 +548,89 @@ def save_lesson(body: LessonSave):
 
 
 
+# LESSON_PARTS_V1
+class LessonPartSave(BaseModel):
+    course_key: str
+    lesson_no: int
+    part_no: int
+    title: Optional[str] = ""
+    topic: Optional[str] = ""
+    ai_prompt: Optional[str] = ""
+    lecture_text: Optional[str] = ""
+    telegram_post_text: Optional[str] = ""
+    status: Optional[str] = "draft"
+
+
+@router.post("/lesson/part/save")
+def save_lesson_part(body: LessonPartSave):
+    if body.lesson_no < 1:
+        raise HTTPException(status_code=400, detail="lesson_no must be >= 1")
+
+    if body.part_no < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="part_no must be >= 2; Post 1 is stored in course_lessons"
+        )
+
+    with db() as con:
+        course = con.execute(
+            "SELECT 1 FROM course_projects WHERE course_key=?",
+            (body.course_key,)
+        ).fetchone()
+
+        if not course:
+            raise HTTPException(status_code=404, detail="Course not found")
+
+        lesson = con.execute(
+            "SELECT 1 FROM course_lessons WHERE course_key=? AND lesson_no=?",
+            (body.course_key, body.lesson_no)
+        ).fetchone()
+
+        if not lesson:
+            raise HTTPException(status_code=404, detail="Lesson not found")
+
+        con.execute("""
+            INSERT INTO course_lesson_parts
+            (course_key, lesson_no, part_no, title, topic, ai_prompt,
+             lecture_text, telegram_post_text, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(course_key, lesson_no, part_no) DO UPDATE SET
+              title=excluded.title,
+              topic=excluded.topic,
+              ai_prompt=excluded.ai_prompt,
+              lecture_text=excluded.lecture_text,
+              telegram_post_text=excluded.telegram_post_text,
+              status=excluded.status,
+              updated_at=excluded.updated_at
+        """, (
+            body.course_key,
+            body.lesson_no,
+            body.part_no,
+            body.title,
+            body.topic,
+            body.ai_prompt,
+            body.lecture_text,
+            body.telegram_post_text,
+            body.status or "draft",
+            now_iso(),
+            now_iso(),
+        ))
+
+        con.commit()
+
+    export_all_to_backup()
+
+    return {
+        "ok": True,
+        "lesson_no": body.lesson_no,
+        "part_no": body.part_no,
+    }
+
+
 class LessonExcelCreateRequest(BaseModel):
     course_key: str
     lesson_no: int
+    part_no: int = 1
     file_name: Optional[str] = None
     title: Optional[str] = None
 
@@ -487,21 +642,36 @@ def create_lesson_excel(body: LessonExcelCreateRequest):
         if not c:
             raise HTTPException(status_code=404, detail="Course not found")
 
-        l = con.execute(
-            "SELECT * FROM course_lessons WHERE course_key=? AND lesson_no=?",
-            (body.course_key, body.lesson_no)
-        ).fetchone()
+        if body.part_no <= 1:
+            l = con.execute(
+                "SELECT * FROM course_lessons WHERE course_key=? AND lesson_no=?",
+                (body.course_key, body.lesson_no)
+            ).fetchone()
+        else:
+            l = con.execute(
+                """
+                SELECT * FROM course_lesson_parts
+                WHERE course_key=? AND lesson_no=? AND part_no=?
+                """,
+                (body.course_key, body.lesson_no, body.part_no)
+            ).fetchone()
+
         if not l:
-            raise HTTPException(status_code=404, detail="Lesson not found")
+            raise HTTPException(status_code=404, detail="Lesson post not found")
 
         course = dict(c)
         lesson = dict(l)
 
     safe_course = slugify(body.course_key)
-    lesson_dir = UPLOAD_DIR / safe_course / f"lesson_{body.lesson_no}"
+    lesson_dir = (
+        UPLOAD_DIR
+        / safe_course
+        / f"lesson_{body.lesson_no}"
+        / f"part_{body.part_no}"
+    )
     lesson_dir.mkdir(parents=True, exist_ok=True)
 
-    file_name = body.file_name or f"lesson_{body.lesson_no}_materials.xlsx"
+    file_name = body.file_name or f"lesson_{body.lesson_no}_part_{body.part_no}_materials.xlsx"
     if not file_name.lower().endswith(".xlsx"):
         file_name += ".xlsx"
 
@@ -514,6 +684,7 @@ def create_lesson_excel(body: LessonExcelCreateRequest):
     ws.title = "Lesson"
     ws.append(["Course", course.get("title") or body.course_key])
     ws.append(["Lesson No", body.lesson_no])
+    ws.append(["Post No", body.part_no])
     ws.append(["Lesson Title", lesson.get("title") or ""])
     ws.append(["Topic", lesson.get("topic") or ""])
     ws.append([])
@@ -544,11 +715,12 @@ def create_lesson_excel(body: LessonExcelCreateRequest):
     with db() as con:
         con.execute("""
             INSERT INTO course_assets
-            (course_key, lesson_no, asset_type, file_name, file_path, mime_type, size_bytes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (course_key, lesson_no, part_no, asset_type, file_name, file_path, mime_type, size_bytes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             body.course_key,
             body.lesson_no,
+            body.part_no,
             "spreadsheet",
             file_name,
             rel_path,
@@ -572,11 +744,17 @@ def create_lesson_excel(body: LessonExcelCreateRequest):
 async def upload_asset(
     course_key: str = Form(...),
     lesson_no: int = Form(...),
+    part_no: int = Form(1),
     asset_type: str = Form("document"),
     file: UploadFile = File(...)
 ):
     safe_course = slugify(course_key)
-    lesson_dir = UPLOAD_DIR / safe_course / f"lesson_{lesson_no}"
+    lesson_dir = (
+        UPLOAD_DIR
+        / safe_course
+        / f"lesson_{lesson_no}"
+        / f"part_{part_no}"
+    )
     lesson_dir.mkdir(parents=True, exist_ok=True)
 
     safe_name = re.sub(r"[^a-zA-Z0-9а-яА-ЯіїєґІЇЄҐ_.-]+", "_", file.filename or "asset.bin")
@@ -590,10 +768,10 @@ async def upload_asset(
     with db() as con:
         con.execute("""
             INSERT INTO course_assets
-            (course_key, lesson_no, asset_type, file_name, file_path, mime_type, size_bytes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (course_key, lesson_no, part_no, asset_type, file_name, file_path, mime_type, size_bytes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            course_key, lesson_no, asset_type, safe_name, rel_path,
+            course_key, lesson_no, part_no, asset_type, safe_name, rel_path,
             file.content_type, len(content), now_iso()
         ))
         con.commit()
@@ -816,6 +994,7 @@ def _telegram_send_file(token: str, method: str, chat_id: str, file_field: str, 
 class LessonPublishRequest(BaseModel):
     course_key: str
     lesson_no: int
+    part_no: int = 1
     telegram_chat_id: Optional[str] = None
 
 
@@ -1026,19 +1205,32 @@ def publish_lesson(body: LessonPublishRequest):
         if not c:
             raise HTTPException(status_code=404, detail="Course not found")
 
-        l = con.execute(
-            "SELECT * FROM course_lessons WHERE course_key=? AND lesson_no=?",
-            (body.course_key, body.lesson_no)
-        ).fetchone()
+        if body.part_no <= 1:
+            l = con.execute(
+                "SELECT * FROM course_lessons WHERE course_key=? AND lesson_no=?",
+                (body.course_key, body.lesson_no)
+            ).fetchone()
+        else:
+            l = con.execute(
+                """
+                SELECT * FROM course_lesson_parts
+                WHERE course_key=? AND lesson_no=? AND part_no=?
+                """,
+                (body.course_key, body.lesson_no, body.part_no)
+            ).fetchone()
 
         if not l:
-            raise HTTPException(status_code=404, detail="Lesson not found")
+            raise HTTPException(status_code=404, detail="Lesson post not found")
 
         assets = rows_to_dicts(con.execute("""
             SELECT * FROM course_assets
-            WHERE course_key=? AND lesson_no=?
+            WHERE course_key=? AND lesson_no=? AND part_no=?
             ORDER BY id
-        """, (body.course_key, body.lesson_no)).fetchall())
+        """, (
+            body.course_key,
+            body.lesson_no,
+            body.part_no
+        )).fetchall())
 
         course = dict(c)
         lesson = dict(l)
@@ -1204,11 +1396,12 @@ def publish_lesson(body: LessonPublishRequest):
     with db() as con:
         con.execute("""
             INSERT INTO course_publications
-            (course_key, lesson_no, telegram_chat_id, telegram_message_id, status, error, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (course_key, lesson_no, part_no, telegram_chat_id, telegram_message_id, status, error, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             body.course_key,
             body.lesson_no,
+            body.part_no,
             chat_id,
             msg_id,
             "published" if ok else "error",
@@ -1217,18 +1410,33 @@ def publish_lesson(body: LessonPublishRequest):
         ))
 
         if ok:
-            con.execute("""
-                UPDATE course_lessons
-                SET status='published',
-                    published_at=?,
-                    updated_at=?
-                WHERE course_key=? AND lesson_no=?
-            """, (
-                now_iso(),
-                now_iso(),
-                body.course_key,
-                body.lesson_no
-            ))
+            if body.part_no <= 1:
+                con.execute("""
+                    UPDATE course_lessons
+                    SET status='published',
+                        published_at=?,
+                        updated_at=?
+                    WHERE course_key=? AND lesson_no=?
+                """, (
+                    now_iso(),
+                    now_iso(),
+                    body.course_key,
+                    body.lesson_no
+                ))
+            else:
+                con.execute("""
+                    UPDATE course_lesson_parts
+                    SET status='published',
+                        published_at=?,
+                        updated_at=?
+                    WHERE course_key=? AND lesson_no=? AND part_no=?
+                """, (
+                    now_iso(),
+                    now_iso(),
+                    body.course_key,
+                    body.lesson_no,
+                    body.part_no
+                ))
 
         con.commit()
 

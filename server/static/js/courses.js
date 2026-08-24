@@ -5,6 +5,7 @@
   let currentCourseKey = null;
   let currentCourse = null;
   let currentLessonNo = 1;
+  let currentPartNo = 1; // LESSON_PARTS_FRONTEND_V1
 
   function el(id) {
     return document.getElementById(id);
@@ -169,11 +170,13 @@
 
     const firstLesson = lessons[0];
     currentLessonNo = firstLesson ? Number(firstLesson.lesson_no) : 1;
+    currentPartNo = 1;
     renderLessonEditor(currentLessonNo);
 
     document.querySelectorAll("[data-lesson-no]").forEach(btn => {
       btn.addEventListener("click", () => {
         currentLessonNo = Number(btn.dataset.lessonNo);
+        currentPartNo = 1;
         renderLessonEditor(currentLessonNo);
       });
     });
@@ -248,23 +251,160 @@
     };
   }
 
+  function getLessonPart(lessonNo, partNo) {
+    if (Number(partNo) === 1) {
+      const base = getLesson(lessonNo);
+      return {
+        ...base,
+        part_no: 1
+      };
+    }
+
+    const parts = currentCourse?.lesson_parts || [];
+
+    return parts.find(p =>
+      Number(p.lesson_no) === Number(lessonNo) &&
+      Number(p.part_no) === Number(partNo)
+    ) || {
+      course_key: currentCourseKey,
+      lesson_no: lessonNo,
+      part_no: partNo,
+      title: "",
+      topic: "",
+      ai_prompt: "",
+      lecture_text: "",
+      telegram_post_text: "",
+      status: "draft"
+    };
+  }
+
+
+  function getLessonPartNumbers(lessonNo) {
+    const nums = [1];
+
+    for (const part of (currentCourse?.lesson_parts || [])) {
+      if (Number(part.lesson_no) === Number(lessonNo)) {
+        nums.push(Number(part.part_no));
+      }
+    }
+
+    return [...new Set(nums)].sort((a, b) => a - b);
+  }
+
+
+  function renderLessonPartTabs(lessonNo) {
+    const nums = getLessonPartNumbers(lessonNo);
+
+    return `
+      <div style="
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        align-items:center;
+        margin:0 0 18px 0;
+        padding:12px;
+        background:#f8fafc;
+        border:1px solid #e5e7eb;
+        border-radius:10px;
+      ">
+        <b style="margin-right:4px;">Пости уроку:</b>
+
+        ${nums.map(n => `
+          <button
+            type="button"
+            class="lesson-part-tab"
+            data-part-no="${n}"
+            style="${
+              Number(n) === Number(currentPartNo)
+                ? "font-weight:700;border:2px solid #2563eb;"
+                : ""
+            }"
+          >
+            Пост ${n}
+          </button>
+        `).join("")}
+
+        <button
+          type="button"
+          id="lesson-part-add-btn"
+          style="font-weight:700;"
+        >
+          + Додати пост до уроку
+        </button>
+      </div>
+    `;
+  }
+
+
+  async function addLessonPart() {
+    if (!currentCourseKey || !currentLessonNo) return;
+
+    const nums = getLessonPartNumbers(currentLessonNo);
+    const nextPart = Math.max(...nums) + 1;
+
+    try {
+      await apiPost(API + "/lesson/part/save", {
+        course_key: currentCourseKey,
+        lesson_no: currentLessonNo,
+        part_no: nextPart,
+        title: "Пост " + nextPart,
+        topic: "",
+        ai_prompt: "",
+        lecture_text: "",
+        telegram_post_text: "",
+        status: "draft"
+      });
+
+      currentPartNo = nextPart;
+
+      const data = await apiGet(
+        API + "/" + encodeURIComponent(currentCourseKey)
+      );
+
+      currentCourse = data;
+      renderLessonEditor(currentLessonNo);
+
+      showStatus(
+        "Пост " + nextPart +
+        " додано до уроку " + currentLessonNo
+      );
+
+    } catch (e) {
+      showStatus(
+        "Помилка додавання поста: " + e.message,
+        true
+      );
+    }
+  }
+
+
   function renderLessonEditor(lessonNo) {
     const box = el("lesson-editor");
     if (!box || !currentCourse) return;
 
-    const l = getLesson(lessonNo);
+    const l = getLessonPart(lessonNo, currentPartNo);
 
     box.innerHTML = `
       <div class="lesson-editor-box">
         <h3>Урок ${lessonNo}</h3>
 
-        <label>Назва уроку</label>
+        ${renderLessonPartTabs(lessonNo)}
+
+        <div style="
+          margin-bottom:14px;
+          font-weight:700;
+          font-size:16px;
+        ">
+          Редагується: Пост ${currentPartNo}
+        </div>
+
+        <label>${currentPartNo === 1 ? "Назва уроку / поста" : "Назва поста"}</label>
         <input id="lesson-title" value="${escapeHtml(l.title || "")}">
 
         <label>Тема</label>
         <input id="lesson-topic" value="${escapeHtml(l.topic || "")}">
 
-        <label>AI prompt для уроку</label>
+        <label>AI prompt для поста ${currentPartNo}</label>
         <textarea id="lesson-ai-prompt">${escapeHtml(l.ai_prompt || "")}</textarea>
 
         <label>Текст лекції</label>
@@ -284,9 +424,9 @@
         </select>
 
         <div class="course-actions">
-          <button id="lesson-save-btn">💾 Зберегти урок</button>
-          <button id="lesson-generate-btn">🤖 Згенерувати урок AI</button>
-          <button id="lesson-publish-btn">🚀 Опублікувати у канал</button>
+          <button id="lesson-save-btn">💾 Зберегти пост</button>
+          <button id="lesson-generate-btn">🤖 Згенерувати пост AI</button>
+          <button id="lesson-publish-btn">🚀 Опублікувати пост</button>
           <button id="lesson-excel-btn">📊 Створити Excel</button>
           <button id="lesson-tables-btn">📊 Таблиці уроку</button>
           <button id="lesson-upload-btn">📎 Upload файл</button>
@@ -314,14 +454,29 @@
     el("lesson-video-input").addEventListener("change", uploadLessonVideos);
     el("lesson-image-upload-btn").addEventListener("click", () => el("lesson-image-input").click());
     el("lesson-image-input").addEventListener("change", uploadLessonImages);
+
+    document.querySelectorAll("[data-part-no]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        currentPartNo = Number(btn.dataset.partNo);
+        renderLessonEditor(currentLessonNo);
+      });
+    });
+
+    const addPartBtn = el("lesson-part-add-btn");
+    if (addPartBtn) {
+      addPartBtn.addEventListener("click", addLessonPart);
+    }
   }
 
   function renderAssets(lessonNo) {
-    const assets = (currentCourse?.assets || []).filter(a => Number(a.lesson_no) === Number(lessonNo));
-    if (!assets.length) return `<div class="muted">Файлів до уроку ще немає</div>`;
+    const assets = (currentCourse?.assets || []).filter(a =>
+      Number(a.lesson_no) === Number(lessonNo) &&
+      Number(a.part_no || 1) === Number(currentPartNo)
+    );
+    if (!assets.length) return `<div class="muted">Файлів до поста ${currentPartNo} ще немає</div>`;
 
     return `
-      <h4>Матеріали уроку</h4>
+      <h4>Матеріали поста ${currentPartNo}</h4>
       <ul>
         ${assets.map(a => `
           <li>${safeText(a.asset_type)} · ${safeText(a.file_name)} · ${safeText(a.mime_type || "")} ${a.asset_type === "spreadsheet" ? `<button onclick="window.openExcelModal(${a.id})">📊 Відкрити</button>` : ""}</li>
@@ -420,7 +575,11 @@
       const partsEl = document.getElementById("lesson-telegram-parts");
       if (partsEl) partsEl.value = data.telegram_parts_json || "[]";
 
-      await apiPost(API + "/lesson/save", {
+      const saveUrl = Number(currentPartNo) === 1
+        ? API + "/lesson/save"
+        : API + "/lesson/part/save";
+
+      const savePayload = {
         course_key: currentCourseKey,
         lesson_no: currentLessonNo,
         title: payload.title,
@@ -428,13 +587,24 @@
         ai_prompt: payload.ai_prompt,
         lecture_text: lectureEl.value,
         telegram_post_text: postEl.value,
-        telegram_parts_json: (document.getElementById("lesson-telegram-parts") || {}).value || "",
         status: el("lesson-status")?.value || "draft"
-      });
+      };
+
+      if (Number(currentPartNo) > 1) {
+        savePayload.part_no = currentPartNo;
+      } else {
+        savePayload.telegram_parts_json =
+          (document.getElementById("lesson-telegram-parts") || {}).value || "";
+      }
+
+      await apiPost(saveUrl, savePayload);
 
       await openCourse(currentCourseKey);
 
-      showStatus("✅ AI урок згенеровано і збережено");
+      showStatus(
+        "✅ AI пост " + currentPartNo +
+        " згенеровано і збережено"
+      );
     } catch (e) {
       console.error("[Courses AI generation error]", e);
       showStatus("❌ AI generation error: " + e.message, true);
@@ -450,7 +620,7 @@
 
   async function saveLesson() {
     try {
-      await apiPost(API + "/lesson/save", {
+      const payload = {
         course_key: currentCourseKey,
         lesson_no: currentLessonNo,
         title: el("lesson-title").value,
@@ -458,13 +628,46 @@
         ai_prompt: el("lesson-ai-prompt").value,
         lecture_text: el("lesson-lecture").value,
         telegram_post_text: el("lesson-telegram-post").value,
-        telegram_parts_json: el("lesson-telegram-parts") ? el("lesson-telegram-parts").value : "",
         status: el("lesson-status").value
-      });
-      await openCourse(currentCourseKey);
-      showStatus("Урок збережено + backup оновлено");
+      };
+
+      let url = API + "/lesson/save";
+
+      if (Number(currentPartNo) > 1) {
+        url = API + "/lesson/part/save";
+        payload.part_no = currentPartNo;
+      } else {
+        payload.telegram_parts_json =
+          el("lesson-telegram-parts")
+            ? el("lesson-telegram-parts").value
+            : "";
+      }
+
+      await apiPost(url, payload);
+
+      const keepLesson = currentLessonNo;
+      const keepPart = currentPartNo;
+
+      const data = await apiGet(
+        API + "/" + encodeURIComponent(currentCourseKey)
+      );
+
+      currentCourse = data;
+      currentLessonNo = keepLesson;
+      currentPartNo = keepPart;
+
+      renderLessonEditor(currentLessonNo);
+
+      showStatus(
+        "Пост " + currentPartNo +
+        " збережено + backup оновлено"
+      );
+
     } catch (e) {
-      showStatus("Помилка збереження уроку: " + e.message, true);
+      showStatus(
+        "Помилка збереження поста: " + e.message,
+        true
+      );
     }
   }
 
@@ -474,6 +677,7 @@
     const lessons = currentCourse?.lessons || [];
     const nextNo = lessons.length ? Math.max(...lessons.map(l => Number(l.lesson_no))) + 1 : 1;
     currentLessonNo = nextNo;
+    currentPartNo = 1;
 
     try {
       await apiPost(API + "/lesson/save", {
@@ -504,7 +708,11 @@
       const data = await apiPost(API + "/lesson/create-excel", {
         course_key: currentCourseKey,
         lesson_no: currentLessonNo,
-        file_name: "lesson_" + currentLessonNo + "_materials.xlsx"
+        part_no: currentPartNo,
+        file_name:
+          "lesson_" + currentLessonNo +
+          "_part_" + currentPartNo +
+          "_materials.xlsx"
       });
 
       await openCourse(currentCourseKey);
@@ -617,11 +825,16 @@
       const data = await apiPost(API + "/publish/lesson", {
         course_key: currentCourseKey,
         lesson_no: currentLessonNo,
+        part_no: currentPartNo,
         telegram_chat_id: chatId
       });
 
       await openCourse(currentCourseKey);
-      showStatus("Урок опубліковано у канал. message_id=" + (data.message_id || ""));
+      showStatus(
+        "Пост " + currentPartNo +
+        " опубліковано у канал. message_id=" +
+        (data.message_id || "")
+      );
     } catch (e) {
       showStatus("Помилка публікації: " + e.message, true);
       alert("Помилка публікації: " + e.message);
@@ -639,6 +852,7 @@
         const fd = new FormData();
         fd.append("course_key", currentCourseKey);
         fd.append("lesson_no", currentLessonNo);
+        fd.append("part_no", currentPartNo);
         fd.append("asset_type", "image");
         fd.append("file", file);
 
@@ -669,6 +883,7 @@
         const fd = new FormData();
         fd.append("course_key", currentCourseKey);
         fd.append("lesson_no", currentLessonNo);
+        fd.append("part_no", currentPartNo);
         fd.append("asset_type", "video");
         fd.append("file", file);
 
@@ -699,6 +914,7 @@
         const fd = new FormData();
         fd.append("course_key", currentCourseKey);
         fd.append("lesson_no", currentLessonNo);
+        fd.append("part_no", currentPartNo);
         fd.append("asset_type", detectAssetType(file));
         fd.append("file", file);
 
@@ -810,7 +1026,9 @@
 
   function openLessonTablesManager() {
     const spreadsheets = (currentCourse?.assets || []).filter(a =>
-      Number(a.lesson_no) === Number(currentLessonNo) && a.asset_type === "spreadsheet"
+      Number(a.lesson_no) === Number(currentLessonNo) &&
+      Number(a.part_no || 1) === Number(currentPartNo) &&
+      a.asset_type === "spreadsheet"
     );
 
     let modal = document.getElementById("tables-manager-modal");
@@ -844,7 +1062,7 @@
 
     modal.innerHTML = `
       <div class="excel-modal-header" id="tables-manager-header">
-        <b>📊 Таблиці уроку ${currentLessonNo}</b>
+        <b>📊 Таблиці · урок ${currentLessonNo} · пост ${currentPartNo}</b>
         <div>
           <button id="tables-manager-create-btn">+ Створити Excel</button>
           <button id="tables-manager-close-btn">✕</button>
@@ -1326,7 +1544,9 @@ window.openExcelModal = async function(assetId) {
 
 window.openLessonTablesManager = function() {
   const spreadsheets = (currentCourse?.assets || []).filter(a =>
-    Number(a.lesson_no) === Number(currentLessonNo) && a.asset_type === "spreadsheet"
+    Number(a.lesson_no) === Number(currentLessonNo) &&
+    Number(a.part_no || 1) === Number(currentPartNo) &&
+    a.asset_type === "spreadsheet"
   );
 
   let modal = document.getElementById("tables-manager-modal");
@@ -1360,7 +1580,7 @@ window.openLessonTablesManager = function() {
 
   modal.innerHTML = `
     <div class="excel-modal-header" id="tables-manager-header">
-      <b>📊 Таблиці уроку ${currentLessonNo}</b>
+      <b>📊 Таблиці · урок ${currentLessonNo} · пост ${currentPartNo}</b>
       <div>
         <button onclick="window.createTableFromManager()">+ Створити Excel</button>
         <button onclick="document.getElementById('tables-manager-modal').style.display='none'">✕</button>
