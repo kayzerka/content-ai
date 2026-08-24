@@ -944,6 +944,61 @@
     return "document";
   }
 
+  async function pushCoursesToRender() {
+    const btn = el("courses-global-render-sync-btn");
+    const originalText = btn ? btn.textContent : "🚀 На Render";
+
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "⏳ Синхронізація...";
+    }
+
+    try {
+      showStatus("⏳ Local → Render: синхронізація курсів...");
+
+      const data = await apiPost(API + "/sync/push_to_render", {});
+
+      if (!data || !data.ok) {
+        let message = "Render sync failed";
+
+        if (data && data.error) {
+          message = data.error;
+        } else if (data && data.status) {
+          message = data.status;
+        }
+
+        if (data && data.mismatches) {
+          message += " · " + JSON.stringify(data.mismatches);
+        }
+
+        throw new Error(message);
+      }
+
+      const local = data.local_counts || {};
+      const remote = data.render_counts || {};
+
+      showStatus(
+        "✅ Local → Render готово. " +
+        "Курси: " + Number(remote.courses || 0) +
+        " · Уроки: " + Number(remote.lessons || 0) +
+        " · Додаткові пости: " + Number(remote.lesson_parts || 0) +
+        " · Файли: " + Number(remote.assets || 0)
+      );
+
+      console.log("COURSE_RENDER_SYNC_OK", data);
+
+    } catch (e) {
+      console.error("COURSE_RENDER_SYNC_ERROR", e);
+      showStatus("❌ Local → Render: " + e.message, true);
+
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+  }
+
   async function backupNow() {
     try {
       const data = await apiPost(API + "/backup/auto_save_all", {});
@@ -1004,6 +1059,7 @@
           <div class="course-actions" style="margin-bottom:12px;">
             <button id="courses-global-restore-btn">♻️ Відновити дані</button>
             <button id="courses-global-backup-btn">🧷 Backup</button>
+            <button id="courses-global-render-sync-btn">🚀 На Render</button>
           </div>
 
           <div id="courses-list"></div>
@@ -1019,6 +1075,7 @@
     el("course-create-btn").addEventListener("click", createCourse);
     el("courses-global-restore-btn").addEventListener("click", restoreBackup);
     el("courses-global-backup-btn").addEventListener("click", backupNow);
+    el("courses-global-render-sync-btn").addEventListener("click", pushCoursesToRender);
     loadCourses();
   }
 

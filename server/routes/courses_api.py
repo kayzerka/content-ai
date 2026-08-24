@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, List
 
 from openai import OpenAI
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Header
 from pydantic import BaseModel
 from openpyxl import Workbook, load_workbook
 
@@ -903,6 +903,243 @@ def save_excel_asset(body: ExcelSaveRequest):
         "file_path": asset.get("file_path"),
         "size_bytes": path.stat().st_size
     }
+
+
+# === COURSE LOCAL -> RENDER SYNC V1 ===
+
+@router.post("/backup/import")
+def course_backup_import_v1(
+    payload: Dict[str, Any],
+    x_course_sync_token: Optional[str] = Header(default=None),
+):
+    """
+    Import a complete course backup into the current instance.
+
+    IMPORTANT:
+    restore_from_payload() is destructive, so the current state is
+    exported first as a safety backup.
+    """
+    try:
+        expected_token = os.getenv("COURSE_SYNC_TOKEN", "").strip()
+
+        if not expected_token:
+            return {
+                "ok": False,
+                "status": "blocked",
+                "error": "COURSE_SYNC_TOKEN is not configured on this server",
+            }
+
+        if not x_course_sync_token or x_course_sync_token != expected_token:
+            raise HTTPException(
+                status_code=403,
+                detail="Invalid course sync token",
+            )
+
+        if not payload or payload.get("format") not in (
+            "courses_full_v1",
+            "courses_full_v2",
+        ):
+            return {
+                "ok": False,
+                "status": "blocked",
+                "error": "invalid courses backup format",
+                "format": payload.get("format") if isinstance(payload, dict) else None,
+            }
+
+        incoming_counts = payload.get("counts") or {}
+
+        # Never allow an obviously empty backup to wipe production.
+        if int(incoming_counts.get("courses") or 0) <= 0:
+            return {
+                "ok": False,
+                "status": "blocked",
+                "error": "unsafe restore blocked: backup contains zero courses",
+                "counts": incoming_counts,
+            }
+
+        # Snapshot current instance before destructive restore.
+        current = export_all_to_backup()
+
+        safety_dir = BACKUP_DIR / "pre_import"
+        safety_dir.mkdir(parents=True, exist_ok=True)
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safety_path = safety_dir / f"courses-before-import-{stamp}.json"
+
+        safety_path.write_text(
+            json.dumps(current, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        restored = restore_from_payload(payload)
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "format": restored.get("format"),
+            "incoming_counts": incoming_counts,
+            "restored_counts": restored.get("counts") or {},
+            "safety_backup": str(safety_path),
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "status": "error",
+            "where": "course_backup_import",
+            "error": repr(e),
+        }
+
+
+@router.post("/sync/push_to_render")
+def course_push_local_to_render_v1():
+    """
+    Export the CURRENT local DB and push that payload directly to Render.
+    We deliberately do not depend on a stale JSON file.
+    """
+    try:
+        import os
+        import ssl
+        import urllib.request
+        import urllib.error
+
+        # Export current DB first. This also refreshes courses-latest.json.
+        payload = export_all_to_backup()
+
+        counts = payload.get("counts") or {}
+
+        if payload.get("format") not in ("courses_full_v1", "courses_full_v2"):
+            return {
+                "ok": False,
+                "status": "blocked",
+                "error": "invalid local courses backup format",
+                "format": payload.get("format"),
+            }
+
+        if int(counts.get("courses") or 0) <= 0:
+            return {
+                "ok": False,
+                "status": "blocked",
+                "error": "unsafe push blocked: local backup contains zero courses",
+                "counts": counts,
+            }
+
+        render_url = os.getenv(
+            "RENDER_API",
+            "https://content-ai-ps1k.onrender.com",
+        ).rstrip("/")
+
+        sync_token = os.getenv("COURSE_SYNC_TOKEN", "").strip()
+
+        if not sync_token:
+            return {
+                "ok": False,
+                "status": "blocked",
+                "error": "COURSE_SYNC_TOKEN is not configured locally",
+            }
+
+        target = render_url + "/api/courses/backup/import"
+
+        req = urllib.request.Request(
+            target,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "content-ai-course-sync/1.0",
+                "X-Course-Sync-Token": sync_token,
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(
+                req,
+                timeout=120,
+                context=ssl._create_unverified_context(),
+            ) as resp:
+                body = resp.read().decode("utf-8")
+                http_status = resp.status
+
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            return {
+                "ok": False,
+                "status": "error",
+                "where": "render_http",
+                "http_status": e.code,
+                "render_url": render_url,
+                "body": body[:2000],
+            }
+
+        try:
+            render_response = json.loads(body)
+        except Exception:
+            render_response = {"raw": body[:2000]}
+
+        if not render_response.get("ok"):
+            return {
+                "ok": False,
+                "status": "error",
+                "where": "render_import",
+                "http_status": http_status,
+                "local_counts": counts,
+                "render_url": render_url,
+                "render_response": render_response,
+            }
+
+        restored_counts = render_response.get("restored_counts") or {}
+
+        # Verification: Render must report the same logical row counts.
+        expected_keys = (
+            "courses",
+            "lessons",
+            "lesson_parts",
+            "assets",
+            "publications",
+        )
+
+        mismatches = {}
+
+        for key in expected_keys:
+            local_n = int(counts.get(key) or 0)
+            remote_n = int(restored_counts.get(key) or 0)
+
+            if local_n != remote_n:
+                mismatches[key] = {
+                    "local": local_n,
+                    "render": remote_n,
+                }
+
+        if mismatches:
+            return {
+                "ok": False,
+                "status": "verification_failed",
+                "local_counts": counts,
+                "render_counts": restored_counts,
+                "mismatches": mismatches,
+                "render_response": render_response,
+            }
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "message": "Local courses successfully synchronized to Render",
+            "render_url": render_url,
+            "local_counts": counts,
+            "render_counts": restored_counts,
+            "render_response": render_response,
+        }
+
+    except Exception as e:
+        return {
+            "ok": False,
+            "status": "error",
+            "where": "course_push_local_to_render",
+            "error": repr(e),
+        }
+
+# === /COURSE LOCAL -> RENDER SYNC V1 ===
+
 
 
 @router.post("/backup/auto_save_all")
