@@ -49,6 +49,15 @@ app.include_router(funnels_router)
 app.include_router(telegram_safe_router)
 app.include_router(courses_router)
 
+# META_QUEUE_ROUTERS_V1
+if os.getenv("META_QUEUE_ENABLED", "0").strip() == "1":
+    from meta_webhook_receiver_v1 import router as meta_receiver_router
+    from meta_queue_sync_api_v1 import router as meta_queue_sync_router
+
+    app.include_router(meta_receiver_router)
+    app.include_router(meta_queue_sync_router)
+# /META_QUEUE_ROUTERS_V1
+
 MODEL_PATH = "/Volumes/B/Regresolog/content_ai/models/model.gguf"
 DB_PATH = os.getenv("CONTENT_AI_DB_PATH", os.path.join(os.getcwd(), "data", "content.db"))
 
@@ -58,6 +67,47 @@ DEEPSEEK_API_BASE = os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com").s
 
 VERIFY_TOKEN = os.getenv("META_VERIFY_TOKEN", "change_me")
 
+
+
+# META_WEBHOOK_V2_VERIFY_ROUTE
+@app.get("/meta/webhook/v2", include_in_schema=False)
+async def verify_meta_webhook_v2(request: Request):
+    from fastapi import HTTPException
+    from fastapi.responses import PlainTextResponse
+    import hmac
+
+    if os.getenv("META_QUEUE_ENABLED", "0").strip() != "1":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    expected = (
+        os.getenv("META_VERIFY_TOKEN")
+        or os.getenv("IG_WEBHOOK_VERIFY_TOKEN")
+        or ""
+    ).strip()
+
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Verification not configured"
+        )
+
+    params = request.query_params
+    mode = params.get("hub.mode")
+    token = params.get("hub.verify_token") or ""
+    challenge = params.get("hub.challenge")
+
+    if (
+        mode != "subscribe"
+        or challenge is None
+        or not hmac.compare_digest(token, expected)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid verification request"
+        )
+
+    return PlainTextResponse(challenge)
+# /META_WEBHOOK_V2_VERIFY_ROUTE
 
 @app.get("/webhook")
 async def verify(request: Request):
