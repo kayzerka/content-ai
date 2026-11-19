@@ -21,6 +21,32 @@ def verify_signature(raw: bytes, received: str) -> None:
     ).hexdigest()
 
     if not hmac.compare_digest(received, expected):
+        diagnostic_results = {}
+        for label, env_name in (
+            ("posting", "META_DIAG_POSTING_APP_SECRET"),
+            ("automation", "META_DIAG_AUTOMATION_APP_SECRET"),
+        ):
+            candidate = os.getenv(env_name, "").strip()
+            if candidate:
+                candidate_signature = (
+                    "sha256="
+                    + hmac.new(
+                        candidate.encode("utf-8"),
+                        raw,
+                        hashlib.sha256,
+                    ).hexdigest()
+                )
+                diagnostic_results[label] = hmac.compare_digest(
+                    received, candidate_signature
+                )
+            else:
+                diagnostic_results[label] = "NOT_CONFIGURED"
+
+        logging.getLogger(__name__).warning(
+            "META_HMAC_DIAGNOSTIC posting=%s automation=%s",
+            diagnostic_results["posting"],
+            diagnostic_results["automation"],
+        )
         logging.getLogger(__name__).warning(
             "META_SIGNATURE_REJECTED "
             "header_present=%s format_valid=%s "
