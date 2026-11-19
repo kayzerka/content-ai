@@ -21,6 +21,56 @@ def verify_signature(raw: bytes, received: str) -> None:
     ).hexdigest()
 
     if not hmac.compare_digest(received, expected):
+        try:
+            diagnostic_payload = json.loads(raw)
+            if isinstance(diagnostic_payload, dict):
+                entries = diagnostic_payload.get("entry", [])
+                if not isinstance(entries, list):
+                    entries = []
+
+                fields = set()
+                messaging_count = 0
+
+                for entry in entries[:100]:
+                    if not isinstance(entry, dict):
+                        continue
+
+                    changes = entry.get("changes", [])
+                    if isinstance(changes, list):
+                        for change in changes[:100]:
+                            if isinstance(change, dict):
+                                field = change.get("field")
+                                if isinstance(field, str):
+                                    if field in (
+                                        "messages",
+                                        "messaging_postbacks",
+                                        "comments",
+                                        "live_comments",
+                                        "mentions",
+                                    ):
+                                        fields.add(field)
+                                    else:
+                                        fields.add("other")
+
+                    messaging = entry.get("messaging", [])
+                    if isinstance(messaging, list):
+                        messaging_count += len(messaging)
+
+                logging.getLogger(__name__).warning(
+                    "META_EVENT_DIAGNOSTIC "
+                    "object=%s entry_count=%s fields=%s "
+                    "messaging_count=%s",
+                    diagnostic_payload.get("object")
+                    if diagnostic_payload.get("object") in
+                    ("instagram", "page") else "other",
+                    len(entries),
+                    ",".join(sorted(fields)) or "none",
+                    messaging_count,
+                )
+        except (ValueError, UnicodeDecodeError, TypeError):
+            logging.getLogger(__name__).warning(
+                "META_EVENT_DIAGNOSTIC invalid_json"
+            )
         diagnostic_results = {}
         for label, env_name in (
             ("posting", "META_DIAG_POSTING_APP_SECRET"),
