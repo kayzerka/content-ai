@@ -22,9 +22,13 @@ def verify_signature(raw: bytes, received: str) -> None:
 
     if not hmac.compare_digest(received, expected):
         logging.getLogger(__name__).warning(
-            "META_SIGNATURE_REJECTED header_present=%s format_valid=%s",
+            "META_SIGNATURE_REJECTED "
+            "header_present=%s format_valid=%s "
+            "body_bytes=%s body_sha256_prefix=%s",
             bool(received),
             received.startswith("sha256=") and len(received) == 71,
+            len(raw),
+            hashlib.sha256(raw).hexdigest()[:12],
         )
         raise HTTPException(403, "Invalid Meta webhook signature")
 
@@ -32,6 +36,11 @@ def verify_signature(raw: bytes, received: str) -> None:
 @router.post("/meta/webhook/v2")
 async def receive_meta_webhook(request: Request):
     raw = await request.body()
+
+    if request.headers.get("X-Hub-Signature"):
+        logging.getLogger(__name__).info(
+            "META_LEGACY_SIGNATURE_HEADER_PRESENT"
+        )
 
     verify_signature(
         raw,
