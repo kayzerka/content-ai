@@ -25,8 +25,8 @@ def verify_signature(raw: bytes, received: str) -> None:
             "META_DIAG_INSTAGRAM_APP_SECRET"
         )
         if instagram_secret:
-            instagram_expected = hmac.new(
-                instagram_secret.encode(),
+            instagram_expected = "sha256=" + hmac.new(
+                instagram_secret.encode("utf-8"),
                 raw,
                 hashlib.sha256
             ).hexdigest()
