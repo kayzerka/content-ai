@@ -21,6 +21,28 @@ def verify_signature(raw: bytes, received: str) -> None:
     ).hexdigest()
 
     if not hmac.compare_digest(received, expected):
+        instagram_secret = os.environ.get(
+            "META_DIAG_INSTAGRAM_APP_SECRET"
+        )
+        if instagram_secret:
+            instagram_expected = hmac.new(
+                instagram_secret.encode(),
+                raw,
+                hashlib.sha256
+            ).hexdigest()
+            instagram_match = hmac.compare_digest(
+                received,
+                instagram_expected
+            )
+            logging.getLogger(__name__).warning(
+                "META_INSTAGRAM_HMAC_DIAGNOSTIC match=%s",
+                instagram_match,
+            )
+        else:
+            logging.getLogger(__name__).warning(
+                "META_INSTAGRAM_HMAC_DIAGNOSTIC NOT_CONFIGURED"
+            )
+
         try:
             diagnostic_payload = json.loads(raw)
             if isinstance(diagnostic_payload, dict):
