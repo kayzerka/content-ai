@@ -61,7 +61,6 @@ async def receive_meta_webhook(request: Request):
         from meta_event_queue_v1 import enqueue
         inserted = enqueue(raw, payload)
     except Exception:
-        import logging
         logging.getLogger(__name__).exception(
             "Meta durable queue write failed"
         )
