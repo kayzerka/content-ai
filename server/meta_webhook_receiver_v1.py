@@ -42,6 +42,49 @@ def verify_signature(raw: bytes, received: str) -> None:
             else:
                 diagnostic_results[label] = "NOT_CONFIGURED"
 
+        try:
+            parsed = json.loads(raw)
+            compact = json.dumps(
+                parsed,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+            normalized = json.dumps(
+                parsed,
+                ensure_ascii=False,
+            ).encode("utf-8")
+            variants = {
+                "compact": compact,
+                "normalized": normalized,
+            }
+            variant_matches = {}
+            for variant_name, variant_body in variants.items():
+                matches = []
+                for app_name, secret_name in (
+                    ("primary", "META_APP_SECRET"),
+                    ("posting", "META_DIAG_POSTING_APP_SECRET"),
+                    ("automation", "META_DIAG_AUTOMATION_APP_SECRET"),
+                ):
+                    secret = os.getenv(secret_name, "").strip()
+                    if secret:
+                        candidate = "sha256=" + hmac.new(
+                            secret.encode("utf-8"),
+                            variant_body,
+                            hashlib.sha256,
+                        ).hexdigest()
+                        if hmac.compare_digest(received, candidate):
+                            matches.append(app_name)
+                variant_matches[variant_name] = matches
+            logging.getLogger(__name__).warning(
+                "META_BODY_DIAGNOSTIC compact=%s normalized=%s",
+                variant_matches["compact"],
+                variant_matches["normalized"],
+            )
+        except (ValueError, UnicodeDecodeError, TypeError):
+            logging.getLogger(__name__).warning(
+                "META_BODY_DIAGNOSTIC invalid_json"
+            )
+
         logging.getLogger(__name__).warning(
             "META_HMAC_DIAGNOSTIC posting=%s automation=%s",
             diagnostic_results["posting"],
