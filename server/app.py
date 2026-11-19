@@ -38,7 +38,12 @@ from telegram_birthday_module import (
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env")
 
+from meta_webhook_receiver_v1 import router as meta_receiver_router
+from meta_queue_sync_api_v1 import router as meta_queue_sync_router
+
 app = FastAPI()
+app.include_router(meta_receiver_router)
+app.include_router(meta_queue_sync_router)
 app.include_router(astranova_reports_router)
 app.include_router(astranova_backup_router)
 app.include_router(astranova_bot_router)
@@ -154,82 +159,11 @@ def ig_webhook_save_payload(payload: dict) -> int:
 
 @app.post("/webhook")
 async def webhook(req: Request):
-    raw = await req.body()
-
-    print("\n==== WEBHOOK HIT ====")
-
-    try:
-        payload = json.loads(raw.decode("utf-8"))
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-
-        saved = ig_webhook_save_payload(payload)
-        print(f"IG_WEBHOOK_SAVE_V1 saved={saved}")
-        try:
-            auto_res = ig_auto_funnel_dispatch_payload(payload, saved)
-            print("[IG_AUTO_FUNNEL_DISPATCH]", json.dumps(auto_res, ensure_ascii=False)[:3000], flush=True)
-        except Exception as auto_err:
-            print("[IG_AUTO_FUNNEL_DISPATCH_ERROR]", repr(auto_err), flush=True)
+    """Verify Meta signature and persist before acknowledging."""
+    from meta_webhook_receiver_v1 import receive_meta_webhook
+    return await receive_meta_webhook(req)
 
 
-        # WEBHOOK_HUMAN_NOTIFY_V2
-        try:
-            from telegram_safe_router import send_safe
-
-            entry = (payload.get("entry") or [{}])[0]
-            messaging = (entry.get("messaging") or [{}])[0]
-            msg = messaging.get("message") or {}
-
-            sender_id = ((messaging.get("sender") or {}).get("id") or "unknown")
-            recipient_id = ((messaging.get("recipient") or {}).get("id") or "unknown")
-            text_msg = msg.get("text") or ""
-            mid = msg.get("mid") or ""
-
-            pretty_text = (
-                "📩 Instagram Direct webhook\n\n"
-                f"💬 Повідомлення: {text_msg or '-'}\n"
-                f"👤 Sender ID: {sender_id}\n"
-                f"📥 Recipient ID: {recipient_id}\n"
-                f"🆔 Message ID: {mid[:80]}{'…' if len(mid) > 80 else ''}\n"
-                f"💾 Saved: {saved}"
-            )
-
-            send_safe({
-                "purpose": "planner_internal",
-                "text": pretty_text
-            })
-        except Exception as notify_err:
-            print("[WEBHOOK_HUMAN_NOTIFY_ERROR]", repr(notify_err))
-
-        try:
-            if "instagram_reaction_webhook_ingest" in globals():
-                instagram_reaction_webhook_ingest(payload)
-        except Exception as e:
-            print("instagram_reaction_webhook_ingest error:", repr(e))
-
-    except Exception as e:
-        print("WEBHOOK ERROR:", repr(e))
-        try:
-            print(raw.decode("utf-8", errors="replace"))
-        except Exception:
-            print(raw)
-
-    return {"ok": True}
-
-
-    print("WEBHOOK EVENT:", data)
-
-    try:
-        if "instagram_reaction_webhook_ingest" in globals():
-            return instagram_reaction_webhook_ingest(data)
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "raw": data,
-        }
-
-    return {"status": "ok", "raw": data}
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
