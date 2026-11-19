@@ -34,6 +34,8 @@ def verify_signature(raw: bytes, received: str) -> None:
                 received,
                 instagram_expected
             )
+            if instagram_match:
+                return
             logging.getLogger(__name__).warning(
                 "META_INSTAGRAM_HMAC_DIAGNOSTIC match=%s",
                 instagram_match,
