@@ -20,6 +20,11 @@ def verify_signature(raw: bytes, received: str) -> None:
     ).hexdigest()
 
     if not hmac.compare_digest(received, expected):
+        logging.getLogger(__name__).warning(
+            "META_SIGNATURE_REJECTED header_present=%s format_valid=%s",
+            bool(received),
+            received.startswith("sha256=") and len(received) == 71,
+        )
         raise HTTPException(403, "Invalid Meta webhook signature")
 
 
