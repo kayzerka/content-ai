@@ -147,3 +147,73 @@ def instagram_history_check(
             "reason": "META_REQUEST_FAILED",
             "error_type": type(exc).__name__,
         }
+
+@router.get("/instagram-history-page")
+def instagram_history_page(
+    kind: str = "conversations",
+    conversation_id: str = "",
+    after: str = "",
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated, read-only Instagram Direct pagination."""
+    authorize(authorization)
+
+    import re
+    import requests
+
+    token = os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+    page_id = os.getenv("FB_PAGE_ID", "").strip()
+
+    if not token or not page_id:
+        raise HTTPException(503, "Meta credentials unavailable")
+
+    if kind == "conversations":
+        path = page_id + "/conversations"
+        params = {
+            "platform": "instagram",
+            "fields": "id,updated_time,participants",
+            "limit": 25,
+        }
+    elif kind == "messages":
+        if not re.fullmatch(r"[A-Za-z0-9_]+", conversation_id):
+            raise HTTPException(422, "Invalid conversation ID")
+        path = conversation_id + "/messages"
+        params = {
+            "fields": "id,message,from,to,created_time",
+            "limit": 25,
+        }
+    else:
+        raise HTTPException(422, "Invalid kind")
+
+    if after:
+        if len(after) > 2048 or any(c.isspace() for c in after):
+            raise HTTPException(422, "Invalid cursor")
+        params["after"] = after
+
+    try:
+        response = requests.get(
+            "https://graph.facebook.com/v25.0/" + path,
+            params={**params, "access_token": token},
+            timeout=30,
+        )
+        result = response.json()
+    except (requests.RequestException, ValueError):
+        raise HTTPException(502, "Meta request failed")
+
+    if not response.ok or "error" in result:
+        error = result.get("error") or {}
+        return {
+            "ok": False,
+            "code": error.get("code"),
+            "subcode": error.get("error_subcode"),
+        }
+
+    paging = result.get("paging") or {}
+    cursors = paging.get("cursors") or {}
+
+    return {
+        "ok": True,
+        "data": result.get("data") or [],
+        "has_more": bool(paging.get("next")),
+        "next_after": cursors.get("after") or "",
+    }
