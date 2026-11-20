@@ -80,3 +80,70 @@ def history(
         return history_batch(after_id=after_id, limit=limit)
     except Exception:
         raise HTTPException(503, "Queue history unavailable")
+
+
+@router.get("/instagram-history-check")
+def instagram_history_check(
+    authorization: str | None = Header(default=None),
+):
+    """Read-only Instagram Graph API access check on Render."""
+    authorize(authorization)
+
+    import requests
+
+    token = os.getenv("FB_PAGE_ACCESS_TOKEN", "").strip()
+    page_id = os.getenv("FB_PAGE_ID", "").strip()
+    ig_id = os.getenv("IG_USER_ID", "").strip()
+
+    configured = {
+        "FB_PAGE_ACCESS_TOKEN": bool(token),
+        "FB_PAGE_ID": bool(page_id),
+        "IG_USER_ID": bool(ig_id),
+    }
+
+    if not all(configured.values()):
+        return {
+            "ok": False,
+            "reason": "MISSING_CONFIGURATION",
+            "configured": configured,
+        }
+
+    try:
+        response = requests.get(
+            f"https://graph.facebook.com/v25.0/{page_id}/conversations",
+            params={
+                "platform": "instagram",
+                "fields": "id,updated_time",
+                "limit": 5,
+                "access_token": token,
+            },
+            timeout=20,
+        )
+        result = response.json()
+
+        if not response.ok or "error" in result:
+            error = result.get("error") or {}
+            return {
+                "ok": False,
+                "reason": "META_API_ERROR",
+                "code": error.get("code"),
+                "subcode": error.get("error_subcode"),
+                "error_type": error.get("type"),
+            }
+
+        return {
+            "ok": True,
+            "conversations_in_first_page": len(result.get("data", [])),
+            "has_more": bool(
+                (result.get("paging") or {}).get("next")
+            ),
+            "crm_writes": False,
+            "outbound_messages": False,
+        }
+
+    except Exception as exc:
+        return {
+            "ok": False,
+            "reason": "META_REQUEST_FAILED",
+            "error_type": type(exc).__name__,
+        }
