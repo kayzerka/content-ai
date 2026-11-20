@@ -114,3 +114,28 @@ def acknowledge(event_id: int, lease_id: str) -> bool:
         ).fetchone()
 
         return row is not None
+
+
+def history_batch(after_id: int = 0, limit: int = 100):
+    """Read-only pagination including acknowledged webhook events."""
+    after_id = max(0, int(after_id))
+    limit = max(1, min(int(limit), 100))
+
+    with connect() as db:
+        rows = db.execute(
+            """SELECT id, payload
+               FROM meta_private.meta_webhook_events
+               WHERE id > %s
+               ORDER BY id ASC
+               LIMIT %s""",
+            (after_id, limit),
+        ).fetchall()
+
+    return {
+        "events": [
+            {"id": row[0], "payload": row[1]}
+            for row in rows
+        ],
+        "next_after_id": rows[-1][0] if rows else after_id,
+        "has_more": len(rows) == limit,
+    }

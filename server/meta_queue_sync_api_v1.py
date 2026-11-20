@@ -61,3 +61,22 @@ def ack(
         raise HTTPException(409, "Lease expired or event already processed")
 
     return {"ok": True, "acknowledged": True}
+
+
+@router.get("/history")
+def history(
+    after_id: int = 0,
+    limit: int = 100,
+    authorization: str | None = Header(default=None),
+):
+    """Authenticated read-only Meta event history."""
+    authorize(authorization)
+
+    if after_id < 0 or not 1 <= limit <= 100:
+        raise HTTPException(422, "Invalid pagination")
+
+    try:
+        from meta_event_queue_v1 import history_batch
+        return history_batch(after_id=after_id, limit=limit)
+    except Exception:
+        raise HTTPException(503, "Queue history unavailable")
