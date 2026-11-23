@@ -85,3 +85,29 @@ def send_once(body: SendRequest, authorization: str | None = Header(default=None
         db.execute("UPDATE meta_private.meta_outbound_requests SET state=%s,result=%s WHERE request_id=%s",
                    (state, Jsonb(safe_result), body.request_id))
     return {"ok":state=="accepted", "status":state, "result":safe_result, "duplicate":False}
+
+
+@router.get("/status/{request_id}")
+def outbound_status(request_id: str, authorization: str | None = Header(default=None)):
+    """Authenticated, read-only status lookup. Never sends a Meta message."""
+    _authorize(authorization)
+    if not (8 <= len(request_id) <= 100 and request_id.isascii()
+            and all(ch.isalnum() or ch in "_-" for ch in request_id)):
+        raise HTTPException(400, "Invalid request ID")
+    db_url = os.getenv("META_QUEUE_DATABASE_URL", "").strip()
+    if not db_url:
+        raise HTTPException(503, "Durable database unavailable")
+    import psycopg
+    try:
+        with psycopg.connect(db_url, connect_timeout=10) as db:
+            with db.transaction():
+                db.execute("SET TRANSACTION READ ONLY")
+                row = db.execute(
+                    "SELECT state, result FROM meta_private.meta_outbound_requests WHERE request_id=%s",
+                    (request_id,)
+                ).fetchone()
+    except psycopg.errors.UndefinedTable:
+        raise HTTPException(404, "Request not found")
+    if row is None:
+        raise HTTPException(404, "Request not found")
+    return {"request_id": request_id, "status": row[0], "result": row[1], "read_only": True}
