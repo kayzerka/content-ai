@@ -41,11 +41,13 @@ load_dotenv(BASE_DIR / ".env")
 from meta_webhook_receiver_v1 import router as meta_receiver_router
 from meta_queue_sync_api_v1 import router as meta_queue_sync_router
 from meta_outbound_render_v1 import router as meta_outbound_router
+from crm_instagram_direct_ui_v1 import router as crm_instagram_direct_router
 
 app = FastAPI()
 app.include_router(meta_receiver_router)
 app.include_router(meta_queue_sync_router)
 app.include_router(meta_outbound_router)
+app.include_router(crm_instagram_direct_router)
 app.include_router(astranova_reports_router)
 app.include_router(astranova_backup_router)
 app.include_router(astranova_bot_router)
