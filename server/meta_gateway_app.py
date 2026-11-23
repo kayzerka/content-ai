@@ -10,11 +10,13 @@ from meta_webhook_receiver_v1 import (
     receive_meta_webhook,
 )
 from meta_queue_sync_api_v1 import router as sync_router
+from meta_outbound_render_v1 import router as outbound_router
 
 app = FastAPI(title="Meta Durable Gateway")
 
 app.include_router(receiver_router)
 app.include_router(sync_router)
+app.include_router(outbound_router)
 
 
 @app.get("/health")
